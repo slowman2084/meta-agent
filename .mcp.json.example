@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "your-mcp-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "your-mcp-server@latest"
+      ],
+      "env": {
+        "TRANSPORT": "stdio",
+        "API_KEY": "<your-api-key>",
+        "API_SECRET": "<your-api-secret>"
+      },
+      "disabled": false
+    }
+  },
+  "disabledMcpServers": []
+}

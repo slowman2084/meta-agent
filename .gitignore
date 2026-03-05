@@ -1,0 +1,161 @@
+# ===================================
+# Python 相关
+# ===================================
+# 虚拟环境
+venv/
+.venv/
+env/
+.env/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 分发/打包
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===================================
+# IDE Agent 目录（由 install.py 动态生成）
+# ===================================
+.claude/
+.codebuddy/
+.cursor/
+
+# ===================================
+# IDE 相关
+# ===================================
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# ===================================
+# 系统文件
+# ===================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ===================================
+# 项目特定：临时文件和测试产物
+# ===================================
+# 各 Agent 的临时运行目录（测试日志、中间产物）
+**/tmp/
+
+# 临时/一次性脚本（业务特定，不纳入版本控制）
+scripts/analyze_*.py
+scripts/batch_*.py
+scripts/check_*.py
+scripts/extract_*.py
+scripts/fix_*.py
+scripts/list_*.py
+scripts/refactor_*.py
+scripts/run_*.py
+
+# 运行时状态文件（本地上下文）
+.agent_factory_context.json
+
+# IDE 本地配置（可能包含个人偏好或权限设置）
+.claude/settings.local.json
+.codebuddy/settings.local.json
+
+# 业务 Agent 目录（非 meta- 前缀的 Agent 不纳入版本控制）
+# 只保留基础组件 (meta-*) 在版本控制中
+source/*
+!source/meta-*/
+
+# 工作日志（本地迭代记录，不纳入版本控制）
+工作日志/
+
+# 备份文件
+**/bak/
+
+# 参考资料目录（内部业务文档）
+**/references/
+
+# 包含业务敏感信息的测试用例
+source/meta-ideal-state/testcases.yaml
+
+# Office 文档（可能包含内部业务信息）
+*.docx
+*.xlsx
+*.pptx
+
+# ===================================
+# 压缩包/大文件
+# ===================================
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ===================================
+# 日志文件
+# ===================================
+*.log
+logs/
+
+# ===================================
+# 环境变量文件（敏感信息）
+# ===================================
+.env
+.env.*
+!.env.example
+
+# MCP 配置文件（包含 API 密钥）
+.mcp.json
+source/*/.mcp.json
+
+# 平台配置文件（包含 API 密钥）
+.cursor/skills/*/config/*.yaml
+.codebuddy/skills/*/config/*.yaml
+.claude/skills/*/config/*.yaml
+**/observable_platform.yaml
+**/platform.yaml
+
+# ===================================
+# 其他
+# ===================================
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# mypy 缓存
+.mypy_cache/
+
+# pytest 缓存
+.pytest_cache/
+
+# coverage 报告
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover

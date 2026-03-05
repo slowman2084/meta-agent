@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Case Viewer & Reviewer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- js-yaml for YAML parsing/dumping -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <!-- Highlight.js for code highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f8fafc;
+        }
+        .markdown-body {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #334155;
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            font-weight: 600;
+            color: #1e293b;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        .markdown-body p {
+            margin-bottom: 0.75em;
+        }
+        .markdown-body code {
+            background-color: #f1f5f9;
+            padding: 0.2em 0.4em;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            color: #0f172a;
+        }
+        .markdown-body pre {
+            background-color: #1e293b;
+            padding: 1em;
+            border-radius: 8px;
+            overflow-x: auto;
+            color: #f8fafc;
+        }
+        .markdown-body pre code {
+            background-color: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .markdown-body ul, .markdown-body ol {
+            padding-left: 1.5em;
+            margin-bottom: 0.75em;
+        }
+        .markdown-body ul { list-style-type: disc; }
+        .markdown-body ol { list-style-type: decimal; }
+        .markdown-body blockquote {
+            border-left: 4px solid #cbd5e1;
+            padding-left: 1em;
+            color: #64748b;
+            font-style: italic;
+        }
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1em;
+        }
+        .markdown-body th, .markdown-body td {
+            border: 1px solid #e2e8f0;
+            padding: 0.5em;
+            text-align: left;
+        }
+        .markdown-body th {
+            background-color: #f8fafc;
+            font-weight: 600;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        .json-key { color: #d2a8ff; }
+        .json-string { color: #a5d6ff; }
+        .json-number { color: #79c0ff; }
+        .json-boolean { color: #ff7b72; }
+        .json-null { color: #ff7b72; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div class="w-full px-6 sm:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <i data-lucide="file-json" class="h-6 w-6 text-blue-600"></i>
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight">TestCase Reviewer</h1>
+                <span id="file-name" class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium hidden"></span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="relative">
+                     <input type="file" id="file-input" accept=".yaml,.yml" class="hidden" />
+                     <button onclick="document.getElementById('file-input').click()" class="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors border border-gray-200 text-sm font-medium">
+                        <i data-lucide="upload" class="h-4 w-4"></i>
+                        <span>Load YAML</span>
+                     </button>
+                </div>
+                <button onclick="exportPatch()" id="export-btn" class="flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i data-lucide="download" class="h-4 w-4"></i>
+                    <span>Export Patch</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full px-6 sm:px-8 py-8">
+        
+        <!-- Empty State -->
+        <div id="empty-state" class="flex flex-col items-center justify-center h-[60vh] text-center">
+            <div class="bg-blue-50 p-6 rounded-full mb-6">
+                <i data-lucide="file-up" class="h-12 w-12 text-blue-500"></i>
+            </div>
+            <h2 class="text-2xl font-semibold text-gray-900 mb-2">No File Loaded</h2>
+            <p class="text-gray-500 max-w-md">Upload your <code>testcases.yaml</code> file to start reviewing and annotating test cases.</p>
+            <button onclick="document.getElementById('file-input').click()" class="mt-8 px-6 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium shadow-sm">
+                Select File
+            </button>
+        </div>
+
+        <!-- Content Container -->
+        <div id="content-container" class="hidden space-y-8">
+            <!-- Meta Info -->
+            <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <span>Project Meta</span>
+                        <span id="meta-count" class="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">0 Cases</span>
+                    </h2>
+                    <p id="meta-notice" class="text-sm text-gray-500 mt-1"></p>
+                </div>
+                <div class="flex items-center gap-3">
+                     <div class="relative">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"></i>
+                        <input type="text" id="search-input" placeholder="Search cases..." class="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Cases List -->
+            <div id="cases-list" class="space-y-6">
+                <!-- Cases will be injected here -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- JS Logic -->
+    <script>
+        // State
+        let yamlData = null;
+        let originalFileName = '';
+        let modifications = {}; // Key: case index, Value: { input_comment, output_comment, judge_comment, general_comment }
+
+        // Elements
+        const fileInput = document.getElementById('file-input');
+        const emptyState = document.getElementById('empty-state');
+        const contentContainer = document.getElementById('content-container');
+        const casesList = document.getElementById('cases-list');
+        const exportBtn = document.getElementById('export-btn');
+        const fileNameDisplay = document.getElementById('file-name');
+        const metaCount = document.getElementById('meta-count');
+        const metaNotice = document.getElementById('meta-notice');
+        const searchInput = document.getElementById('search-input');
+
+        // Icons
+        lucide.createIcons();
+
+        // Event Listeners
+        fileInput.addEventListener('change', handleFileSelect);
+        searchInput.addEventListener('input', handleSearch);
+
+        // File Handling
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            originalFileName = file.name;
+            fileNameDisplay.textContent = file.name;
+            fileNameDisplay.classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    yamlData = jsyaml.load(content);
+                    modifications = {}; // Reset mods
+                    renderCases();
+                    emptyState.classList.add('hidden');
+                    contentContainer.classList.remove('hidden');
+                    exportBtn.disabled = false;
+                } catch (error) {
+                    alert('Error parsing YAML: ' + error.message);
+                    console.error(error);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Rendering
+        function renderCases(filterText = '') {
+            casesList.innerHTML = '';
+            
+            if (!yamlData || !yamlData.cases) return;
+
+            // Update Meta
+            if (yamlData.meta) {
+                metaCount.textContent = `${yamlData.cases.length} Cases`;
+                metaNotice.textContent = yamlData.meta.notice || 'No notice provided';
+            }
+
+            yamlData.cases.forEach((testCase, index) => {
+                // Filter logic
+                const input = testCase.Input || '';
+                const output = testCase.ExpectedOutput || '';
+                const searchText = filterText.toLowerCase();
+                
+                if (filterText && !input.toLowerCase().includes(searchText) && !output.toLowerCase().includes(searchText)) {
+                    return;
+                }
+
+                // Create Card
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md';
+                card.id = `case-${index}`;
+
+                // Header
+                const header = document.createElement('div');
+                header.className = 'bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center';
+                header.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-md">#${index + 1}</span>
+                        <h3 class="text-sm font-semibold text-gray-700">Test Case</h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleSection(${index}, 'remarks')" class="text-gray-500 hover:text-blue-600 p-1 rounded-md hover:bg-blue-50 transition-colors" title="Add Remarks">
+                            <i data-lucide="message-square-plus" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                `;
+
+                // Body
+                const body = document.createElement('div');
+                body.className = 'p-6 grid grid-cols-1 lg:grid-cols-2 gap-8';
+
+                // Left Column: Input & Output
+                const leftCol = document.createElement('div');
+                leftCol.className = 'space-y-6';
+
+                // Input Section
+                const inputSection = createSection('Input', testCase.Input, 'input', index, true);
+                leftCol.appendChild(inputSection);
+
+                // Output Section
+                const outputSection = createSection('Expected Output', testCase.ExpectedOutput, 'output', index, true);
+                leftCol.appendChild(outputSection);
+
+                // Right Column: Judge & Remarks
+                const rightCol = document.createElement('div');
+                rightCol.className = 'space-y-6';
+
+                // Judge Section
+                let judgeContent = testCase.Judge;
+                let isJson = false;
+                try {
+                    if (typeof judgeContent === 'string') {
+                        const parsed = JSON.parse(judgeContent);
+                        judgeContent = JSON.stringify(parsed, null, 2);
+                        isJson = true;
+                    }
+                } catch (e) { /* Not JSON or error parsing */ }
+
+                const judgeSection = createSection('Judge / Rubric', judgeContent, 'judge', index, false, isJson);
+                rightCol.appendChild(judgeSection);
+
+                // General Remarks Section (Always visible if modified, or toggleable)
+                const remarksSection = createRemarksSection(index);
+                
+                // Append columns
+                body.appendChild(leftCol);
+                body.appendChild(rightCol);
+
+                // Footer for Remarks (Full width)
+                const footer = document.createElement('div');
+                footer.className = 'px-6 pb-6';
+                footer.appendChild(remarksSection);
+
+                card.appendChild(header);
+                card.appendChild(body);
+                card.appendChild(footer);
+
+                casesList.appendChild(card);
+            });
+
+            lucide.createIcons();
+            hljs.highlightAll();
+        }
+
+        function renderRubric(rubricData) {
+            let data = rubricData;
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (e) {
+                    return null; // Fallback to raw code block
+                }
+            }
+
+            const name = data.rubric_name || 'Untitled Rubric';
+            const version = data.version || '1.0';
+            const scale = data.scale || {};
+            const criteria = data.criteria || [];
+
+            let html = `
+                <div class="space-y-4 font-sans">
+                    <!-- Header -->
+                    <div class="flex items-center justify-between border-b border-gray-200 pb-2">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="scale" class="h-4 w-4 text-purple-600"></i>
+                            <span class="font-semibold text-gray-800 text-sm">${name}</span>
+                        </div>
+                        <span class="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded-full">v${version}</span>
+                    </div>
+
+                    <!-- Scale -->
+                    ${scale.type ? `
+                    <div class="bg-purple-50/50 rounded-md p-3 text-xs border border-purple-100/50">
+                        <span class="font-bold text-purple-700 block mb-1">Scale: ${scale.type}</span>
+                        <span class="text-purple-600/90 leading-relaxed">${scale.meaning}</span>
+                    </div>
+                    ` : ''}
+
+                    <!-- Criteria List -->
+                    <div class="space-y-4">
+                        ${criteria.map(c => `
+                            <div class="border border-gray-200 bg-white rounded-lg p-4 hover:border-purple-300 transition-colors shadow-sm">
+                                <!-- Title Row -->
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="bg-gray-800 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 shadow-sm">${c.id}</span>
+                                        <span class="font-bold text-gray-800 text-sm">${c.name}</span>
+                                    </div>
+                                    ${c.weight_optional ? `<span class="bg-blue-50 text-blue-600 text-[10px] font-medium px-2 py-0.5 rounded-full border border-blue-100">Weight: ${c.weight_optional}</span>` : ''}
+                                </div>
+
+                                <div class="text-xs space-y-3 pl-1">
+                                    <!-- Intent -->
+                                    ${c.intent ? `
+                                    <div class="text-gray-500 italic flex gap-1.5 items-start">
+                                        <i data-lucide="target" class="h-3 w-3 mt-0.5 shrink-0 text-purple-400"></i>
+                                        <span>${c.intent}</span>
+                                    </div>` : ''}
+                                    
+                                    <!-- Definition -->
+                                    <div class="text-gray-700 leading-relaxed border-l-2 border-purple-100 pl-2.5 py-1">
+                                        ${c.definition}
+                                    </div>
+
+                                    <!-- Levels (Grid) -->
+                                    ${c.levels ? `
+                                    <div class="mt-2 bg-gray-50 rounded-md p-2 border border-gray-100">
+                                        <span class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Scoring Levels</span>
+                                        <div class="grid grid-cols-1 gap-2">
+                                            ${Object.entries(c.levels).map(([score, desc]) => `
+                                                <div class="flex gap-2 text-xs">
+                                                    <span class="font-bold text-gray-700 w-8 shrink-0 text-right font-mono text-blue-600">${score}</span>
+                                                    <span class="text-gray-600 border-l border-gray-200 pl-2 leading-relaxed">${desc}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                    ` : ''}
+
+                                    <!-- Evidence & Failures (Columns) -->
+                                    ${(c.evidence_to_look_for || c.common_failure_modes) ? `
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                        ${c.evidence_to_look_for ? `
+                                        <div class="bg-green-50/50 rounded-md p-2 border border-green-100/50">
+                                            <span class="flex items-center gap-1 text-[10px] font-bold text-green-700 uppercase tracking-wider mb-1">
+                                                <i data-lucide="check-circle-2" class="h-3 w-3"></i> Evidence
+                                            </span>
+                                            <ul class="space-y-1">
+                                                ${Array.isArray(c.evidence_to_look_for) ? c.evidence_to_look_for.map(e => `
+                                                    <li class="flex gap-1.5 text-gray-600 leading-snug">
+                                                        <span class="text-green-400 mt-0.5">•</span>
+                                                        <span>${e}</span>
+                                                    </li>
+                                                `).join('') : `<li class="text-gray-600">${c.evidence_to_look_for}</li>`}
+                                            </ul>
+                                        </div>` : ''}
+
+                                        ${c.common_failure_modes ? `
+                                        <div class="bg-red-50/50 rounded-md p-2 border border-red-100/50">
+                                            <span class="flex items-center gap-1 text-[10px] font-bold text-red-700 uppercase tracking-wider mb-1">
+                                                <i data-lucide="alert-triangle" class="h-3 w-3"></i> Failure Modes
+                                            </span>
+                                            <ul class="space-y-1">
+                                                ${Array.isArray(c.common_failure_modes) ? c.common_failure_modes.map(f => `
+                                                    <li class="flex gap-1.5 text-gray-600 leading-snug">
+                                                        <span class="text-red-400 mt-0.5">•</span>
+                                                        <span>${f}</span>
+                                                    </li>
+                                                `).join('') : `<li class="text-gray-600">${c.common_failure_modes}</li>`}
+                                            </ul>
+                                        </div>` : ''}
+                                    </div>
+                                    ` : ''}
+
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            return html;
+        }
+
+        function createSection(title, content, type, index, isMarkdown, isJson = false) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'group relative';
+
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-end mb-2';
+            header.innerHTML = `
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">${title}</h4>
+                <button onclick="focusRemark('${type}', ${index})" class="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1">
+                    <i data-lucide="edit-2" class="h-3 w-3"></i> Comment
+                </button>
+            `;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'bg-gray-50 rounded-lg border border-gray-200 p-4 min-h-[100px] max-h-[800px] text-sm overflow-y-auto relative'; 
+            
+            let rendered = false;
+            
+            if (isJson) {
+                const uiHtml = renderRubric(content);
+                if (uiHtml) {
+                    contentDiv.innerHTML = uiHtml;
+                    rendered = true;
+                    // Note: Icons will be initialized by renderCases' final lucide.createIcons() call
+                }
+            }
+
+            if (!rendered) {
+                if (isMarkdown) {
+                    contentDiv.classList.add('markdown-body');
+                    contentDiv.innerHTML = marked.parse(content || '*Empty*');
+                } else if (isJson) {
+                    contentDiv.innerHTML = `<pre><code class="language-json">${content}</code></pre>`;
+                } else {
+                    contentDiv.textContent = content;
+                }
+            }
+
+            wrapper.appendChild(header);
+            wrapper.appendChild(contentDiv);
+            return wrapper;
+        }
+
+        function createRemarksSection(index) {
+            const container = document.createElement('div');
+            container.className = 'bg-blue-50/50 rounded-xl border border-blue-100 p-4 hidden'; // Hidden by default
+            container.id = `remarks-container-${index}`;
+            
+            // Check if we have existing mods
+            const mod = modifications[index] || {};
+            if (mod.general_comment || mod.input_comment || mod.output_comment || mod.judge_comment) {
+                container.classList.remove('hidden');
+            }
+
+            container.innerHTML = `
+                <h4 class="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                    <i data-lucide="message-square" class="h-4 w-4"></i>
+                    Remarks & Feedback
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-blue-700">General</label>
+                        <textarea oninput="updateModification(${index}, 'general_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="General feedback...">${mod.general_comment || ''}</textarea>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-blue-700">Input Specific</label>
+                        <textarea id="input-remark-${index}" oninput="updateModification(${index}, 'input_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on input...">${mod.input_comment || ''}</textarea>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-blue-700">Output Specific</label>
+                        <textarea id="output-remark-${index}" oninput="updateModification(${index}, 'output_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on expected output...">${mod.output_comment || ''}</textarea>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-blue-700">Judge/Rubric Specific</label>
+                        <textarea id="judge-remark-${index}" oninput="updateModification(${index}, 'judge_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on grading criteria...">${mod.judge_comment || ''}</textarea>
+                    </div>
+                </div>
+            `;
+            return container;
+        }
+
+        // Logic
+        function toggleSection(index, section) {
+            const container = document.getElementById(`remarks-container-${index}`);
+            container.classList.toggle('hidden');
+        }
+
+        function focusRemark(type, index) {
+            const container = document.getElementById(`remarks-container-${index}`);
+            container.classList.remove('hidden');
+            
+            const map = {
+                'input': `input-remark-${index}`,
+                'output': `output-remark-${index}`,
+                'judge': `judge-remark-${index}`
+            };
+            
+            const id = map[type];
+            if (id) {
+                setTimeout(() => document.getElementById(id).focus(), 100);
+            }
+        }
+
+        function updateModification(index, field, value) {
+            if (!modifications[index]) {
+                modifications[index] = { index: index };
+            }
+            modifications[index][field] = value;
+            
+            // Clean up empty entries
+            const mod = modifications[index];
+            if (!mod.general_comment && !mod.input_comment && !mod.output_comment && !mod.judge_comment) {
+                delete modifications[index];
+            }
+        }
+
+        function handleSearch(e) {
+            const val = e.target.value;
+            renderCases(val);
+        }
+
+        function exportPatch() {
+            const patchList = Object.values(modifications).sort((a, b) => a.index - b.index);
+            
+            if (patchList.length === 0) {
+                alert('No remarks or modifications to export.');
+                return;
+            }
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const patchData = {
+                meta: {
+                    generated_at: new Date().toISOString(),
+                    original_file: originalFileName,
+                    total_modifications: patchList.length
+                },
+                patches: patchList
+            };
+
+            const yamlString = jsyaml.dump(patchData);
+            const blob = new Blob([yamlString], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `testcase_${timestamp}.patch.yaml`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+    </script>
+</body>
+</html>

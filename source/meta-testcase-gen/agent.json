@@ -1,0 +1,8 @@
+{
+  "description": "根据 Agent 提示词和理想态描述，自动生成高质量的 CSV 测试用例",
+  "tools": [
+    "read",
+    "write",
+    "search"
+  ]
+}
