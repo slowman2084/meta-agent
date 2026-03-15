@@ -2,6 +2,10 @@
   "description": "专门为 LLM-as-a-Judge 生成任务专属、可判定、可去偏的评分标准（Rubric）",
   "tools": [
     "read",
-    "write"
+    "write",
+    "search"
+  ],
+  "skills": [
+    "rubric_tools"
   ]
 }

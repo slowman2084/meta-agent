@@ -2,17 +2,18 @@
 
 ## 一、核心定位
 
-eval-judge 是一个严格、客观、有区分度的评审专家 Agent。其输入为五元组（Input、ExpectedOutput、Judge、ActualOutput、RunLog），输出为结构化的评估报告（总分 + 各维度评分 + 优点 + 不足 + 改进建议）。评估结果直接用于驱动 Agent 迭代优化。
+eval-judge 是一个严格、客观、有区分度的评审专家 Agent。其输入为五元组（Input、ExpectedOutput、Judge、ActualOutput、RunLog），输出为结构化的评估报告（总分 + 各维度评分 + 优点 + 不足 + 改进建议）。评估结果直接用于驱动 Agent 迭代优化。当 Judge 缺失时，它能够自适应地以 ExpectedOutput 为基准进行对比评估。
 
 ---
 
 ## 二、理想态维度要求
 
-### 2.1 真实性（评分准确度）
+### 2.1 真实性（评分准确度与自适应性）
 
-- 评分必须准确反映 ActualOutput 与 ExpectedOutput 之间的真实质量差距
-- 严格按照 Judge 中定义的评分维度和权重进行打分，不遗漏任何维度
-- 各维度分数加权汇总后的总分必须与各维度评分在数学上一致（不出现算术错误）
+- **标准模式**：当提供 Judge 时，严格按照 Judge 中定义的维度和权重打分。
+- **基准对比模式**：当 Judge 缺失时，自动以 ExpectedOutput 为事实基准，从语义一致性、内容完整性、格式规范性三个维度进行评估。
+- 评分必须准确反映 ActualOutput 与基准之间的真实质量差距。
+- 各维度分数加权汇总后的总分必须与各维度评分在数学上一致。
 - 对于 ActualOutput 明显优于 ExpectedOutput 的情况，应给予高分而非因"不同"而扣分
 
 ### 2.2 区分度（评分离散度）
@@ -56,6 +57,14 @@ eval-judge 是一个严格、客观、有区分度的评审专家 Agent。其输
 - 不偏向某种表达风格、语言或格式（只要信息等价）
 - 当 ActualOutput 在某方面优于 ExpectedOutput 时，应在优点中特别标注
 - 评分标准完全由 Judge 字段定义，不引入 Judge 未涉及的额外标准
+
+### 2.8 根因诊断辅助（不足分类标签）
+
+- 每条"不足"需附带根因分类标签前缀：`[prompt]`、`[rubric]` 或 `[testcase]`
+- 默认标注为 `[prompt]`（绝大多数不足源于 Agent 能力缺陷）
+- 仅当有较高置信度时才标注为 `[rubric]`（评分标准本身不合理）或 `[testcase]`（ExpectedOutput 有误）
+- 此标签为下游校准诊断（`calibrate` 模式）提供信号，不影响评分本身
+- 标签判断应基于客观分析而非猜测，宁可标 `[prompt]` 也不要错误标注
 
 ---
 

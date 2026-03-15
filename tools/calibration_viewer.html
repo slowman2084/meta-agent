@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calibration Diagnostics Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .card-enter { animation: cardEnter 0.3s ease-out; }
+        @keyframes cardEnter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .severity-high { border-left: 4px solid #ef4444; }
+        .severity-medium { border-left: 4px solid #f59e0b; }
+        .severity-low { border-left: 4px solid #22c55e; }
+        .decision-option { transition: all 0.15s ease; }
+        .decision-option:hover { transform: translateX(4px); }
+        .decision-option.selected { background-color: #eff6ff; border-color: #3b82f6; }
+        .collapse-body { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .collapse-body.open { max-height: 9999px; }
+        /* Tabs */
+        .tab-active { background-color: #1e293b; color: #fff; }
+        .tab-inactive { background-color: #f1f5f9; color: #64748b; }
+        .tab-inactive:hover { background-color: #e2e8f0; color: #334155; }
+        /* Root cause badges */
+        .rc-prompt_gap          { background: #dbeafe; color: #1d4ed8; }
+        .rc-rubric_too_strict   { background: #fef3c7; color: #92400e; }
+        .rc-ideal_rubric_mismatch { background: #f3e8ff; color: #6b21a8; }
+        .rc-agent_capability    { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ─── Header ─────────────────────────────────────────────────────────────── -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+    <div class="w-full px-6 sm:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <i data-lucide="stethoscope" class="h-6 w-6 text-blue-600"></i>
+            <h1 class="text-xl font-bold text-gray-900 tracking-tight">Calibration Diagnostics</h1>
+            <span id="agent-badge" class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium hidden"></span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <input type="file" id="file-input" accept=".json" class="hidden" multiple />
+            <button onclick="document.getElementById('file-input').click()"
+                class="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors border border-gray-200 text-sm font-medium">
+                <i data-lucide="upload" class="h-4 w-4"></i>
+                <span>Load Reports</span>
+            </button>
+            <button onclick="exportDecisions()" id="export-btn"
+                class="flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled>
+                <i data-lucide="download" class="h-4 w-4"></i>
+                <span>Export Decisions</span>
+            </button>
+        </div>
+    </div>
+    <!-- Case Tabs -->
+    <div id="tabs-row" class="hidden border-t border-gray-100 px-6 flex items-center space-x-1.5 py-2 overflow-x-auto"></div>
+</header>
+
+<!-- ─── Main ────────────────────────────────────────────────────────────────── -->
+<main class="flex-1 w-full px-6 sm:px-8 py-6">
+
+    <!-- Empty state -->
+    <div id="empty-state" class="flex flex-col items-center justify-center h-96 text-gray-400">
+        <i data-lucide="file-search" class="h-16 w-16 mb-4 stroke-1"></i>
+        <p class="text-lg font-medium mb-1">No reports loaded</p>
+        <p class="text-sm">Click "Load Reports" to open one or more <code class="bg-gray-100 px-1 rounded">calibration_report.json</code> files</p>
+    </div>
+
+    <!-- Content -->
+    <div id="content" class="hidden space-y-6">
+
+        <!-- Summary cards -->
+        <section>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Score</p>
+                    <p id="stat-avg" class="text-3xl font-bold text-gray-900">—</p>
+                    <p id="stat-raw" class="text-xs text-gray-400 mt-0.5"></p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Cases</p>
+                    <p id="stat-total" class="text-3xl font-bold text-gray-900">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Low Score</p>
+                    <p id="stat-low" class="text-3xl font-bold text-red-500">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Min / Max</p>
+                    <p id="stat-range" class="text-2xl font-bold text-gray-900">—</p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Diagnostics</p>
+                    <p id="stat-diag" class="text-3xl font-bold text-amber-500">—</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Score Distribution Bar -->
+        <section class="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Score Distribution</h3>
+            <div id="score-bars" class="flex items-end space-x-1 h-20"></div>
+            <div class="flex justify-between text-xs text-gray-400 mt-1">
+                <span>&lt;60</span><span>60-69</span><span>70-79</span><span>80-89</span><span>90-100</span>
+            </div>
+        </section>
+
+        <!-- Criterion Breakdown (only when a single case is selected and has breakdown data) -->
+        <section id="breakdown-section" class="hidden">
+            <h2 class="text-lg font-bold text-gray-900 mb-3 flex items-center space-x-2">
+                <i data-lucide="bar-chart-2" class="h-5 w-5 text-gray-400"></i>
+                <span>Criterion Breakdown</span>
+            </h2>
+            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Criterion</th>
+                            <th class="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">Avail</th>
+                            <th class="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-28">Score</th>
+                            <th class="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">Root Cause</th>
+                            <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Note</th>
+                        </tr>
+                    </thead>
+                    <tbody id="breakdown-tbody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Filter bar -->
+        <section class="flex items-center flex-wrap gap-2">
+            <span class="text-sm text-gray-500">Filter:</span>
+            <button onclick="setFilter('all')"         data-filter="all"         class="filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-900 text-white">All</button>
+            <button onclick="setFilter('prompt')"      data-filter="prompt"      class="filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700">Prompt</button>
+            <button onclick="setFilter('rubric')"      data-filter="rubric"      class="filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700">Rubric</button>
+            <button onclick="setFilter('ideal_state')" data-filter="ideal_state" class="filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-purple-50 hover:text-purple-700">Ideal State</button>
+            <button onclick="setFilter('testcase')"    data-filter="testcase"    class="filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-cyan-50 hover:text-cyan-700">TestCase</button>
+        </section>
+
+        <!-- Diagnostics cards -->
+        <section id="diagnostics-section" class="space-y-4"></section>
+
+        <!-- Cross-Case Patterns -->
+        <section id="patterns-section" class="hidden">
+            <h2 class="text-lg font-bold text-gray-900 mb-3 flex items-center space-x-2">
+                <i data-lucide="git-branch" class="h-5 w-5 text-gray-400"></i>
+                <span>Cross-Case Patterns</span>
+            </h2>
+            <div id="patterns-list" class="space-y-3"></div>
+        </section>
+
+        <!-- Decisions -->
+        <section id="decisions-section" class="hidden">
+            <h2 class="text-lg font-bold text-gray-900 mb-3 flex items-center space-x-2">
+                <i data-lucide="list-checks" class="h-5 w-5 text-gray-400"></i>
+                <span>Decisions</span>
+                <span id="decision-progress" class="text-sm font-normal text-gray-500"></span>
+            </h2>
+            <div id="decisions-list" class="space-y-4"></div>
+        </section>
+
+    </div>
+</main>
+
+<footer class="bg-white border-t border-gray-200 py-3 px-6 text-center text-xs text-gray-400">
+    Meta-Agent Calibration Viewer v2.0
+</footer>
+
+<!-- ─── Script ──────────────────────────────────────────────────────────────── -->
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allReports = {};        // label (e.g. "Case 0") → parsed JSON
+let currentTab  = 'all';
+let currentFilter = 'all';
+let userDecisions = {};     // prefixedDecId → selectedOptionId
+
+// ── File loading ──────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    let remaining = files.length;
+    files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                const label = deriveCaseLabel(data, file.name);
+                allReports[label] = data;
+            } catch (err) {
+                alert('Failed to parse ' + file.name + ': ' + err.message);
+            }
+            if (--remaining === 0) { renderTabs(); renderCurrentTab(); }
+        };
+        reader.readAsText(file);
+    });
+    e.target.value = '';
+});
+
+function deriveCaseLabel(data, filename) {
+    if (typeof data.focus_case === 'number') return 'Case ' + data.focus_case;
+    if (Array.isArray(data.focus_cases) && data.focus_cases.length === 1) return 'Case ' + data.focus_cases[0];
+    const m = filename.match(/case(\d+)/i);
+    if (m) return 'Case ' + m[1];
+    return filename.replace(/\.json$/i, '');
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function renderTabs() {
+    const row = document.getElementById('tabs-row');
+    row.classList.remove('hidden');
+    const sortedLabels = Object.keys(allReports).sort();
+
+    const makeTab = (label, display) =>
+        `<button onclick="switchTab('${label}')" data-tab="${label}"
+            class="tab-btn ${currentTab === label ? 'tab-active' : 'tab-inactive'} px-4 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap">
+            ${display}
+        </button>`;
+
+    row.innerHTML = makeTab('all', 'All Cases') +
+        sortedLabels.map(l => makeTab(l, l)).join('');
+    lucide.createIcons();
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    currentFilter = 'all';
+    renderTabs();
+    renderCurrentTab();
+}
+
+// ── Main render dispatcher ────────────────────────────────────────────────────
+function renderCurrentTab() {
+    const labels = Object.keys(allReports);
+    if (labels.length === 0) return;
+
+    document.getElementById('empty-state').classList.add('hidden');
+    document.getElementById('content').classList.remove('hidden');
+
+    const reports = currentTab === 'all'
+        ? Object.values(allReports)
+        : (allReports[currentTab] ? [allReports[currentTab]] : []);
+
+    if (reports.length === 0) return;
+
+    // Agent badge
+    const names = [...new Set(reports.map(r => r.agent_name).filter(Boolean))];
+    const badge = document.getElementById('agent-badge');
+    badge.textContent = names.join(', ') || 'Unknown';
+    badge.classList.remove('hidden');
+
+    renderSummary(reports);
+    renderScoreBars(reports);
+    // Breakdown: only when exactly one case tab is selected and data exists
+    const singleReport = (currentTab !== 'all' && reports.length === 1) ? reports[0] : null;
+    renderBreakdown(singleReport);
+    renderDiagnostics(reports);
+    renderPatterns(reports);
+    renderDecisions(reports);
+    updateExportBtn();
+    lucide.createIcons();
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+function renderSummary(reports) {
+    const summaries = reports.map(r => r.evaluation_summary).filter(Boolean);
+
+    if (summaries.length === 1) {
+        const s = summaries[0];
+        const avg = s.avg_score ?? s.raw_score_pct ?? '—';
+        setAvg(avg);
+        document.getElementById('stat-raw').textContent = s.raw_score ?? '';
+        document.getElementById('stat-total').textContent = s.total_cases ?? '—';
+        document.getElementById('stat-low').textContent   = s.low_score_count ?? '—';
+        document.getElementById('stat-range').textContent = `${s.min_score ?? '?'} / ${s.max_score ?? '?'}`;
+    } else {
+        const nums = summaries.map(s => s.avg_score ?? s.raw_score_pct ?? 0).filter(v => typeof v === 'number');
+        const overall = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : '—';
+        setAvg(overall);
+        document.getElementById('stat-raw').textContent = nums.join(' / ');
+        document.getElementById('stat-total').textContent = summaries.reduce((a, s) => a + (s.total_cases || 0), 0);
+        document.getElementById('stat-low').textContent   = summaries.reduce((a, s) => a + (s.low_score_count || 0), 0);
+        const mins = summaries.map(s => s.min_score).filter(v => v !== undefined);
+        const maxs = summaries.map(s => s.max_score).filter(v => v !== undefined);
+        document.getElementById('stat-range').textContent = mins.length ? `${Math.min(...mins)} / ${Math.max(...maxs)}` : '—';
+    }
+
+    const totalDiags = reports.reduce((a, r) => a + (r.diagnostics || []).length, 0);
+    document.getElementById('stat-diag').textContent = totalDiags;
+}
+
+function setAvg(v) {
+    const el = document.getElementById('stat-avg');
+    el.textContent = v;
+    el.className = 'text-3xl font-bold ' + (typeof v === 'number'
+        ? (v >= 80 ? 'text-green-600' : v >= 60 ? 'text-amber-500' : 'text-red-500')
+        : 'text-gray-900');
+}
+
+// ── Score bars ────────────────────────────────────────────────────────────────
+function renderScoreBars(reports) {
+    const merged = { below_60: 0, '60_69': 0, '70_79': 0, '80_89': 0, '90_100': 0 };
+    reports.forEach(r => {
+        const d = r.evaluation_summary?.score_distribution;
+        if (!d) return;
+        Object.keys(merged).forEach(k => { merged[k] += d[k] || 0; });
+    });
+    const bars = document.getElementById('score-bars');
+    bars.innerHTML = '';
+    const keys   = ['below_60', '60_69', '70_79', '80_89', '90_100'];
+    const colors  = ['bg-red-400', 'bg-orange-400', 'bg-amber-400', 'bg-blue-400', 'bg-green-400'];
+    const maxVal  = Math.max(...keys.map(k => merged[k]), 1);
+    keys.forEach((k, i) => {
+        const val = merged[k];
+        const pct = Math.max((val / maxVal) * 100, 4);
+        const bar = document.createElement('div');
+        bar.className = `flex-1 ${colors[i]} rounded-t-md relative cursor-default`;
+        bar.style.height = pct + '%';
+        bar.title = `${val} case(s)`;
+        const lbl = document.createElement('span');
+        lbl.className = 'absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-semibold text-gray-600';
+        lbl.textContent = val || '';
+        bar.appendChild(lbl);
+        bars.appendChild(bar);
+    });
+}
+
+// ── Criterion Breakdown ───────────────────────────────────────────────────────
+function findBreakdown(report) {
+    if (!report) return null;
+    if (Array.isArray(report.criterion_breakdown)) return report.criterion_breakdown;
+    for (const key of Object.keys(report)) {
+        if (key.endsWith('_criterion_breakdown') && Array.isArray(report[key])) return report[key];
+    }
+    return null;
+}
+
+function renderBreakdown(report) {
+    const section = document.getElementById('breakdown-section');
+    const breakdown = findBreakdown(report);
+    if (!breakdown || breakdown.length === 0) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+
+    const tbody = document.getElementById('breakdown-tbody');
+    tbody.innerHTML = '';
+    breakdown.forEach(item => {
+        const avail = item.points_available;
+        const est   = item.points_estimated;
+        const pct   = avail > 0 ? Math.round((est / avail) * 100) : 0;
+        const rc    = item.root_cause;
+
+        const rcBadge = rc
+            ? `<span class="px-1.5 py-0.5 rounded text-xs font-medium rc-${rc}">${rcShortLabel(rc)}</span>`
+            : '<span class="text-gray-300 text-xs">—</span>';
+
+        const scoreColor = !rc
+            ? 'text-green-600'
+            : (pct >= 80 ? 'text-blue-600' : pct >= 40 ? 'text-amber-600' : 'text-red-600');
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        tr.innerHTML = `
+            <td class="px-4 py-2.5 text-sm text-gray-800">${esc(item.criterion_short || '')}</td>
+            <td class="px-3 py-2.5 text-center text-sm font-mono text-gray-400">${avail}</td>
+            <td class="px-3 py-2.5 text-center text-sm font-semibold ${scoreColor}">
+                ${est} <span class="text-xs font-normal text-gray-400">(${pct}%)</span>
+            </td>
+            <td class="px-3 py-2.5 text-center">${rcBadge}</td>
+            <td class="px-4 py-2.5 text-xs text-gray-500">${esc(item.note || '')}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+const RC_LABELS = {
+    prompt_gap:              'Prompt Gap',
+    rubric_too_strict:       'Rubric ↑',
+    ideal_rubric_mismatch:   'Ideal↔Rubric',
+    agent_capability:        'Agent Cap.',
+};
+function rcShortLabel(rc) { return RC_LABELS[rc] || rc; }
+
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+function renderDiagnostics(reports) {
+    const container = document.getElementById('diagnostics-section');
+    container.innerHTML = '';
+    const multiCase = reports.length > 1;
+    let all = [];
+    reports.forEach(r => {
+        const label = Object.keys(allReports).find(k => allReports[k] === r) || '?';
+        (r.diagnostics || []).forEach(d => all.push({ ...d, _src: label }));
+    });
+    if (all.length === 0) {
+        container.innerHTML = '<p class="text-gray-400 text-sm italic">No diagnostics found.</p>';
+        return;
+    }
+    all.forEach((d, idx) => container.appendChild(createDiagCard(d, idx, multiCase)));
+    applyFilter();
+}
+
+function createDiagCard(d, idx, showSrc) {
+    const card = document.createElement('div');
+    card.className = `bg-white rounded-xl border border-gray-200 severity-${d.severity || 'low'} card-enter diag-card`;
+    card.dataset.category = d.category || 'prompt';
+    card.style.animationDelay = (idx * 0.05) + 's';
+
+    const sevBadge = { high: 'bg-red-100 text-red-700', medium: 'bg-amber-100 text-amber-700', low: 'bg-green-100 text-green-700' }[d.severity];
+    const sevText  = { high: 'HIGH', medium: 'MED', low: 'LOW' }[d.severity] || '';
+    const catColors = { prompt: 'bg-blue-100 text-blue-700', rubric: 'bg-amber-100 text-amber-700', ideal_state: 'bg-purple-100 text-purple-700', testcase: 'bg-cyan-100 text-cyan-700' };
+    const catLabels = { prompt: 'Prompt', rubric: 'Rubric', ideal_state: 'Ideal State', testcase: 'TestCase' };
+
+    const rc = d.root_cause_label || d.root_cause_classification;
+    const rcBadge = rc ? `<span class="px-1.5 py-0.5 rounded text-xs font-medium rc-${rc}">${rcShortLabel(rc)}</span>` : '';
+
+    const caseTags = (d.affected_cases || []).map(c =>
+        `<span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs font-mono">Case ${c}</span>`).join(' ');
+
+    const srcBadge = showSrc
+        ? `<span class="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 text-xs font-mono">${esc(d._src)}</span>`
+        : '';
+
+    const evidenceHTML = (d.evidence || []).map(e =>
+        `<li class="text-gray-600 text-sm leading-relaxed">${esc(e)}</li>`).join('');
+
+    const sug = d.suggestion;
+    const sugHTML = sug ? `
+        <div class="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
+            <p class="text-sm font-semibold text-blue-800 mb-1">${esc(sug.description || '')}</p>
+            ${sug.detail ? `<p class="text-sm text-blue-700 whitespace-pre-wrap">${esc(sug.detail)}</p>` : ''}
+            ${sug.current && sug.proposed ? `
+                <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div class="p-2 rounded bg-red-50 border border-red-100">
+                        <p class="font-semibold text-red-700 mb-1">Current</p>
+                        <pre class="whitespace-pre-wrap text-red-800 leading-relaxed">${esc(sug.current)}</pre>
+                    </div>
+                    <div class="p-2 rounded bg-green-50 border border-green-100">
+                        <p class="font-semibold text-green-700 mb-1">Proposed</p>
+                        <pre class="whitespace-pre-wrap text-green-800 leading-relaxed">${esc(sug.proposed)}</pre>
+                    </div>
+                </div>` : ''}
+        </div>` : '';
+
+    card.innerHTML = `
+        <div class="p-4 cursor-pointer" onclick="toggleCollapse(this)">
+            <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center flex-wrap gap-1.5">
+                    <span class="text-xs font-mono text-gray-400">${d.id || ''}</span>
+                    <span class="px-2 py-0.5 rounded-full ${catColors[d.category] || 'bg-gray-100 text-gray-700'} text-xs font-semibold">${catLabels[d.category] || d.category}</span>
+                    ${d.subcategory ? `<span class="text-xs text-gray-400">${esc(d.subcategory)}</span>` : ''}
+                    ${sevBadge ? `<span class="px-2 py-0.5 rounded-full ${sevBadge} text-xs font-semibold">${sevText}</span>` : ''}
+                    ${rcBadge}
+                    ${srcBadge}
+                </div>
+                <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400 transition-transform collapse-icon flex-shrink-0"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-gray-900 mt-2">${esc(d.title || '')}</h3>
+            <div class="flex flex-wrap gap-1 mt-1">${caseTags}</div>
+        </div>
+        <div class="collapse-body">
+            <div class="px-4 pb-4 border-t border-gray-100 pt-3">
+                <p class="text-sm text-gray-700 leading-relaxed mb-3">${esc(d.description || '')}</p>
+                ${evidenceHTML ? `<div class="mb-3"><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Evidence</p><ul class="list-disc list-inside space-y-1">${evidenceHTML}</ul></div>` : ''}
+                ${sugHTML}
+            </div>
+        </div>`;
+    return card;
+}
+
+// ── Patterns ──────────────────────────────────────────────────────────────────
+function renderPatterns(reports) {
+    const section = document.getElementById('patterns-section');
+    const list    = document.getElementById('patterns-list');
+    const all = reports.flatMap(r => r.cross_case_patterns || []);
+    if (all.length === 0) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+    all.forEach(p => {
+        const causesHTML = (p.possible_causes || []).map(c => {
+            const col = { high: 'text-red-600', medium: 'text-amber-600', low: 'text-green-600' }[c.likelihood] || '';
+            return `<span class="${col} text-xs">${esc(c.cause)} (${c.likelihood}): ${esc(c.reason)}</span>`;
+        }).join('<br>');
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-xl border border-gray-200 p-4';
+        card.innerHTML = `
+            <div class="flex items-center flex-wrap gap-1.5 mb-2">
+                <span class="text-xs font-mono text-gray-400">${p.pattern_id || ''}</span>
+                <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-semibold">${p.type || ''}</span>
+                ${p.affected_dimension ? `<span class="text-xs text-gray-500">dim: ${esc(p.affected_dimension)}</span>` : ''}
+            </div>
+            <p class="text-sm text-gray-700 mb-2 leading-relaxed">${esc(p.description || '')}</p>
+            <div class="text-xs space-y-0.5">${causesHTML}</div>`;
+        list.appendChild(card);
+    });
+}
+
+// ── Decisions ─────────────────────────────────────────────────────────────────
+function renderDecisions(reports) {
+    const section = document.getElementById('decisions-section');
+    const list    = document.getElementById('decisions-list');
+    const multiCase = reports.length > 1;
+    let all = [];
+    reports.forEach(r => {
+        const label = Object.keys(allReports).find(k => allReports[k] === r) || '?';
+        (r.decisions || []).forEach(dec => {
+            const pid = multiCase ? `${label}:${dec.id}` : dec.id;
+            all.push({ ...dec, _src: label, _pid: pid });
+        });
+    });
+    if (all.length === 0) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+    all.forEach(dec => {
+        const pid = dec._pid;
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-xl border border-gray-200 p-4';
+
+        const pBadge = dec.priority === 1
+            ? '<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">P1</span>'
+            : '<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-semibold">P2</span>';
+
+        const linkedBadges = (dec.linked_diagnostics || []).map(d =>
+            `<span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-mono">${d}</span>`).join(' ');
+
+        const srcBadge = multiCase
+            ? `<span class="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 text-xs font-mono">${esc(dec._src)}</span>`
+            : '';
+
+        const ACTION_COLORS = {
+            modify_prompt: 'bg-blue-100 text-blue-700',
+            modify_rubric: 'bg-amber-100 text-amber-700',
+            modify_ideal_state: 'bg-purple-100 text-purple-700',
+            modify_testcase: 'bg-cyan-100 text-cyan-700',
+            skip: 'bg-gray-100 text-gray-500'
+        };
+
+        // Gather linked diagnostic details for context
+        const allDiags = reports.flatMap(r => r.diagnostics || []);
+        const linkedDiagDetails = (dec.linked_diagnostics || []).map(did => {
+            const diag = allDiags.find(d => d.id === did);
+            if (!diag) return null;
+            return diag;
+        }).filter(Boolean);
+
+        const diagContextHTML = linkedDiagDetails.length > 0 ? `
+            <div class="mb-3 space-y-2">
+                ${linkedDiagDetails.map(diag => {
+                    const sug = diag.suggestion;
+                    const diffHTML = sug && sug.current && sug.proposed ? `
+                        <div class="mt-1.5 grid grid-cols-2 gap-2 text-xs">
+                            <div class="p-2 rounded bg-red-50 border border-red-100">
+                                <p class="font-semibold text-red-700 mb-0.5">Current</p>
+                                <pre class="whitespace-pre-wrap text-red-800 leading-relaxed">${esc(sug.current)}</pre>
+                            </div>
+                            <div class="p-2 rounded bg-green-50 border border-green-100">
+                                <p class="font-semibold text-green-700 mb-0.5">Proposed</p>
+                                <pre class="whitespace-pre-wrap text-green-800 leading-relaxed">${esc(sug.proposed)}</pre>
+                            </div>
+                        </div>` : (sug && sug.detail ? `<p class="mt-1 text-xs text-gray-600 leading-relaxed">${esc(sug.detail)}</p>` : '');
+                    return `<div class="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                        <div class="flex items-center gap-1.5 mb-1">
+                            <span class="text-xs font-mono text-gray-400">${diag.id}</span>
+                            <span class="text-xs font-semibold text-gray-700">${esc(diag.title || '')}</span>
+                        </div>
+                        ${diffHTML}
+                    </div>`;
+                }).join('')}
+            </div>` : '';
+
+        const optsHTML = (dec.options || []).map(opt => `
+            <label class="decision-option flex items-start space-x-3 p-3 rounded-lg border border-gray-200 cursor-pointer ${userDecisions[pid] === opt.id ? 'selected' : ''}"
+                   data-dec="${esc(pid)}" data-opt="${opt.id}">
+                <input type="radio" name="dec_${esc(pid)}" value="${opt.id}" class="mt-0.5 accent-blue-600"
+                       ${userDecisions[pid] === opt.id ? 'checked' : ''}
+                       onchange="selectDecision('${esc(pid)}', '${opt.id}')">
+                <div class="flex-1">
+                    <p class="text-sm font-medium text-gray-900">${esc(opt.label)}</p>
+                    <div class="flex items-center flex-wrap gap-2 mt-1">
+                        <span class="px-1.5 py-0.5 rounded text-xs font-mono ${ACTION_COLORS[opt.action_type] || 'bg-gray-100 text-gray-500'}">${opt.action_type}</span>
+                        ${opt.auto_applicable ? '<span class="text-xs text-green-600">auto-applicable</span>' : ''}
+                    </div>
+                    ${opt.impact ? `<p class="text-xs text-gray-500 mt-1 leading-relaxed">${esc(opt.impact)}</p>` : ''}
+                </div>
+            </label>`).join('');
+
+        card.innerHTML = `
+            <div class="flex items-center flex-wrap gap-1.5 mb-2">
+                ${pBadge}
+                <span class="text-xs font-mono text-gray-400">${dec.id}</span>
+                ${linkedBadges}
+                ${srcBadge}
+            </div>
+            <p class="text-sm font-semibold text-gray-900 mb-3">${esc(dec.question || '')}</p>
+            ${diagContextHTML}
+            <div class="space-y-2">${optsHTML}</div>`;
+        list.appendChild(card);
+    });
+    updateDecisionProgress();
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function setFilter(cat) {
+    currentFilter = cat;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        const active = btn.dataset.filter === cat;
+        btn.className = active
+            ? 'filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-900 text-white'
+            : 'filter-btn px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200';
+    });
+    applyFilter();
+}
+
+function applyFilter() {
+    document.querySelectorAll('.diag-card').forEach(card => {
+        card.style.display = (currentFilter === 'all' || card.dataset.category === currentFilter) ? '' : 'none';
+    });
+}
+
+// ── Decision helpers ──────────────────────────────────────────────────────────
+function selectDecision(pid, optId) {
+    userDecisions[pid] = optId;
+    document.querySelectorAll(`[data-dec="${pid}"]`).forEach(el => {
+        el.classList.toggle('selected', el.dataset.opt === optId);
+    });
+    updateDecisionProgress();
+    updateExportBtn();
+}
+
+function updateDecisionProgress() {
+    const total   = Object.values(allReports).reduce((a, r) => a + (r.decisions || []).length, 0);
+    const decided = Object.keys(userDecisions).length;
+    document.getElementById('decision-progress').textContent = `(${decided}/${total} decided)`;
+}
+
+function updateExportBtn() {
+    const total = Object.values(allReports).reduce((a, r) => a + (r.decisions || []).length, 0);
+    document.getElementById('export-btn').disabled = total === 0 || Object.keys(userDecisions).length === 0;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportDecisions() {
+    const agents = [...new Set(Object.values(allReports).map(r => r.agent_name).filter(Boolean))];
+    const output = {
+        agent_name: agents.join(', ') || 'unknown',
+        decided_at: new Date().toISOString(),
+        decisions: Object.entries(userDecisions).map(([pid, opt]) => ({
+            decision_id: pid,
+            selected_option: opt
+        }))
+    };
+    const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `decisions_${agents[0] || 'unknown'}_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ── Misc ──────────────────────────────────────────────────────────────────────
+function toggleCollapse(headerEl) {
+    const body = headerEl.nextElementSibling;
+    const icon = headerEl.querySelector('.collapse-icon');
+    body.classList.toggle('open');
+    icon.style.transform = body.classList.contains('open') ? 'rotate(180deg)' : '';
+}
+
+function esc(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+lucide.createIcons();
+</script>
+</body>
+</html>

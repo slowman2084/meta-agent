@@ -91,6 +91,8 @@ scripts/run_*.py
 # 只保留基础组件 (meta-*) 在版本控制中
 source/*
 !source/meta-*/
+!source/rules/
+!source/hooks/
 
 # 工作日志（本地迭代记录，不纳入版本控制）
 工作日志/
@@ -159,3 +161,4 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+scripts/hooks/.test_context

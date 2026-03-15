@@ -36,3 +36,8 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 tenacity>=9.0.0
 regex>=2024.0.0
+
+# ===================================
+# DSPy Integration
+# ===================================
+dspy-ai>=2.5.0

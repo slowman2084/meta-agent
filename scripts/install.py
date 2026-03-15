@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Agent 安装脚本 — 将 source/[AgentName]/ 同步到所有 IDE 目录
+Agent & Rules 安装脚本 — 将 source/ 中的 Agent 和 Rules 同步到所有 IDE 目录
 
 用法:
-    ./venv/bin/python scripts/install.py                              # 安装所有 Agent（model 留空）
-    ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent
+    ./venv/bin/python scripts/install.py                              # 安装所有 Rules + 所有 Agent
+    ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent（不安装 Rules）
     ./venv/bin/python scripts/install.py my-agent --model gpt-4       # 指定模型（使用 prompt_gpt-4.md）
+    ./venv/bin/python scripts/install.py --rules-only                 # 仅安装 Rules
 """
 
 import json
@@ -16,6 +17,7 @@ import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
+RULES_SOURCE_DIR = os.path.join(SOURCE_DIR, "rules")
 
 TOOL_MAP = {
     "cursor": {
@@ -177,11 +179,53 @@ def update_agents_md(agent_name, description):
 
 # ── MCP merge ────────────────────────────────────────────────────────
 
-def merge_mcp(mcp_full_config):
+def merge_mcp(mcp_full_config, agent_name=None):
+    """
+    将 Agent 的 MCP 配置合并到根 .mcp.json
+    
+    返回: (success, message)
+    """
     root_mcp = os.path.join(PROJECT_ROOT, ".mcp.json")
-    root = read_json(root_mcp) or {}
+    
+    # 检查根 .mcp.json 是否存在，不存在则自动创建
+    if not os.path.exists(root_mcp):
+        print(f"    → 根目录 .mcp.json 不存在，自动创建...")
+        write_json(root_mcp, {"mcpServers": {}})
+    
+    root = read_json(root_mcp)
+    if root is None:
+        print(f"    ⚠️  无法读取根 .mcp.json，尝试重新创建...")
+        root = {"mcpServers": {}}
+        write_json(root_mcp, root)
+    
     if "mcpServers" not in root:
         root["mcpServers"] = {}
+
+    # 检查 Agent MCP 配置是否有效（是否包含实际内容而非占位符）
+    warnings = []
+    for name, cfg in mcp_full_config.items():
+        env = cfg.get("env", {})
+        empty_secrets = []
+        for key, value in env.items():
+            # 检查敏感字段是否为空或占位符
+            is_secret = any(s in key.upper() for s in ["SECRET", "KEY", "TOKEN", "PASSWORD"])
+            is_empty = not value or value in ["", "your-api-key", "xxx", "YOUR_KEY_HERE"]
+            if is_secret and is_empty:
+                empty_secrets.append(key)
+        
+        if empty_secrets:
+            warnings.append((name, empty_secrets))
+
+    # 如果有未填写的敏感配置，提示用户
+    if warnings:
+        print(f"    ⚠️  MCP 配置中发现未填写的敏感信息：")
+        for server_name, keys in warnings:
+            print(f"       - {server_name}: {', '.join(keys)}")
+        if agent_name:
+            print(f"\n    💡 建议使用 setup_mcp.py 配置密钥：")
+            print(f"       ./venv/bin/python scripts/setup_mcp.py {agent_name} --show")
+            print(f"       ./venv/bin/python scripts/setup_mcp.py {agent_name} --template <模板> --env KEY=VALUE")
+        print()
 
     changed = False
     for name, cfg in mcp_full_config.items():
@@ -210,6 +254,150 @@ def copy_skills(skills_src):
                 shutil.rmtree(dst)
             shutil.copytree(src, dst)
             print(f"    → {ide_skills}/{skill_name}/")
+
+
+# ── Rules install ────────────────────────────────────────────────────
+
+# .mdc 格式目标（Cursor / CodeBuddy IDE / Claude Code）
+IDE_RULES_TARGETS = [".cursor/rules", ".codebuddy/rules", ".claude/rules"]
+
+
+def convert_frontmatter_for_cli(content):
+    """将 .mdc frontmatter 转换为 CodeBuddy CLI 兼容的 .md frontmatter。
+
+    CLI 差异：
+    - 不支持 description / globs 字段
+    - 支持 alwaysApply + paths
+    - alwaysApply: false 且无 paths → 规则不加载
+    因此对于按需子规则（原 alwaysApply: false），CLI 中改为 alwaysApply: true
+    让 CLI 也能正常加载。
+    """
+    if not content.startswith("---"):
+        return content
+
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return content
+
+    fm_text = parts[1]
+    body = parts[2]
+
+    # 解析 frontmatter 字段
+    fm_lines = fm_text.strip().split("\n")
+    fm = {}
+    for line in fm_lines:
+        if ":" in line:
+            key, _, val = line.partition(":")
+            fm[key.strip()] = val.strip()
+
+    # CLI frontmatter：只保留 alwaysApply 和 paths（如果原来有 globs 映射为 paths）
+    cli_fm = {}
+
+    # alwaysApply：CLI 中按需规则也设为 true（CLI 无 read_rules 工具）
+    cli_fm["alwaysApply"] = "true"
+
+    # globs → paths 映射（如果原来用了 globs 做文件匹配）
+    if fm.get("globs"):
+        cli_fm["paths"] = fm["globs"]
+
+    # enabled 字段直通
+    if "enabled" in fm:
+        cli_fm["enabled"] = fm["enabled"]
+
+    cli_fm_str = "\n".join(f"{k}: {v}" for k, v in cli_fm.items())
+    return f"---\n{cli_fm_str}\n---{body}"
+
+
+def install_rules():
+    """将 source/rules/*.mdc 分发到各 IDE 的 rules 目录。
+    
+    对 CodeBuddy 目录额外生成 .md 文件（CLI 兼容格式）。
+    """
+    if not os.path.isdir(RULES_SOURCE_DIR):
+        print("⚠️  source/rules/ 不存在，跳过规则安装")
+        return 0
+
+    rule_files = [f for f in os.listdir(RULES_SOURCE_DIR) if f.endswith(".mdc")]
+    if not rule_files:
+        print("⚠️  source/rules/ 中无 .mdc 文件，跳过规则安装")
+        return 0
+
+    print(f"📋 安装 Rules（{len(rule_files)} 个规则文件）\n")
+
+    installed = 0
+    for rule_file in sorted(rule_files):
+        src = os.path.join(RULES_SOURCE_DIR, rule_file)
+        content = read_text(src)
+
+        # 1) 安装 .mdc 到各 IDE rules 目录
+        for ide_rules_dir in IDE_RULES_TARGETS:
+            target_dir = os.path.join(PROJECT_ROOT, ide_rules_dir)
+            os.makedirs(target_dir, exist_ok=True)
+            dst = os.path.join(target_dir, rule_file)
+            shutil.copy2(src, dst)
+            print(f"  ✅ {ide_rules_dir}/{rule_file}")
+
+        # 2) 为 CodeBuddy CLI 额外生成 .md 版本（转换 frontmatter）
+        cli_dir = os.path.join(PROJECT_ROOT, ".codebuddy", "rules")
+        os.makedirs(cli_dir, exist_ok=True)
+        md_name = rule_file.replace(".mdc", ".md")
+        cli_content = convert_frontmatter_for_cli(content)
+        cli_dst = os.path.join(cli_dir, md_name)
+        write_text(cli_dst, cli_content)
+        print(f"  ✅ .codebuddy/rules/{md_name} (CLI)")
+
+        installed += 1
+        print()
+
+    print(f"  共安装 {installed} 个规则到 {len(IDE_RULES_TARGETS)} IDE 目录 + CLI .md 格式\n")
+    return installed
+
+
+# ── CLAUDE.md ↔ CODEBUDDY.md sync ────────────────────────────────────
+
+def sync_project_memory():
+    """同步 CLAUDE.md 和 CODEBUDDY.md（两者功能相同，分别供 Claude Code 和 CodeBuddy CLI 读取）。
+
+    策略：以较新者为准同步到另一方。若两者都存在且内容不同，以修改时间较新的为源。
+    """
+    claude_md = os.path.join(PROJECT_ROOT, "CLAUDE.md")
+    codebuddy_md = os.path.join(PROJECT_ROOT, "CODEBUDDY.md")
+
+    claude_exists = os.path.exists(claude_md)
+    codebuddy_exists = os.path.exists(codebuddy_md)
+
+    if not claude_exists and not codebuddy_exists:
+        print("  ⚠️  CLAUDE.md 和 CODEBUDDY.md 均不存在，跳过同步")
+        return
+
+    # 只有一方存在：复制到另一方
+    if claude_exists and not codebuddy_exists:
+        shutil.copy2(claude_md, codebuddy_md)
+        print("  ✅ CLAUDE.md → CODEBUDDY.md（新建）")
+        return
+    if codebuddy_exists and not claude_exists:
+        shutil.copy2(codebuddy_md, claude_md)
+        print("  ✅ CODEBUDDY.md → CLAUDE.md（新建）")
+        return
+
+    # 两者都存在：比较内容
+    claude_content = read_text(claude_md)
+    codebuddy_content = read_text(codebuddy_md)
+
+    if claude_content == codebuddy_content:
+        print("  → CLAUDE.md ↔ CODEBUDDY.md 已同步，跳过")
+        return
+
+    # 内容不同：以修改时间较新的为准
+    claude_mtime = os.path.getmtime(claude_md)
+    codebuddy_mtime = os.path.getmtime(codebuddy_md)
+
+    if claude_mtime >= codebuddy_mtime:
+        shutil.copy2(claude_md, codebuddy_md)
+        print("  ✅ CLAUDE.md → CODEBUDDY.md（同步较新内容）")
+    else:
+        shutil.copy2(codebuddy_md, claude_md)
+        print("  ✅ CODEBUDDY.md → CLAUDE.md（同步较新内容）")
 
 
 # ── Install one agent ────────────────────────────────────────────────
@@ -264,7 +452,7 @@ def install_agent(agent_name, model=None):
     print(f"  ✅ AGENTS.md（{agent_name} 章节）")
 
     if mcp_servers_cfg:
-        merge_mcp(mcp_servers_cfg)
+        merge_mcp(mcp_servers_cfg, agent_name)
         print(f"  ✅ .mcp.json（MCP 合并）")
 
     skills_dir = os.path.join(agent_dir, "skills")
@@ -279,12 +467,30 @@ def install_agent(agent_name, model=None):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Agent 安装脚本")
-    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部）")
+    parser = argparse.ArgumentParser(description="Agent & Rules 安装脚本")
+    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Rules）")
     parser.add_argument("--model", "-m", default=None,
                         help="指定模型（使用 prompt_[model].md，不存在时自动从 prompt.md 复制）")
+    parser.add_argument("--rules-only", action="store_true",
+                        help="仅安装 Rules，不安装 Agent")
     args = parser.parse_args()
 
+    # ── Rules 安装 ──
+    # 无参数运行、或 --rules-only 时安装 rules
+    if not args.agents or args.rules_only:
+        install_rules()
+
+    # ── CLAUDE.md ↔ CODEBUDDY.md 同步 ──
+    # 无参数运行、或 --rules-only 时同步
+    if not args.agents or args.rules_only:
+        print("📄 同步项目全局规则\n")
+        sync_project_memory()
+        print()
+
+    if args.rules_only:
+        return 0
+
+    # ── Agent 安装 ──
     if args.agents:
         agents = args.agents
     else:
@@ -292,6 +498,7 @@ def main():
             d for d in os.listdir(SOURCE_DIR)
             if os.path.isdir(os.path.join(SOURCE_DIR, d))
             and not d.startswith(".")
+            and d not in ("rules",)  # 排除 rules 目录
         )
 
     model_info = f"（model: {args.model}）" if args.model else ""

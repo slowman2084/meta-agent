@@ -1,0 +1,97 @@
+---
+description: "Agent Factory - evo_looper 迭代优化模式的完整流程。触发词：evo_looper、迭代优化、开始迭代。需同时加载 af-test 规则。"
+globs:
+alwaysApply: false
+---
+
+# evo_looper 迭代优化模式
+
+## 初始化
+
+1. 运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定了 `model: xxx`，加 `--model xxx`）
+2. 确定：目标 Agent、YAML 路径、目标分数（默认 98）、最大迭代次数（默认 10）
+   - 若指定了 `model: xxx`，后续所有操作使用 `prompt_[model].md`（首次自动从 `prompt.md` 复制）
+
+## 迭代循环
+
+### 步骤 A：测试 + 评估
+
+按 `af-test` 规则中的共享测试-评估流程，逐条执行所有用例。
+- 平台模式下每轮迭代前需重新运行 `./venv/bin/python scripts/prepare_config.py [AgentName] [output_dir]`
+- 汇总评估报告到 `source/[AgentName]/tmp/evalooper/iter_[N]/评估报告.md`
+
+**Baseline 初始化（仅首轮执行）：**
+- 若 `baseline_scores.json` 不存在，将本轮得分写入：
+  ```json
+  { "cases": { "case_0": 72, "case_1": 85, ... }, "avg": 78.5 }
+  ```
+
+**后续轮次（第 2 轮起）：**
+- 读取 `baseline_scores.json`，在报告中增加 `Δ分` 列
+- 对连续 2+ 轮 Δ 均为负值的用例，标记为「难例」
+
+### 步骤 B：判断是否停止
+
+> **evo_looper 是全自动循环，除非满足停止/暂停条件，否则不得暂停询问用户。**
+
+**停止条件：**
+- 排除「难例」后平均分 >= 目标阈值 → 跳到步骤 E
+- 达到最大迭代次数 → 跳到步骤 E
+
+**暂停条件**（由步骤 D 触发）：
+- `meta-retrospective` 发现高严重度 rubric/ideal_state 问题 → 暂停，等待用户审阅
+
+**继续条件（自动进入步骤 C）：**
+- **热身阶段（轮次 ≤ 3）**：单路模式
+- **投票阶段（轮次 ≥ 4）**：3 路候选模式
+- **停滞触发**：本轮分数无改善 → 恢复上轮提示词，立即切换 3 路候选模式
+
+### 步骤 C：优化提示词
+
+#### 单路模式（热身阶段，轮次 ≤ 3）
+
+- 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
+- 调用 `meta-prompt-engineer`，严格控制传入内容：
+  - 当前提示词 + 理想态 + 评估不足与建议 + changelog（必须）
+  - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
+  - 被禁止的优化方向（若已有 `meta-retrospective` 输出，则传入）
+- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
+- 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
+
+#### 3 路候选模式（投票阶段或停滞触发）
+
+1. 备份当前提示词（仅一次）
+2. 确定三条优化路线（若有 `forced_new_directions` 则替换路线 C）：
+   - **路线 A**：侧重推理链 / CoT 框架改进
+   - **路线 B**：侧重输出格式 / 结构化表达改进
+   - **路线 C**：侧重边界条件 / 异常输入覆盖改进
+3. 依次调用 `meta-prompt-engineer` 三次，每次明确指定本次优化路线
+4. 三个候选各自完整执行步骤 A（测试 + 评估），得到三个平均分
+5. 选最高分候选为胜者：
+   - 胜者 → 覆盖写入 `prompt.md`
+   - 败者 → 保存到 `bak/candidate_[A|B|C]_[ts].bak`
+6. 将胜者 CHANGELOG 追加到 `changelog.md`
+7. 运行 `install.py` 同步
+
+> **严禁将优化说明写入提示词；严禁传入 ExpectedOutput。**
+
+### 步骤 D：全局复盘检查
+
+迭代次数能被 3 整除时，调用 `meta-retrospective` 进行全局复盘。
+
+**传入参数**：
+- `current_prompt_path`：`source/[AgentName]/prompt.md`
+- `bak_dir`：`source/[AgentName]/bak/`
+- `eval_dir`：`source/[AgentName]/tmp/evalooper/`
+- `eval_results_dir`：本轮 `iter_[N]/` 目录
+- `baseline_scores_path`：`baseline_scores.json`（若存在）
+
+**处理返回结果**：
+- `avoided_directions` → 下一步骤 C 作为「被禁止的优化方向」
+- `suggested_directions` → 作为 3 路候选模式路线 C 的替代
+
+> 若发现评估体系本身存在严重问题，应暂停 evo_looper，先执行 `calibrate` 修复后再恢复。
+
+### 步骤 E：迭代完成
+
+输出：总迭代次数、最终得分、提示词版本路径、备份历史、建议补充的用户画像。

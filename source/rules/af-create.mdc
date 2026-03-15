@@ -1,0 +1,226 @@
+---
+description: "Agent Factory - create_agent 创建模式和 create_testcases 用例生成模式的完整流程。触发词：create_agent、创建 Agent、新建 Agent、create_testcases、生成用例、补充测试用例"
+globs:
+alwaysApply: false
+---
+
+# create_agent 创建模式 & create_testcases 用例生成模式
+
+## 一、`create_agent` 创建模式的完整流程
+
+### 步骤 1：询问创建方式
+
+向用户展示四种创建方式，让用户选择其一：
+
+```
+请选择创建 Sub Agent 的方式：
+a. 从 Agent 提示词创建（你已有提示词草稿）
+b. 从理想态描述创建（你知道想要什么样的输出效果）
+c. 从 YAML 测试用例创建（你已有测试用例）
+d. 从 LLM 对话记录创建（你有一段与该目的相关的 markdown 对话记录）
+
+请回复 a / b / c / d：
+```
+
+### 步骤 2：询问 Agent 基本信息
+
+```
+请提供以下信息（直接回车使用默认值）：
+- Agent 简要描述（一句话）：
+- Agent 所需工具语义（默认根据功能自动推断）：
+  可选值：read / write / edit / search / bash
+  （不确定可跳过，后续根据 Agent 功能自动推断）
+- Agent 是否需要 MCP 服务？如果是，请提供 MCP 服务名和配置
+```
+
+> 工具语义将在安装时按 `header-format.mdc` 映射表转换为各平台工具名。
+> 若用户跳过，根据 Agent 功能自动判断：只需读取信息 → `[read, search]`；需要写入文件 → 加 `write`；需要执行命令 → 加 `bash`。
+
+### 步骤 3：根据选择的方式执行
+
+#### 方式 a —— 从 Agent 提示词创建
+
+1. 接收用户提供的 Agent 提示词（草稿）
+2. 分析提示词，提炼出"理想态描述"（参见核心规则中理想态维度），将理想态写入 `source/[AgentName]/ideal_state.md`
+3. 询问用户是否需要 `meta-prompt-engineer` 优化提示词：
+
+   ```
+   你的提示词草稿是否需要 meta-prompt-engineer 优化？
+   y. 是（meta-prompt-engineer 会运用 CoT、few-shot 等工程技法将草稿升级为结构完善的 Agent 提示词）
+   n. 否（直接使用草稿作为最终提示词）
+   ```
+
+   - 选 `y`：调用 Sub Agent `meta-prompt-engineer`，传入：用户提供的提示词草稿 + 理想态描述，将输出作为最终提示词
+   - 选 `n`：直接使用用户提供的草稿作为最终提示词，跳过 `meta-prompt-engineer` 调用
+
+4. **创建脚手架并引导补充 references**（在生成测试用例前完成）：
+   - 运行 `./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "工具语义"`，自动创建 `tmp/`、`bak/`、`skills/`、`references/` 等目录和 `changelog.md`、`.mcp.json`、`agent.json` 文件
+   - 将已有的提示词写入 `source/[AgentName]/prompt.md`，理想态写入 `source/[AgentName]/ideal_state.md`
+   - 若用户提供了 MCP 配置，编辑生成的 `.mcp.json`
+   - **暂停并提示用户补充 references**：
+
+     ```
+     📂 目录脚手架已创建完成。
+
+     在生成测试用例之前，如果你的 Agent 依赖特定领域资源（如 API 文档、数据模型定义、
+     字段说明、日志样例、错误码表等），请现在将相关文件放入：
+
+       source/[AgentName]/references/
+
+     这些资源会被 meta-testcase-gen 读取，用于生成更贴近真实系统的测试用例 Input
+     （例如使用真实的 topic id、字段名、过滤条件等）。
+
+     a. 我已放入 references 文件，继续生成测试用例
+     b. 不需要 references，直接继续
+     ```
+
+   - 用户选择 `a` 后，确认 `references/` 目录非空再继续；选择 `b` 则跳过
+
+5. 调用 Sub Agent `meta-testcase-gen` 生成 YAML 测试用例，要求：
+   - 根据提示词推断用户画像（至少 5 个），每个画像至少 1 条用例
+   - YAML 包含 `Input`、`ExpectedOutput`、`Judge` 三个字段（此时 `Judge` 字段可为空占位）
+6. 调用 Sub Agent `meta-rubric-gen`，逐条为每个 `Input` 生成专属的 Judge 评分标准，将结果写回 YAML 中对应的 `Judge` 字段
+   - 传入 `agent_name`（目标 Agent 名称），以便 meta-rubric-gen 读取 `references/`、`.mcp.json`、`skills/` 等资源，使 criterion 贴近真实系统约束
+   - **必须使用 `af-rubric-retry` 规则中定义的重试机制**
+7. 用基线模型实际运行每条 Input，将实际输出填入 `ExpectedOutput`
+8. 将 YAML 写入 `source/[AgentName]/testcases.yaml`
+9. 向 `source/[AgentName]/changelog.md` **追加**初始创建记录：
+
+```
+## [创建] 初始版本（方式 a）
+
+**创建时间：** [YYYY-MM-DD]
+**创建方式：** 从用户提供的提示词草稿创建
+**meta-agent 是否参与：** [是/否]
+**提示词来源说明：** [简述草稿的核心内容/功能定位]
+**测试用例数：** [N] 条
+```
+
+#### 方式 b —— 从理想态描述创建
+
+1. 接收用户提供的理想态描述，将其写入 `source/[AgentName]/ideal_state.md`
+2. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述，由 `meta-prompt-engineer` 运用 CoT、few-shot 等提示词工程技法生成完整的 Agent 提示词（注意：不能只是把理想态要求逐条复述，而是要设计推理路径、示例和约束来实现这些要求）
+3. **创建脚手架并引导补充 references**（同方式 a 步骤 4）
+4. 调用 Sub Agent `meta-testcase-gen` 生成 YAML 测试用例（此时 `Judge` 字段可为空占位）
+5. 调用 Sub Agent `meta-rubric-gen`，逐条生成 Judge 评分标准（**使用重试机制**）
+6. 用基线模型实际运行，填入 `ExpectedOutput`
+7. 将 YAML 写入 `source/[AgentName]/testcases.yaml`
+8. 向 `changelog.md` **追加**创建记录（标签 `[创建] 初始版本（方式 b）`）
+
+#### 方式 c —— 从 YAML 测试用例创建
+
+> 用户提供的 YAML **本身就是测试用例**，不需要另行创建，直接作为主体使用。
+
+1. 接收用户提供的 YAML 文件路径，将其作为测试用例主体
+2. 分析 YAML 中的 `Input` 和 `ExpectedOutput`，提炼理想态描述，写入 `source/[AgentName]/ideal_state.md`
+3. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述 + YAML 中的典型用例（作为 few-shot 参考），生成完整的 Agent 提示词
+4. **创建脚手架并引导补充 references**（同方式 a）
+5. 检查 YAML 是否缺少 `Judge` 字段，如果缺少则调用 `meta-rubric-gen`（**使用重试机制**）逐条生成
+6. 询问用户：是否需要额外补充更多测试用例？
+   - 如果是：调用 `meta-testcase-gen` 生成补充用例 + `meta-rubric-gen` 为新用例生成 Judge，与原 YAML **合并去重**
+   - 如果否：直接使用原用例（补充 Judge 后）
+7. 用基线模型实际运行所有用例，填入 `ExpectedOutput`（已有的保留，仅对空白项填充）
+8. 额外：询问用户是否立即进入 `evo_looper` 模式优化
+9. 向 `changelog.md` **追加**创建记录（标签 `[创建] 初始版本（方式 c）`）
+
+#### 方式 d —— 从 LLM 对话记录创建
+
+1. 接收用户提供的 markdown 对话记录文件路径
+2. 从对话中提取：
+   - Agent 的目的和核心能力
+   - 隐含的约束（对话中用户对 AI 的指令和纠正）
+   - 实际的用例（用户输入 → AI 回复对），过滤闲聊、重复、纠错过程等噪声
+3. 提炼理想态描述，写入 `source/[AgentName]/ideal_state.md`
+4. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述 + 从对话中提取的典型用例（作为 few-shot 参考），生成完整的 Agent 提示词
+5. **创建脚手架并引导补充 references**（同方式 a）
+6. 将对话中提取的用例整理为 YAML，同时调用 `meta-testcase-gen` 补充更多覆盖面，合并去重后存入 `source/[AgentName]/testcases.yaml`
+7. 用基线模型实际运行，填入 `ExpectedOutput`
+8. 向 `changelog.md` **追加**创建记录（标签 `[创建] 初始版本（方式 d）`）
+
+### 步骤 4：确认脚手架完整
+
+> 脚手架已在步骤 3 各方式内部提前运行。此步骤仅做完整性确认。
+
+确认 `source/[AgentName]/` 下已存在：`tmp/`、`bak/`、`skills/`、`references/`、`changelog.md`、`.mcp.json`、`agent.json`、`prompt.md`、`ideal_state.md`。若有缺失，补充运行：
+
+```bash
+./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "read,write"
+```
+
+> 若该 Agent 需要平台测试，还需手动将 `platform_react_runner` skill 复制到 `source/[AgentName]/skills/`。
+
+### 步骤 5：执行安装并输出建议
+
+运行安装脚本将 Agent 分发到各 IDE 目录：
+
+```bash
+./venv/bin/python scripts/install.py [AgentName]
+```
+
+安装完成后输出：
+
+```
+✅ Agent 创建完成！已生成以下源文件：
+- [列出 source/[AgentName]/ 下所有生成的文件路径]
+
+已通过 install.py 自动安装到所有 IDE 目录。
+```
+
+---
+
+## 二、`create_testcases` 用例生成模式的完整流程
+
+1. 询问用户指定目标 Agent 名称
+2. 读取该 Agent 的提示词 `source/[AgentName]/prompt.md`
+3. 检查是否已有对应的理想态文件（`source/[AgentName]/ideal_state.md`）和 YAML 文件（`source/[AgentName]/testcases.yaml`）
+4. 询问用户是否提供用户画像，如不提供则自动生成至少 5 个
+5. 调用 Sub Agent `meta-testcase-gen` 生成新用例
+6. 如果已有 YAML 则合并去重，如果没有则新建
+7. 用基线模型实际运行，填入 `ExpectedOutput`
+8. 向 `source/[AgentName]/changelog.md` **追加**用例变更记录：
+
+```
+## [用例] 补充测试用例
+
+**时间：** [YYYY-MM-DD]
+**操作：** 新增 [N] 条用例（合并去重后总计 [M] 条）
+**覆盖方向：** [简述新增用例补充了哪些画像或场景]
+```
+
+9. 完成后建议执行 `test_agent` 或 `evo_looper`
+10. **可选：人工审阅**：若用户希望在浏览器中查看、审阅生成的测试用例，建议使用 `tools/testcase_viewer.html`
+
+---
+
+## 三、人工审阅测试用例（可选）
+
+当 AI 生成测试用例后，用户可能希望在更友好的界面中审阅、标注反馈。项目提供了 `tools/testcase_viewer.html` 工具支持此场景。
+
+### 何时建议使用
+
+| 场景 | 建议 |
+|------|------|
+| `create_agent` 完成后，用户想确认用例质量 | ✅ 建议使用 |
+| `create_testcases` 生成大量用例后 | ✅ 建议使用 |
+| `evo_looper` 多轮迭代中，某些用例持续低分 | ✅ 建议使用（审阅 Judge 是否合理） |
+| 用户明确要求「帮我看看用例」或「审阅测试数据」 | ✅ 主动推荐 |
+
+### 使用方式
+
+向用户提供以下指引：
+
+```
+📋 测试用例已生成，如需人工审阅，可使用可视化工具：
+
+1. 在浏览器中打开 tools/testcase_viewer.html
+2. 点击「Load YAML」加载 source/[AgentName]/testcases.yaml
+3. 查看每条用例的 Input、ExpectedOutput、Judge（Rubric 会以结构化卡片展示）
+4. 如有修改建议，可在界面中添加 Remarks，最后「Export Patch」导出反馈文件
+```
+
+### 工具功能
+
+- **YAML 解析**：支持加载 `testcases.yaml` 文件
+- **Rubric 可视化**：将 JSON 格式的 Judge 渲染为易读的评分标准卡片
+- **Markdown 渲染**：Input 和 ExpectedOutput 支持 Markdown 格式展示
+- **批注导出**：用户的修改建议可导出为 `.patch.yaml` 文件，供后续处理

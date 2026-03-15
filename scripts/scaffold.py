@@ -31,6 +31,7 @@ def scaffold(agent_name, description="", tools=None):
     subdirs = ["tmp", "bak"]
     if not platform_mode:
         subdirs.append("skills")
+        subdirs.append("references")
     for subdir in subdirs:
         os.makedirs(os.path.join(agent_dir, subdir), exist_ok=True)
 

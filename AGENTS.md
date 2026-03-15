@@ -9,6 +9,7 @@
 - `create_testcases`（或"生成用例"）：为已有 Agent 生成测试用例
 - `test_agent`（或"测试 Agent"）：测试并评估 Agent 质量
 - `evo_looper`（或"迭代优化"）：循环测试+优化直到达标
+- `calibrate`（或"校准"、"诊断评估体系"）：分析评估结果根因，输出结构化诊断报告
 
 **核心约束：**
 - 修改 Agent 提示词前，必须先备份到 `source/[AgentName]/bak/`
@@ -44,7 +45,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-prompt-engineer
 
-**描述**：Prompt engineering expert - transforms ideal state into high-quality Agent prompts using CoT, few-shot techniques
+**描述**：提示词工程专家，将理想态要求转化为运用 CoT、few-shot 等技法的高质量 Agent 提示词，也负责根据评估反馈迭代优化提示词
 
 **提示词**：
 
@@ -54,7 +55,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-testcase-gen
 
-**描述**：Test case generator - automatically generates high-quality YAML test cases from Agent prompts and ideal states
+**描述**：根据 Agent 提示词和理想态描述，自动生成高质量的 YAML 测试用例
 
 **提示词**：
 
@@ -64,7 +65,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-eval-judge
 
-**描述**：Evaluation expert - scores Sub Agent outputs based on rubrics and reference answers
+**描述**：评估 Sub Agent 输出质量的评分专家，根据评分标准和参考答案对实际输出进行打分
 
 **提示词**：
 
@@ -74,7 +75,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-retrospective
 
-**描述**：Iteration retrospective expert - analyzes prompt iteration changes, identifies degradation patterns, outputs structured reports
+**描述**：迭代优化全局复盘专家。分析多轮提示词迭代历史，识别反模式和劣化主线，输出 forced_new_directions 供 evo_looper 步骤 C 消费。需要 bak_dir（≥2个备份文件）。
 
 **提示词**：
 
@@ -84,7 +85,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-ideal-state
 
-**描述**：Ideal state document generator - creates structured, actionable ideal state specifications from business scenarios
+**描述**：根据用户提供的业务场景和需求，运用 AI Agent 理想态设计最佳实践，生成结构完整、可落地的理想态文档
 
 **提示词**：
 
@@ -94,7 +95,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-rubric-gen
 
-**描述**：Rubric generator - creates task-specific, verifiable, bias-resistant scoring criteria for LLM-as-a-Judge
+**描述**：专门为 LLM-as-a-Judge 生成任务专属、可判定、可去偏的评分标准（Rubric）
 
 **提示词**：
 
@@ -104,7 +105,7 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ## Agent: meta-log-converter
 
-**描述**：Log converter - transforms platform test execution logs (stdout) to ShareGPT JSON format
+**描述**：平台日志转换器，将平台测试执行日志（stdout）转换为 ShareGPT 格式 JSON，支持转换脚本缓存和复用。
 
 **提示词**：
 
@@ -113,3 +114,43 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 ---
 
 <!-- 业务 Agent 章节（如 my-agent）请在本地通过 install.py 添加，不纳入版本控制 -->
+
+## Agent: cls-log-agent
+
+**描述**：腾讯云 CLS 日志检索分析专家，支持日志查询、错误分析及 APM 协同排障。
+
+**提示词**：
+
+> 请参见 `source/cls-log-agent/prompt.md`
+
+---
+
+## Agent: meta-debug
+
+**描述**：评估体系调试专家（Debug/Calibrate）。诊断 rubric、理想态、提示词三元组的一致性问题，从实际输出中洞察设计缺陷，输出 calibration_report.json 供人工决策。
+
+**提示词**：
+
+> 请参见 `source/meta-debug/prompt.md`
+
+---
+
+## Agent: cls-log-agent@observable
+
+**描述**：腾讯云 CLS 日志检索分析专家（可观测平台版，Qwen3 模型）
+
+**提示词**：
+
+> 请参见 `source/cls-log-agent@observable/prompt.md`
+
+---
+
+## Agent: 歌词生成系统
+
+**描述**：根据用户提供的歌词创作需求（主题、风格、场景、核心意象、剧情要求），生成符合要求的原创歌词
+
+**提示词**：
+
+> 请参见 `source/歌词生成系统/prompt.md`
+
+---

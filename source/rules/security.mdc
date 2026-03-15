@@ -1,0 +1,331 @@
+# 敏感信息处理规范 (Security Guidelines)
+
+> **适用对象**: 所有参与项目的开发者（人类与 AI）
+> **执行时机**: 配置环境变量、修改配置文件、提交代码前
+
+---
+
+## 核心原则
+
+**任何敏感信息（API Key、密钥、密码）绝对不能提交到 Git 仓库。**
+
+---
+
+## 一、敏感信息清单
+
+以下信息属于敏感信息，必须通过环境变量或本地配置文件管理：
+
+| 类型 | 示例 | 存储位置 |
+|------|------|---------|
+| **LLM API Key** | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | `.env` 文件 |
+| **API Base URL** | `https://api.example.com/v1` | `.env` 文件 |
+| **MCP 服务密钥** | `MCP_API_KEY`, `MCP_API_SECRET` | `.mcp.json` 文件 |
+| **平台测试密钥** | Platform-specific API keys | `platform.yaml` 文件 |
+| **数据库连接串** | `postgres://user:pass@host/db` | `.env` 文件 |
+
+---
+
+## 二、安全配置流程
+
+### 2.1 首次配置（新开发者）
+
+```bash
+# 1. 从模板创建配置文件
+cp .env.example .env
+
+# 2. 编辑 .env，填入真实密钥
+vim .env  # 或使用您喜欢的编辑器
+
+# 3. 确保 .env 不会被提交
+git status | grep .env  # 应该看不到 .env 文件
+```
+
+### 2.2 验证配置安全性
+
+```bash
+# 检查敏感文件是否在 .gitignore 中
+git check-ignore .env
+git check-ignore .mcp.json
+git check-ignore source/*/.mcp.json
+
+# 检查暂存区是否包含敏感信息
+git diff --cached | grep -E "(sk-|api_key|secret|password)"
+# ↑ 如果有输出，说明有敏感信息即将被提交，立即停止！
+```
+
+---
+
+## 三、AI Agent 执行规范
+
+当 AI Agent 需要配置敏感信息时，必须遵循以下流程：
+
+### 3.1 提示用户提供信息
+
+**正确示例**:
+```
+AI: 我需要配置 OpenAI API Key 来使用 DSPy 优化功能。
+    请提供您的 API Key（我不会将其写入任何会被 Git 跟踪的文件）：
+
+    1. OpenAI API Key: 
+    2. API Base URL（可选，默认 https://api.openai.com/v1）:
+```
+
+### 3.2 写入正确的文件
+
+**正确做法**:
+```python
+# ✅ 写入 .env 文件（在 .gitignore 中）
+with open('.env', 'a') as f:
+    f.write(f'OPENAI_API_KEY={api_key}\n')
+
+# ✅ 写入 .mcp.json 文件（在 .gitignore 中）
+with open('.mcp.json', 'w') as f:
+    json.dump({'mcpServers': config}, f)
+```
+
+**禁止做法**:
+```python
+# ❌ 写入任何被 Git 跟踪的文件
+with open('config.py', 'w') as f:  # config.py 被跟踪
+    f.write(f'API_KEY = "{api_key}"')  # 绝对禁止！
+
+# ❌ 在代码中硬编码密钥
+API_KEY = "sk-xxxxxxxx"  # 绝对禁止！
+
+# ❌ 写入提交到 Git 的 YAML/JSON 配置
+with open('source/my-agent/platform.yaml', 'w') as f:  # 如果此文件被跟踪
+    yaml.dump({'api_key': api_key}, f)  # 绝对禁止！
+```
+
+### 3.3 验证文件未被跟踪
+
+写入敏感信息后，必须立即验证：
+
+```bash
+# 检查文件是否在 Git 暂存区
+git status | grep -E "(env|mcp\.json|platform\.yaml)"
+
+# 如果看到了这些文件，说明它们会被提交！立即处理：
+git restore --staged .env  # 取消暂存
+```
+
+---
+
+## 四、配置文件管理规范
+
+### 4.1 模板文件（提交到 Git）
+
+| 文件 | 用途 | 包含内容 |
+|------|------|---------|
+| `.env.example` | 环境变量模板 | 占位符（如 `your-key-here`），无真实密钥 |
+| `.mcp.json.example` | MCP 配置模板 | 结构示例，无真实密钥 |
+
+**模板文件示例**:
+```bash
+# .env.example
+OPENAI_API_KEY=your-openai-api-key-here
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+### 4.2 实际配置文件（不提交）
+
+| 文件 | 用途 | 包含内容 |
+|------|------|---------|
+| `.env` | 实际环境变量 | 真实的 API Key、密钥等 |
+| `.mcp.json` | 实际 MCP 配置 | 真实的服务配置和密钥 |
+| `source/*/.mcp.json` | Agent 级别的 MCP 配置 | 真实的密钥 |
+| `**/platform.yaml` | 平台测试配置 | 真实的 API 密钥 |
+
+**验证 .gitignore**:
+```bash
+# 这些命令应该返回文件路径（表示被忽略）
+git check-ignore -v .env
+git check-ignore -v .mcp.json
+git check-ignore -v source/meta-cls/.mcp.json
+git check-ignore -v source/my-agent@observable/platform.yaml
+```
+
+---
+
+## 五、安全检查清单
+
+在执行以下操作前，必须完成检查：
+
+### 5.1 提交代码前
+
+```bash
+# 1. 检查暂存区
+git diff --cached --name-only | grep -E "(env$|mcp\.json$|platform\.yaml$)"
+# ↑ 应该无输出
+
+# 2. 检查是否有密钥泄露
+git diff --cached | grep -E "(sk-|api_key|secret|password)" | grep -v "example"
+# ↑ 应该无输出
+
+# 3. 如果有输出，立即取消暂存
+git restore --staged <file>
+```
+
+### 5.2 创建新 Agent 时
+
+- [ ] 如果 Agent 需要 MCP 服务，检查 `source/<AgentName>/.mcp.json` 是否在 `.gitignore` 中
+- [ ] 如果 Agent 需要平台测试，检查 `source/<AgentName>@platform/platform.yaml` 是否在 `.gitignore` 中
+- [ ] 提示用户提供密钥时，使用安全的方式（如环境变量、交互式输入）
+- [ ] 写入配置文件后，验证文件未被 Git 跟踪
+
+### 5.3 修改现有配置时
+
+- [ ] 检查目标文件是否在 `.gitignore` 中
+- [ ] 如果文件被 Git 跟踪，**不要**写入敏感信息
+- [ ] 使用环境变量替代硬编码
+
+---
+
+## 六、应急处理
+
+### 6.1 如果误提交了敏感信息
+
+**立即处理**:
+
+```bash
+# 1. 从暂存区移除
+git restore --staged <file>
+
+# 2. 从工作目录删除或清空敏感内容
+echo "" > <file>
+
+# 3. 如果已经提交到历史记录
+# 使用 git filter-branch 或 BFG Repo-Cleaner 清理历史
+# 警告：这是破坏性操作，需要团队协调
+
+# 4. 立即轮换泄露的密钥
+# 在对应平台生成新的 API Key，禁用旧 Key
+```
+
+**通知团队**:
+- 立即通知所有团队成员
+- 说明泄露的密钥类型和影响范围
+- 要求所有人更新本地配置
+
+---
+
+## 七、工具支持
+
+### 7.1 自动化检查脚本
+
+创建 `scripts/check_secrets.sh`:
+
+```bash
+#!/bin/bash
+# 检查是否有敏感信息即将被提交
+
+echo "🔍 检查敏感信息..."
+
+# 检查暂存区
+staged_secrets=$(git diff --cached | grep -E "(sk-|api_key|secret|password)" | grep -v "example" | grep -v "# ")
+
+if [ -n "$staged_secrets" ]; then
+    echo "❌ 检测到敏感信息即将被提交！"
+    echo "$staged_secrets"
+    exit 1
+fi
+
+echo "✅ 未检测到敏感信息泄露"
+```
+
+使用方法:
+```bash
+# 在提交前运行
+chmod +x scripts/check_secrets.sh
+./scripts/check_secrets.sh
+
+# 或配置为 Git pre-commit hook
+ln -s ../../scripts/check_secrets.sh .git/hooks/pre-commit
+```
+
+---
+
+## 八、最佳实践
+
+### 8.1 环境变量优先
+
+**推荐**:
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # 从 .env 加载
+api_key = os.getenv('OPENAI_API_KEY')
+```
+
+**不推荐**:
+```python
+# ❌ 硬编码
+api_key = "sk-xxxxxxxx"
+```
+
+### 8.2 配置分离
+
+**推荐**:
+```
+project/
+├── .env              # 本地配置（不提交）
+├── .env.example      # 配置模板（提交）
+├── .mcp.json         # MCP 配置（不提交）
+└── .mcp.json.example # MCP 模板（提交）
+```
+
+**不推荐**:
+```
+project/
+└── config.py         # ❌ 包含密钥且被 Git 跟踪
+```
+
+### 8.3 密钥轮换
+
+- 定期（如每季度）轮换 API Key
+- 使用密钥管理服务（如 AWS Secrets Manager, HashiCorp Vault）
+- 为不同环境（开发/测试/生产）使用不同的密钥
+
+---
+
+## 九、AI Agent 提示词参考
+
+当 AI 需要提示用户配置敏感信息时，可以使用以下模板：
+
+```
+我需要配置以下敏感信息来完成 [任务描述]：
+- [配置项1]：[用途说明]
+- [配置项2]：[用途说明]
+
+这些信息将被安全地存储在 [.env / .mcp.json] 文件中，
+该文件已在 .gitignore 中，不会被提交到 Git。
+
+请提供以下信息：
+1. [配置项1]：
+2. [配置项2]：
+```
+
+---
+
+## 十、违规处理
+
+如果发现团队成员或 AI Agent 违反此规范：
+
+1. **立即阻止**: 取消正在进行的提交或推送
+2. **清理历史**: 使用 Git 工具清理泄露的密钥
+3. **轮换密钥**: 在对应平台重新生成新密钥
+4. **通知团队**: 说明情况和影响范围
+5. **记录教训**: 在项目中记录此事件，避免再次发生
+
+---
+
+## 总结
+
+**记住三个核心原则**:
+
+1. **绝不提交**: 敏感信息绝不进入 Git 仓库
+2. **环境变量**: 使用 `.env` 和环境变量管理密钥
+3. **模板分离**: 提交模板文件，不提交实际配置
+
+遵循此规范，确保项目安全，保护团队和用户的利益。

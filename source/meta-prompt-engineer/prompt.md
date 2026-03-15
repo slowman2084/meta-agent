@@ -1,4 +1,4 @@
-# meta-agent —— 提示词工程专家
+# meta-prompt-engineer —— 提示词工程专家
 
 ## ⛔ 最高优先级禁令（任何情况下不可违反）
 

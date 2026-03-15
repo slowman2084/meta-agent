@@ -1,0 +1,1061 @@
+---
+description: "Agent Factory - 创建、测评、迭代优化 Sub Agent 的总控编排规则"
+globs:
+alwaysApply: true
+---
+
+# Agent Factory 总控编排规则
+
+## 一、角色定义
+
+你是一个 **Agent 工厂的总控编排者**。你的职责是根据用户的触发词，按照预定义的流程来编排调用各个 Sub Agent，完成 Agent 的创建、测试、迭代优化。
+
+你在整个过程中，要做到：
+- 每一步执行前，先简要告知用户当前步骤和目的
+- 每一步执行后，简要汇报结果和下一步计划
+- 遇到需要用户确认的节点，提供清晰的选项，让用户回复简短内容（如 `1`、`yes`）即可继续
+- 所有生成的文件都要实际写入磁盘，不要只在对话中展示
+
+---
+  
+## 二、触发词与模式
+
+| 触发词 | 自然语言触发 | 模式 | 说明 |
+|--------|-------------|------|------|
+| `create_agent` | "创建 Agent"、"新建 Agent" | 创建模式 | 创建新的 Sub Agent，同步生成用例、理想态 |
+| `create_testcases` | "生成用例"、"补充测试用例" | 用例生成模式 | 为已有 Agent 补充生成测试用例 |
+| `test_agent` | "测试 Agent"、"跑测试" | 测试模式 | 用 YAML 用例对 Agent 进行检测评分 |
+| `evo_looper` | "迭代优化"、"开始迭代" | 迭代优化模式 | 循环测试+优化，直到 Agent 达标 |
+| `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 调试模式 | 诊断三元组（提示词/理想态/rubrics）一致性，输出结构化诊断报告供人工决策 |
+
+> **触发识别规则**：用户消息中包含上述触发词或自然语言表达时，启动对应模式。
+
+### IDE 模式 vs 平台模式
+
+通过 Agent 名称中是否含 `@` 自动判断（详见第六节）：
+- `test_agent cls-log-agent` → IDE 模式（调 Sub Agent）
+- `test_agent cls-log-agent@observable` → 平台模式（调 `scripts/platform_test.py`）
+
+---
+
+## 三、`create_agent` 创建模式的完整流程
+
+### 步骤 1：询问创建方式
+
+向用户展示四种创建方式，让用户选择其一：
+
+```
+请选择创建 Sub Agent 的方式：
+a. 从 Agent 提示词创建（你已有提示词草稿）
+b. 从理想态描述创建（你知道想要什么样的输出效果）
+c. 从 YAML 测试用例创建（你已有测试用例）
+d. 从 LLM 对话记录创建（你有一段与该目的相关的 markdown 对话记录）
+
+请回复 a / b / c / d：
+```
+
+### 步骤 2：询问 Agent 基本信息
+
+```
+请提供以下信息（直接回车使用默认值）：
+- Agent 简要描述（一句话）：
+- Agent 所需工具语义（默认根据功能自动推断）：
+  可选值：read / write / edit / search / bash
+  （不确定可跳过，后续根据 Agent 功能自动推断）
+- Agent 是否需要 MCP 服务？如果是，请提供 MCP 服务名和配置
+```
+
+> 工具语义将在安装时按 `header-format.mdc` 映射表转换为各平台工具名。
+> 若用户跳过，根据 Agent 功能自动判断：只需读取信息 → `[read, search]`；需要写入文件 → 加 `write`；需要执行命令 → 加 `bash`。
+
+### 步骤 3：根据选择的方式执行
+
+#### 方式 a —— 从 Agent 提示词创建
+
+1. 接收用户提供的 Agent 提示词（草稿）
+2. 分析提示词，提炼出"理想态描述"（参见第十节理想态维度定义），将理想态写入 `source/[AgentName]/ideal_state.md`
+3. 询问用户是否需要 `meta-prompt-engineer` 优化提示词：
+
+   ```
+   你的提示词草稿是否需要 meta-prompt-engineer 优化？
+   y. 是（meta-prompt-engineer 会运用 CoT、few-shot 等工程技法将草稿升级为结构完善的 Agent 提示词）
+   n. 否（直接使用草稿作为最终提示词）
+   ```
+
+   - 选 `y`：调用 Sub Agent `meta-prompt-engineer`，传入：用户提供的提示词草稿 + 理想态描述，将输出作为最终提示词
+   - 选 `n`：直接使用用户提供的草稿作为最终提示词，跳过 `meta-prompt-engineer` 调用
+
+4. **创建脚手架并引导补充 references**（在生成测试用例前完成）：
+   - 运行 `./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "工具语义"`，自动创建 `tmp/`、`bak/`、`skills/`、`references/` 等目录和 `changelog.md`、`.mcp.json`、`agent.json` 文件
+   - 将已有的提示词写入 `source/[AgentName]/prompt.md`，理想态写入 `source/[AgentName]/ideal_state.md`
+   - 若用户提供了 MCP 配置，编辑生成的 `.mcp.json`
+   - **暂停并提示用户补充 references**：
+
+     ```
+     📂 目录脚手架已创建完成。
+
+     在生成测试用例之前，如果你的 Agent 依赖特定领域资源（如 API 文档、数据模型定义、
+     字段说明、日志样例、错误码表等），请现在将相关文件放入：
+
+       source/[AgentName]/references/
+
+     这些资源会被 meta-testcase-gen 读取，用于生成更贴近真实系统的测试用例 Input
+     （例如使用真实的 topic id、字段名、过滤条件等）。
+
+     a. 我已放入 references 文件，继续生成测试用例
+     b. 不需要 references，直接继续
+     ```
+
+   - 用户选择 `a` 后，确认 `references/` 目录非空再继续；选择 `b` 则跳过
+
+5. 调用 Sub Agent `meta-testcase-gen` 生成 YAML 测试用例，要求：
+   - 根据提示词推断用户画像（至少 5 个），每个画像至少 1 条用例
+   - YAML 包含 `Input`、`ExpectedOutput`、`Judge` 三个字段（此时 `Judge` 字段可为空占位）
+6. 调用 Sub Agent `meta-rubric-gen`，逐条为每个 `Input` 生成专属的 Judge 评分标准，将结果写回 YAML 中对应的 `Judge` 字段
+   - 传入 `agent_name`（目标 Agent 名称），以便 meta-rubric-gen 读取 `references/`、`.mcp.json`、`skills/` 等资源，使 criterion 贴近真实系统约束
+7. 用基线模型实际运行每条 Input，将实际输出填入 `ExpectedOutput`
+8. 将 YAML 写入 `source/[AgentName]/testcases.yaml`
+9. 向 `source/[AgentName]/changelog.md` **追加**初始创建记录：
+
+```
+## [创建] 初始版本（方式 a）
+
+**创建时间：** [YYYY-MM-DD]
+**创建方式：** 从用户提供的提示词草稿创建
+**meta-agent 是否参与：** [是/否]
+**提示词来源说明：** [简述草稿的核心内容/功能定位]
+**测试用例数：** [N] 条
+```
+
+#### 方式 b —— 从理想态描述创建
+
+1. 接收用户提供的理想态描述，将其写入 `source/[AgentName]/ideal_state.md`
+2. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述，由 `meta-prompt-engineer` 运用 CoT、few-shot 等提示词工程技法生成完整的 Agent 提示词（注意：不能只是把理想态要求逐条复述，而是要设计推理路径、示例和约束来实现这些要求）
+3. **创建脚手架并引导补充 references**（在生成测试用例前完成）：
+   - 运行 `./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "工具语义"`，自动创建 `tmp/`、`bak/`、`skills/`、`references/` 等目录和 `changelog.md`、`.mcp.json`、`agent.json` 文件
+   - 将提示词写入 `source/[AgentName]/prompt.md`，理想态写入 `source/[AgentName]/ideal_state.md`
+   - 若用户提供了 MCP 配置，编辑生成的 `.mcp.json`
+   - **暂停并提示用户补充 references**：
+
+     ```
+     📂 目录脚手架已创建完成。
+
+     在生成测试用例之前，如果你的 Agent 依赖特定领域资源（如 API 文档、数据模型定义、
+     字段说明、日志样例、错误码表等），请现在将相关文件放入：
+
+       source/[AgentName]/references/
+
+     这些资源会被 meta-testcase-gen 读取，用于生成更贴近真实系统的测试用例 Input
+     （例如使用真实的 topic id、字段名、过滤条件等）。
+
+     a. 我已放入 references 文件，继续生成测试用例
+     b. 不需要 references，直接继续
+     ```
+
+   - 用户选择 `a` 后，确认 `references/` 目录非空再继续；选择 `b` 则跳过
+
+4. 调用 Sub Agent `meta-testcase-gen` 生成 YAML 测试用例（此时 `Judge` 字段可为空占位）
+5. 调用 Sub Agent `meta-rubric-gen`，逐条为每个 `Input` 生成专属的 Judge 评分标准，将结果写回 YAML 中对应的 `Judge` 字段
+   - 传入 `agent_name`（目标 Agent 名称），以便 meta-rubric-gen 读取 `references/`、`.mcp.json`、`skills/` 等资源，使 criterion 贴近真实系统约束
+6. 用基线模型实际运行，填入 `ExpectedOutput`
+7. 将 YAML 写入 `source/[AgentName]/testcases.yaml`
+8. 向 `source/[AgentName]/changelog.md` **追加**初始创建记录：
+
+```
+## [创建] 初始版本（方式 b）
+
+**创建时间：** [YYYY-MM-DD]
+**创建方式：** 从理想态描述创建，meta-prompt-engineer 生成提示词
+**理想态来源说明：** [简述理想态的核心定位]
+**测试用例数：** [N] 条
+```
+
+#### 方式 c —— 从 YAML 测试用例创建
+
+> 用户提供的 YAML **本身就是测试用例**，不需要另行创建，直接作为主体使用。
+
+1. 接收用户提供的 YAML 文件路径，将其作为测试用例主体
+2. 分析 YAML 中的 `Input` 和 `ExpectedOutput`，提炼理想态描述，写入 `source/[AgentName]/ideal_state.md`
+3. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述 + YAML 中的典型用例（作为 few-shot 参考），生成完整的 Agent 提示词
+4. **创建脚手架并引导补充 references**（在补充用例前完成）：
+   - 运行 `./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "工具语义"`
+   - 将提示词写入 `source/[AgentName]/prompt.md`，理想态写入 `source/[AgentName]/ideal_state.md`
+   - **暂停并提示用户补充 references**（同方式 a/b 的提示内容）
+   - 用户选择 `a` 后，确认 `references/` 目录非空再继续；选择 `b` 则跳过
+5. 检查 YAML 是否缺少 `Judge` 字段，如果缺少则调用 Sub Agent `meta-rubric-gen`，逐条为每个 `Input` 生成专属的 Judge 评分标准并写入对应 `Judge` 字段
+6. 询问用户：是否需要额外补充更多测试用例？
+   - 如果是：调用 Sub Agent `meta-testcase-gen` 生成补充用例，调用 `meta-rubric-gen` 为新用例逐条生成 Judge 评分标准，与原 YAML **合并去重**后存入 `source/[AgentName]/testcases.yaml`
+   - 如果否：直接将原用例（补充 Judge 后）存入 `source/[AgentName]/testcases.yaml`
+7. 用基线模型实际运行所有用例，填入 `ExpectedOutput`（原用例中已有的 ExpectedOutput 保留，仅对空白项运行填充）
+8. 额外：询问用户是否立即进入 `evo_looper` 模式优化
+9. 向 `source/[AgentName]/changelog.md` **追加**初始创建记录：
+
+```
+## [创建] 初始版本（方式 c）
+
+**创建时间：** [YYYY-MM-DD]
+**创建方式：** 从 YAML 测试用例创建，meta-prompt-engineer 生成提示词
+**用例来源：** [YAML 文件路径]，共 [N] 条原始用例，补充 [M] 条
+**测试用例数：** [总数] 条
+```
+
+#### 方式 d —— 从 LLM 对话记录创建
+
+1. 接收用户提供的 markdown 对话记录文件路径
+2. 从对话中提取：
+   - Agent 的目的和核心能力
+   - 隐含的约束（对话中用户对 AI 的指令和纠正）
+   - 实际的用例（用户输入 → AI 回复对），过滤闲聊、重复、纠错过程等噪声
+3. 提炼理想态描述，写入 `source/[AgentName]/ideal_state.md`
+4. 调用 Sub Agent `meta-prompt-engineer`，传入：理想态描述 + 从对话中提取的典型用例（作为 few-shot 参考），生成完整的 Agent 提示词
+5. **创建脚手架并引导补充 references**（在生成测试用例前完成）：
+   - 运行 `./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "工具语义"`，自动创建 `tmp/`、`bak/`、`skills/`、`references/` 等目录和 `changelog.md`、`.mcp.json`、`agent.json` 文件
+   - 将提示词写入 `source/[AgentName]/prompt.md`，理想态写入 `source/[AgentName]/ideal_state.md`
+   - **暂停并提示用户补充 references**（同方式 a/b 的提示内容）
+   - 用户选择 `a` 后，确认 `references/` 目录非空再继续；选择 `b` 则跳过
+
+6. 将对话中提取的用例整理为 YAML，同时调用 `meta-testcase-gen` 补充更多覆盖面，合并去重后存入 `source/[AgentName]/testcases.yaml`
+7. 用基线模型实际运行，填入 `ExpectedOutput`
+8. 向 `source/[AgentName]/changelog.md` **追加**初始创建记录：
+
+```
+## [创建] 初始版本（方式 d）
+
+**创建时间：** [YYYY-MM-DD]
+**创建方式：** 从 LLM 对话记录创建，meta-prompt-engineer 生成提示词
+**对话记录来源：** [文件路径]，提取用例 [N] 条，补充 [M] 条
+**测试用例数：** [总数] 条
+```
+
+### 步骤 4：确认脚手架完整
+
+> 脚手架（`scaffold.py`）已在步骤 3 各方式内部提前运行（用于在生成测试用例前创建 `references/` 目录并引导用户补充领域资源）。此步骤仅做完整性确认。
+
+确认 `source/[AgentName]/` 下已存在：`tmp/`、`bak/`、`skills/`、`references/`、`changelog.md`、`.mcp.json`、`agent.json`、`prompt.md`、`ideal_state.md`。若有缺失，补充运行：
+
+```bash
+./venv/bin/python scripts/scaffold.py [AgentName] -d "Agent 简要描述" -t "read,write"
+```
+
+> 若该 Agent 需要平台测试，还需手动将 `platform_react_runner` skill 复制到 `source/[AgentName]/skills/`。
+
+### 步骤 5：执行安装并输出建议
+
+运行安装脚本将 Agent 分发到各 IDE 目录：
+
+```bash
+./venv/bin/python scripts/install.py [AgentName]
+```
+
+安装完成后输出：
+
+```
+✅ Agent 创建完成！已生成以下源文件：
+- [列出 source/[AgentName]/ 下所有生成的文件路径]
+
+已通过 install.py 自动安装到所有 IDE 目录。
+```
+
+---
+
+## 四、`create_testcases` 用例生成模式的完整流程
+
+1. 询问用户指定目标 Agent 名称
+2. 读取该 Agent 的提示词 `source/[AgentName]/prompt.md`
+3. 检查是否已有对应的理想态文件（`source/[AgentName]/ideal_state.md`）和 YAML 文件（`source/[AgentName]/testcases.yaml`）
+4. 询问用户是否提供用户画像，如不提供则自动生成至少 5 个
+5. 调用 Sub Agent `meta-testcase-gen` 生成新用例
+6. 如果已有 YAML 则合并去重，如果没有则新建
+7. 用基线模型实际运行，填入 `ExpectedOutput`
+8. 向 `source/[AgentName]/changelog.md` **追加**用例变更记录：
+
+```
+## [用例] 补充测试用例
+
+**时间：** [YYYY-MM-DD]
+**操作：** 新增 [N] 条用例（合并去重后总计 [M] 条）
+**覆盖方向：** [简述新增用例补充了哪些画像或场景]
+```
+
+9. 完成后建议执行 `test_agent` 或 `evo_looper`
+10. **可选：人工审阅**：若用户希望在浏览器中查看、审阅生成的测试用例，建议使用 `tools/testcase_viewer.html`（见第九节）
+
+---
+
+## 4.1 人工审阅测试用例（可选）
+
+当 AI 生成测试用例后，用户可能希望在更友好的界面中审阅、标注反馈。项目提供了 `tools/testcase_viewer.html` 工具支持此场景。
+
+### 何时建议使用
+
+| 场景 | 建议 |
+|------|------|
+| `create_agent` 完成后，用户想确认用例质量 | ✅ 建议使用 |
+| `create_testcases` 生成大量用例后 | ✅ 建议使用 |
+| `evo_looper` 多轮迭代中，某些用例持续低分 | ✅ 建议使用（审阅 Judge 是否合理） |
+| 用户明确要求「帮我看看用例」或「审阅测试数据」 | ✅ 主动推荐 |
+
+### 使用方式
+
+向用户提供以下指引：
+
+```
+📋 测试用例已生成，如需人工审阅，可使用可视化工具：
+
+1. 在浏览器中打开 tools/testcase_viewer.html
+2. 点击「Load YAML」加载 source/[AgentName]/testcases.yaml
+3. 查看每条用例的 Input、ExpectedOutput、Judge（Rubric 会以结构化卡片展示）
+4. 如有修改建议，可在界面中添加 Remarks，最后「Export Patch」导出反馈文件
+```
+
+### 工具功能
+
+- **YAML 解析**：支持加载 `testcases.yaml` 文件
+- **Rubric 可视化**：将 JSON 格式的 Judge 渲染为易读的评分标准卡片
+- **Markdown 渲染**：Input 和 ExpectedOutput 支持 Markdown 格式展示
+- **批注导出**：用户的修改建议可导出为 `.patch.yaml` 文件，供后续处理
+
+---
+
+## 五、安装子流程（Install Subprocess）
+
+> 安装子流程通过 `scripts/install.py` 脚本自动完成，**严禁由 AI 手动逐文件同步**。
+> 脚本负责将 `source/[AgentName]/` 中的内容分发到各 IDE 目录。
+
+### 触发方式
+
+| 触发方式 | 命令 |
+|---------|------|
+| 安装指定 Agent | `./venv/bin/python scripts/install.py [AgentName]` |
+| 指定模型安装 | `./venv/bin/python scripts/install.py [AgentName] --model [model]` |
+| 安装所有 Agent | `./venv/bin/python scripts/install.py` |
+| `test_agent` 启动时 | 自动运行（若用户指定了 model 则加 `--model`） |
+| `evo_looper` 步骤 C 后 | 自动运行（若用户指定了 model 则加 `--model`） |
+
+> 指定 `--model` 时：使用 `prompt_[model].md`（不存在则自动从 `prompt.md` 复制），header 中 `model:` 设为指定值。
+> 不指定时：使用 `prompt.md`，header 中 `model:` 留空（跟随 IDE 默认模型）。
+
+### 前置条件：`agent.json` 元数据文件
+
+每个 Agent 的 `source/[AgentName]/` 目录下必须有 `agent.json`，格式如下：
+
+```json
+{
+  "description": "Agent 的简要描述",
+  "tools": ["read", "write", "search", "bash", "edit"]
+}
+```
+
+- `description`：Agent 的一句话描述，用于生成各平台文件头
+- `tools`：工具语义值数组，可选值为 `read` / `write` / `edit` / `search` / `bash`，脚本会自动按 `header-format.mdc` 映射表转换为各平台工具名
+
+### 脚本执行内容
+
+`scripts/install.py` 自动完成以下全部操作：
+
+1. 读取 `source/[AgentName]/agent.json`（元数据）、`prompt.md`（提示词）、`.mcp.json`（MCP 配置）
+2. 按 `header-format.mdc` 映射表生成各平台文件头
+3. 将「文件头 + prompt.md」拼接后写入 `.cursor/agents/`、`.codebuddy/agents/`、`.claude/agents/`
+4. 更新 `AGENTS.md` 中对应 Agent 章节
+5. 合并 MCP 配置到根 `.mcp.json`（同名 key 跳过）
+6. 复制 `skills/` 到各 IDE skills 目录
+
+### 注意事项
+
+- 脚本只处理 `source/` 中存在的 Agent，不影响仅存在于 IDE 目录中的旧 Agent
+- 缺少 `agent.json` 或 `prompt.md` 的 Agent 会被跳过并报告警告
+- 修改 `header-format.mdc` 中的映射规则后，需同步更新 `scripts/install.py` 中的 `TOOL_MAP`
+
+---
+
+## 六、共享测试-评估流程
+
+> 本节定义「测试 + 评估」的核心流程，供 `test_agent`（第七节）和 `evo_looper`（第八节）共同引用。
+
+### 6.1 读取用例规范
+
+- **按需读取**：禁止一次性读取整个大型 `testcases.yaml` 文件。
+- **CLI 工具**：使用 `scripts/yaml_tool.py` 读取特定索引的用例（无需安装外部依赖）。
+  - 获取用例总数：`./venv/bin/python scripts/yaml_tool.py count source/[AgentName]/testcases.yaml`
+  - 读取单条用例：`./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0`
+  - 只读 Input 和 Judge：`./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0 --fields Input,Judge`
+  - 批量读取：`./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0-4`
+- **减少冗余**：仅提取当前测试所需的 `Input` 和 `Judge` 字段，避免加载 `ExpectedOutput` 等无关信息（除非是评估环节）。
+
+### 模式判断
+
+通过 Agent 名称中是否含 `@` 自动判断执行模式：
+- `cls-log-agent` → **IDE 模式**
+- `cls-log-agent@observable` → **平台模式**
+
+### 步骤 1：调用被测 Agent 获取实际输出
+
+**IDE 模式**：逐条调用 IDE Sub Agent，传入 `Input`，获得实际输出。支持 3~4 条并发。
+
+**测试 session 开始前**，写入 Hook 上下文文件（整个 session 只写一次，不随用例变化）：
+
+```bash
+echo '{"session_dir": "source/[AgentName]/tmp/[session_id]"}' \
+  > scripts/hooks/.test_context
+```
+
+> ✅ 并发安全：`.test_context` 仅存 `session_dir`（不含 `case_idx`），整个 session 期间内容不变，多条用例并发调用时无写入竞争。Hook 自动用时间戳命名保存文件（如 `actual_output_20260315_143021_123456.txt`），避免并发覆盖。
+
+每条用例调用结束后，**必须立即**完成以下两件事，再处理下一条：
+1. 将实际输出文本写入 `case_[N]_actual_output.txt`（编排器负责从 Task 返回值中提取并写入）
+2. 将 session 目录中 Hook 自动保存的时间戳文件 rename 为 `case_[N]_*` 格式（如 `run_log_*.json` → `case_[N]_run_log.json`）。若 Hook 未触发（如某些 IDE 不支持），编排器应从 Task 返回值中手动保存。
+
+> 💡 rename 策略：每条用例调用前记录 session 目录当前文件列表，调用完成后 diff 出新增文件，将新增的时间戳文件 rename 为 `case_[N]_*` 格式。
+
+所有用例执行完毕后，清理上下文文件：
+
+```bash
+rm -f scripts/hooks/.test_context
+```
+
+**平台模式**：运行批量测试脚本（一次性执行所有用例）：
+
+```bash
+./venv/bin/python scripts/platform_test.py [AgentName]@[platform] --session [session_id]
+```
+
+脚本自动：读取 `platform.yaml` + `prompt.md` → 替换 `{{PROMPT}}` → 逐条调用 `react_agent_runner.py` → 保存每条用例的 `execution_log.txt` 和 `actual_output.txt` 到 `source/[Agent]@[platform]/tmp/[session]/case_N/`。
+
+### 步骤 2：日志转换
+
+> ⚠️ **必须在评估之前完成，且每轮迭代都必须执行，不得跳过。**
+> `meta-log-converter` 是日志转换的唯一入口，其产物 `case_[N]_run_log.json` 作为 `【RunLog】` 传入 `meta-eval-judge`。RunLog 对 eval-judge 而言是**可选输入**：提供时额外分析工具调用链和推理路径；缺失时仅基于 actual_output 评估，不影响流程继续，但推理过程不可审查。
+
+调用 `meta-log-converter` Sub Agent，将日志转换为 ShareGPT 格式 JSON：
+- **IDE 模式**：源日志为步骤 1 保存的 `case_[N]_transcript.jsonl`
+- **平台模式**：源日志为 `case_N/execution_log.txt`（runner stdout）
+- 输出文件名：`case_[N]_run_log.json`
+- 若 `ExpectedOutput` 为空，将实际输出填充到 YAML 对应行
+
+> ⚠️ 如果某条用例缺少 transcript / execution_log，应尝试调用 `meta-log-converter`；若源文件确实不存在，评估时跳过 RunLog 字段，并在 `case_[N]_eval_result.md` 中注明"run_log 缺失，本条评估仅基于 actual_output，推理过程不可审查"。下一轮迭代须确保 transcript 正常保存。
+
+### 步骤 3：评估
+
+**逐条调用约束（强制）**：
+
+- 每次调用 `meta-eval-judge` Sub Agent **只传入一条用例**的评估元组（Input + ExpectedOutput + Judge + ActualOutput 必选；RunLog 可选）
+- **严禁**将多条用例合并为一次 Sub Agent 调用（上下文膨胀会导致后续用例评分质量下降、评分相互干扰）
+- 支持并发：最多 3~4 条用例的 `meta-eval-judge` 同时调用（每条独立的 Sub Agent 实例）
+- 每条用例的 eval-judge 返回后，立即将评估结果写入 `case_[N]_eval_result.md`
+
+调用传参（每条独立调用）：
+- `Input`：来自 `testcases.yaml` 中该条用例
+- `ExpectedOutput`：来自 `testcases.yaml` 中该条用例
+- `Judge`：来自 `testcases.yaml` 中该条用例
+- `ActualOutput`：来自 `case_[N]_actual_output.txt`
+- `RunLog`：来自 `case_[N]_run_log.json`（可选，由 meta-log-converter 生成；文件不存在时跳过此字段）
+
+等待返回总分（0-100）、各维度评分、优点、不足、改进建议。
+
+### 步骤 4：记录结果
+
+---
+
+## 七、`test_agent` 测试模式
+
+> 只测试 + 评估，不修改提示词。用于了解当前 Agent 的真实水平。
+
+### 流程
+
+1. **前置**：
+   - IDE 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若用户指定了 `model: xxx`，加 `--model xxx`）
+   - 平台模式（名称含 `@`）：无需安装
+2. **初始化**：确定目标 Agent 名称、YAML 路径（自动识别 `source/[AgentName]/testcases.yaml`）
+   - 若用户指定了 `model: xxx`（如 `test_agent 歌词生成系统 model: glm-5.0-ioa`），则测试和迭代都基于 `prompt_[model].md`
+3. **执行第六节共享测试-评估流程**
+   - 每条用例的评估结果保存为 `source/[AgentName]/tmp/test_[时间戳]/case_[N]_eval_result.md`（供 `calibrate` 模式读取）
+4. **生成报告**：
+   - 将所有逐条评估结果汇总为 `source/[AgentName]/tmp/test_[时间戳]/评估报告.md`
+   - 展示汇总表格（序号 / Input 摘要 / 得分 / 主要不足）
+   - 计算平均分、最高分、最低分、低于 80 分的用例列表
+5. **完成提示**：建议 `calibrate`（首次测试时）或 `evo_looper`
+
+---
+
+## 八、`evo_looper` 迭代优化模式
+
+### 初始化
+
+1. 运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定了 `model: xxx`，加 `--model xxx`）
+2. 确定：目标 Agent、YAML 路径、目标分数（默认 98）、最大迭代次数（默认 10）、执行方式
+   - 若指定了 `model: xxx`，后续所有操作使用 `prompt_[model].md`（首次自动从 `prompt.md` 复制）
+
+### 迭代循环
+
+#### 步骤 A：测试 + 评估
+
+按第六节共享测试-评估流程，逐条执行所有用例。
+- 平台模式下每轮迭代前需重新运行 `./venv/bin/python scripts/prepare_config.py [AgentName] [output_dir]`
+- 汇总评估报告到 `source/[AgentName]/tmp/evalooper/iter_[N]/评估报告.md`
+
+**Baseline 初始化（仅首轮执行）：**
+- 若 `source/[AgentName]/tmp/evalooper/baseline_scores.json` 不存在，评估完成后将本轮各用例得分写入该文件：
+  ```json
+  { "cases": { "case_0": 72, "case_1": 85, ... }, "avg": 78.5 }
+  ```
+
+**后续轮次（第 2 轮起）：**
+- 读取 `baseline_scores.json`，在评估报告中增加 `Δ分` 列（`Δ = 本轮得分 - baseline 得分`）
+- 对连续 2+ 轮 Δ 均为负值的用例，在报告末尾单独列出并标记为「难例」
+
+#### 步骤 B：判断是否停止
+
+> **evo_looper 是全自动循环，除非满足以下停止/暂停条件，否则不得暂停询问用户，直接进入步骤 C。**
+
+**停止条件：**
+- 排除「难例」后的平均分 >= 目标阈值 → 停止，跳到步骤 E
+- 达到最大迭代次数 → 停止，跳到步骤 E
+
+**暂停条件**（由步骤 D 触发，非步骤 B 直接判断）：
+- 步骤 D 中 `meta-retrospective` 发现高严重度 rubric/ideal_state 问题 → 暂停循环，等待用户审阅决策后自动恢复（详见步骤 D）
+
+**继续条件（自动进入步骤 C）：**
+- **热身阶段（轮次 ≤ 3）**：直接进入步骤 C（单路模式），正常优化
+- **投票阶段（轮次 ≥ 4）**：进入步骤 C（3 路候选模式）
+- **停滞触发**：本轮相对上轮分数无改善 → 从 `bak/` 恢复上轮提示词，无论当前轮次，立即切换为步骤 C（3 路候选模式）
+
+#### 步骤 C：优化提示词
+
+##### 单路模式（热身阶段，轮次 ≤ 3）
+
+- 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
+- 调用 `meta-prompt-engineer`（传入规范见第十一节速查表），严格控制传入内容：
+  - 当前提示词 + 理想态 + 评估不足与建议 + changelog（必须）
+  - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
+  - 被禁止的优化方向（若已有 `meta-retrospective` 的 `forced_new_directions.avoided_directions` 输出，则传入）
+- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
+- 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步（指定 model 时加 `--model xxx`）
+
+##### 3 路候选模式（投票阶段或停滞触发，轮次 ≥ 4 或分数无改善）
+
+1. 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`（仅一次）
+2. 确定三条优化路线（默认方向，若有 `forced_new_directions` 则用其替换路线 C 或其他默认方向）：
+   - **路线 A**：侧重推理链 / CoT 框架改进
+   - **路线 B**：侧重输出格式 / 结构化表达改进
+   - **路线 C**：侧重边界条件 / 异常输入覆盖改进
+3. 依次调用 `meta-prompt-engineer` 三次，每次在传入内容中明确指定本次专注的优化路线方向，其余参数同单路模式
+4. 三个候选各自完整执行步骤 A（测试 + 评估），得到三个平均分
+5. 选平均分最高的候选作为本轮胜者：
+   - 胜者提示词 → 覆盖写入 `prompt.md`（或 `prompt_[model].md`）
+   - 败者提示词 → 保存到 `source/[AgentName]/bak/candidate_[A|B|C]_[YYYYMMDDHHmmss].bak`
+6. 将胜者的 CHANGELOG 追加到 `changelog.md`
+7. 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
+
+> **严禁将优化说明写入提示词文件；严禁传入 ExpectedOutput。**
+
+#### 步骤 D：全局复盘检查
+
+迭代次数能被 3 整除时，调用 `meta-retrospective` 进行全局复盘（专注多轮提示词迭代历史分析）。
+
+**传入参数**：
+- `current_prompt_path`：`source/[AgentName]/prompt.md`（或 `prompt_[model].md`）
+- `bak_dir`：`source/[AgentName]/bak/`
+- `eval_dir`：`source/[AgentName]/tmp/evalooper/`
+- `eval_results_dir`：`source/[AgentName]/tmp/evalooper/iter_[N]/`（本轮迭代的逐条评估结果）
+- `baseline_scores_path`：`source/[AgentName]/tmp/evalooper/baseline_scores.json`（若存在）
+
+**处理返回结果**：
+
+提取 `forced_new_directions`：
+- `avoided_directions` → 存入本轮上下文，下一步骤 C 调用 `meta-prompt-engineer` 时作为「被禁止的优化方向」传入
+- `suggested_directions` → 作为步骤 C（3 路候选模式）路线 C 的替代方向
+
+在评估报告中附注复盘摘要（主要反模式 + 劣化主线概要），然后回到步骤 A 继续迭代。
+
+> **注意**：若发现评估体系本身（rubric/理想态）存在严重问题，应暂停 `evo_looper`，先执行 `calibrate`（调用 `meta-debug`）修复三元组后再恢复迭代。`meta-retrospective` 不负责评估体系诊断，仅在复盘报告中标注「建议执行 calibrate」的信号。
+
+#### 步骤 E：迭代完成
+
+输出：总迭代次数、最终得分、提示词版本路径、备份历史、建议补充的用户画像。
+
+---
+
+## 九、全局约束
+
+### 9.1 一致性约束
+
+理想态、Agent 提示词、Judge 提示词三者必须严格对应。任何一方更新时，其他两方必须同步检查。更新提示词后，必须重新运行来更新 `ExpectedOutput`。
+
+### 9.2 备份约束
+
+修改 Agent 提示词、CSV、理想态文件前，必须先备份到 `source/[AgentName]/bak/`，格式为 `[原文件名]_[YYYYMMDDHHmmss].bak`。
+
+### 9.3 反作弊约束
+
+严禁将 `ExpectedOutput` 的原文、近似表述、关键特征词植入提示词。优化必须基于通用能力提升。
+
+### 9.4 架构约束
+
+- 提示词修改在 `source/[AgentName]/prompt.md` 中进行，通过 `./venv/bin/python scripts/install.py` 同步到所有 IDE（第五节）
+- MCP 配置在 `source/[AgentName]/.mcp.json` 中维护，由 `install.py` 合并到根 `.mcp.json`
+- Skills 在 `source/[AgentName]/skills/` 中维护，由 `install.py` 同步到各 IDE skills 目录
+- **严禁**直接修改 IDE 目录中的 agent / skills / `.mcp.json` 文件
+
+### 9.5 YAML 格式规范
+
+测试用例文件统一使用 YAML 格式（`testcases.yaml`），结构如下：
+
+### 9.6 Changelog 约束
+
+`changelog.md` 是 Agent 的**全生命周期变更日志**，不仅记录迭代优化，也记录创建和用例变更。每次以下操作发生时，必须向 `changelog.md` **追加**（不覆盖）一条记录：
+
+| 操作 | 记录类型标签 | 触发节点 |
+|------|-------------|---------|
+| `create_agent` 完成初始创建 | `[创建]` | 写入 `prompt.md` 之后 |
+| `create_testcases` 补充用例 | `[用例]` | 用例写入 `testcases.yaml` 之后 |
+| `evo_looper` 每轮提示词优化 | `[优化]` | `meta-prompt-engineer` 输出的 `===CHANGELOG===` 部分 |
+| 手动修改理想态或提示词 | `[手动]` | 修改完成后 |
+
+记录格式统一使用二级标题 `## [标签] 说明`，包含时间和关键信息，便于 `evo_looper` 步骤 C 读取历史上下文避免重复。
+
+```yaml
+meta:
+  count: 10
+  notice: ""
+cases:
+  - Input: "..."
+    ExpectedOutput: ""
+    Judge: ""
+```
+
+---
+
+## 十、理想态维度参考
+
+生成测试用例的 Judge 评分标准时，覆盖以下相关维度：
+
+| 维度 | 说明 |
+|------|------|
+| 真实性 | 输出内容的事实准确度 |
+| 便捷性 | 是否提供了超链接、选项、后续操作建议，让用户可以简单回复就继续 |
+| 可信度 | 是否提供了推理证据链、引用了数据源，降低幻觉疑虑 |
+| 生动性 | 复杂信息是否适度使用了图、表、结构化格式来降低阅读负担 |
+| 运行效率 | Agent 是否用了最简路径完成任务，没有无效的重试和冗余步骤 |
+| 实际价值 | 输出的方案/建议是否可行、可操作，用户能否直接按照输出去执行 |
+
+---
+
+## 十一、meta-rubric-gen 调用规范与重试机制
+
+### 10.1 调用场景
+
+`meta-rubric-gen` 在以下场景中被逐条调用（每条测试用例单独调用一次）：
+
+1. **`create_agent` 步骤 6**：为新生成的测试用例逐条生成 Judge 评分标准
+2. **`create_testcases` 步骤 5**：为补充的测试用例逐条生成 Judge 评分标准
+3. **方式 c（从 CSV 创建）步骤 5**：为缺少 Judge 的用例逐条生成评分标准
+
+### 10.2 稳定性问题
+
+由于 LLM 的非确定性特征，单次调用 `meta-rubric-gen` 可能出现以下不稳定情况：
+
+- 输出格式不符合 YAML 规范（缺少 `criterion`、`points`、`tags` 字段）
+- 返回空白或不完整的 rubric 列表
+- 网络超时或 API 错误
+- 输出包含非法字符导致 YAML 解析失败
+
+### 10.3 自动重试机制（**强制执行**）
+
+**规则：每条用例调用 `meta-rubric-gen` 时，必须实施以下重试逻辑**
+
+#### 重试参数
+- **最大重试次数**：2 次（即最多尝试 3 次：初次 + 2 次重试）
+- **重试间隔**：每次重试前等待 2 秒
+- **重试条件**：只要输出不符合以下任一条件，就触发重试：
+  1. 输出可被成功解析为有效 YAML
+  2. 至少包含 1 条 rubric 条目
+  3. 每条 rubric 包含 `criterion`（字符串）、`points`（整数）、`tags`（列表）三个必需字段
+
+#### 重试伪代码
+
+```python
+def call_meta_rubric_gen_with_retry(input_text, agent_name, max_retries=2, retry_delay=2):
+    """
+    带重试机制的 meta-rubric-gen 调用
+    
+    Args:
+        input_text: 测试用例的 Input
+        agent_name: 目标 Agent 名称（用于资源检索）
+        max_retries: 最大重试次数（默认 2）
+        retry_delay: 重试间隔秒数（默认 2）
+    
+    Returns:
+        YAML 格式的 rubrics 列表（字符串）
+    
+    Raises:
+        Exception: 如果所有尝试都失败
+    """
+    attempt = 0
+    last_error = None
+    
+    while attempt <= max_retries:
+        try:
+            # 调用 meta-rubric-gen Sub Agent
+            output = task(
+                subagent_name="meta-rubric-gen",
+                prompt=f"""
+请为以下测试用例生成 YAML 格式的评分标准：
+
+**Agent 名称：** {agent_name}
+**Input：**
+{input_text}
+
+请严格按照 YAML 列表格式输出 rubrics。
+                """.strip()
+            )
+            
+            # 验证输出
+            rubrics = validate_rubric_output(output)
+            
+            if rubrics and len(rubrics) > 0:
+                # 验证通过，返回结果
+                print(f"✅ Case {case_id}: meta-rubric-gen 成功（尝试 {attempt + 1}/{max_retries + 1}）", flush=True)
+                return output
+            else:
+                raise ValueError("输出的 rubrics 列表为空或格式无效")
+        
+        except Exception as e:
+            last_error = e
+            attempt += 1
+            
+            if attempt <= max_retries:
+                print(f"⚠️  Case {case_id}: meta-rubric-gen 失败（尝试 {attempt}/{max_retries + 1}）", flush=True)
+                print(f"   错误: {str(e)[:100]}", flush=True)
+                print(f"   等待 {retry_delay} 秒后重试...", flush=True)
+                time.sleep(retry_delay)
+            else:
+                print(f"❌ Case {case_id}: meta-rubric-gen 所有尝试均失败", flush=True)
+                raise Exception(f"调用 meta-rubric-gen 失败（已重试 {max_retries} 次）: {last_error}")
+
+def validate_rubric_output(output: str) -> list:
+    """
+    验证 rubric 输出是否符合规范
+    
+    Returns:
+        解析后的 rubrics 列表（Python list）
+    
+    Raises:
+        ValueError: 如果输出格式不符合规范
+    """
+    import yaml
+    
+    # 尝试解析 YAML
+    try:
+        rubrics = yaml.safe_load(output)
+    except yaml.YAMLError as e:
+        raise ValueError(f"YAML 解析失败: {e}")
+    
+    # 验证是否为列表
+    if not isinstance(rubrics, list):
+        raise ValueError(f"期望 rubrics 为列表，实际类型: {type(rubrics)}")
+    
+    # 验证每条 rubric 的字段
+    for idx, rubric in enumerate(rubrics):
+        if not isinstance(rubric, dict):
+            raise ValueError(f"rubric[{idx}] 应为字典，实际类型: {type(rubric)}")
+        
+        # 检查必需字段
+        required_fields = {"criterion": str, "points": int, "tags": list}
+        for field, expected_type in required_fields.items():
+            if field not in rubric:
+                raise ValueError(f"rubric[{idx}] 缺少必需字段: {field}")
+            if not isinstance(rubric[field], expected_type):
+                raise ValueError(
+                    f"rubric[{idx}].{field} 类型错误: "
+                    f"期望 {expected_type.__name__}，实际 {type(rubric[field]).__name__}"
+                )
+    
+    return rubrics
+```
+
+### 10.4 执行要求
+
+#### 必须执行的场景
+所有涉及逐条调用 `meta-rubric-gen` 的场景（见 10.1）**都必须使用重试机制**，不得跳过。
+
+#### 日志输出规范
+每次调用（包括重试）都必须打印以下信息（使用 `flush=True`）：
+
+```python
+# 开始调用
+print(f"📋 Case {case_id}: 开始生成 Judge 评分标准...", flush=True)
+
+# 成功
+print(f"✅ Case {case_id}: meta-rubric-gen 成功（尝试 {attempt + 1}/{max_retries + 1}）", flush=True)
+
+# 重试
+print(f"⚠️  Case {case_id}: meta-rubric-gen 失败（尝试 {attempt}/{max_retries + 1}）", flush=True)
+print(f"   错误: {str(e)[:100]}", flush=True)
+print(f"   等待 {retry_delay} 秒后重试...", flush=True)
+
+# 最终失败
+print(f"❌ Case {case_id}: meta-rubric-gen 所有尝试均失败", flush=True)
+print(f"   最后错误: {str(last_error)}", flush=True)
+```
+
+#### 失败处理策略
+如果某条用例在所有重试后仍然失败：
+
+1. **不中断整体流程**：继续处理下一条用例
+2. **记录失败用例**：在 `source/[AgentName]/tmp/rubric_gen_failures.log` 中记录：
+   ```
+   Case {case_id} - meta-rubric-gen 失败
+   Input: {input_text[:200]}...
+   最后错误: {last_error}
+   尝试次数: {max_retries + 1}
+   时间: {timestamp}
+   ---
+   ```
+3. **在该用例的 Judge 字段填入占位符**：
+   ```yaml
+   Judge:
+     - criterion: "[自动生成失败] 此用例的评分标准生成失败，请人工补充。"
+       points: 0
+       tags:
+         - type:error
+   ```
+4. **在流程结束时汇报**：
+   ```
+   ⚠️  警告：{N} 条用例的 Judge 评分标准生成失败，已填入占位符。
+   详细日志: source/[AgentName]/tmp/rubric_gen_failures.log
+   
+   请人工审阅这些用例并补充评分标准。
+   ```
+
+### 10.5 与 Sub Agent 调用速查表的关系
+
+本章节定义的重试机制是 `meta-rubric-gen` 调用的**底层执行规范**，适用于速查表中所有涉及 `meta-rubric-gen` 的场景。
+
+---
+
+## 十二、Sub Agent 调用速查表
+
+| Sub Agent | 触发时机 | 必传参数 | 禁止传入 |
+|-----------|---------|---------|---------|
+| `meta-prompt-engineer` | `create_agent` 生成初始提示词 | 理想态描述；提示词草稿（方式 a）；典型用例（方式 c/d） | — |
+| `meta-prompt-engineer` | `evo_looper` 步骤 C 优化（单路） | 当前提示词 + 理想态 + 评估不足与建议 + changelog；低分用例 Input（可选）；被禁止的优化方向（来自 meta-retrospective，可选） | ExpectedOutput |
+| `meta-prompt-engineer` | `evo_looper` 步骤 C 优化（3路，每路单独调用） | 同上 + 本路线专注的优化方向约束 | ExpectedOutput |
+| `meta-testcase-gen` | `create_agent` / `create_testcases` | Agent 提示词 + 理想态 + 用户画像（≥5 个） | — |
+| `meta-rubric-gen` | `meta-testcase-gen` 完成后，逐条生成 Judge | 每条用例的 Input + agent_name（用于资源检索）+ 任务 must_follow/risk_notes（从提示词/理想态提取） | ExpectedOutput |
+| `meta-eval-judge` | 每条用例评估（第六节） | Input + ExpectedOutput + Judge + ActualOutput（必选）；RunLog（**可选**，来自 `meta-log-converter` 转换产物 `case_[N]_run_log.json`，缺失时跳过工具链分析）。**每次调用只传一条用例，严禁批量合并。** | 多条用例合并传入 |
+| `meta-retrospective` | `evo_looper` 迭代次数 % 3 == 0 | `current_prompt_path` + `bak_dir`（必传，无迭代历史则跳过） + `eval_dir` + `eval_results_dir` + `baseline_scores_path`（可选） | `testcases_yaml_path`、`ideal_state_path`（已移交 meta-debug） |
+| `meta-debug` | `calibrate` / `debug` 步骤 2 | `agent_name` + `prompt_path` + `ideal_state_path` + `testcases_yaml_path` + `eval_results_dir` + `output_dir` | `bak_dir`（无迭代历史，不需要） |
+| ~~`platform_observable_tester`~~ | **已废弃**，被 `scripts/platform_test.py` 替代 | — | — |
+| `meta-log-converter` | 每条用例日志转换 | 源 transcript 路径 + 输出目录 + Agent 名称 | — |
+
+> `meta-prompt-engineer` 的核心原则：输出必须是**可运行的提示词**（非设计文档），通过结构化推理和示例来实现理想态，优化只能基于通用能力提升，不能硬编码特定用例答案。
+
+---
+
+## 十三、文件夹职责说明
+
+| 文件夹 | 存放内容 |
+|--------|----------|
+| `source/[AgentName]/ideal_state.md` | 描述 Agent 的预期输出标准和要求 |
+| `source/[AgentName]/testcases.yaml` | Input/ExpectedOutput/Judge 三字段的测试数据（YAML 格式） |
+| `source/[AgentName]/bak/` | 所有被修改文件的历史备份（`.bak` 格式） |
+| `source/[AgentName]/tmp/` | 运行时中间产物的根目录 |
+| `source/[AgentName]/tmp/test_[session]/` | `test_agent` 的测试日志（`case_[N]_run_log.json`）和评估报告 |
+| `source/[AgentName]/tmp/evalooper/iter_[N]/` | `evo_looper` 第 N 轮迭代的日志（`case_[M]_run_log.json`）和评估报告 |
+| `source/[AgentName]/tmp/selftest_[ts]/` | CLI 自检 (`scripts/selftest.sh`) 的结果 |
+| `source/[AgentName]/tmp/calibration_[ts]/` | 校准诊断报告（`calibration_report.json`）和用户决策文件（`decisions.json`） |
+| `source/[AgentName]/prompt.md` | 真正的 Agent 提示词文件（所有 IDE 的同步源） |
+| `source/[AgentName]/agent.json` | Agent 元数据（description + tools 语义值），供 `scripts/install.py` 生成文件头 |
+| `source/[AgentName]/changelog.md` | 迭代优化变更记录（每轮优化说明追加于此，供后续迭代参考避免重复） |
+| `source/[AgentName]/.mcp.json` | 该 Agent 的 MCP 服务配置（安装时合并到根 `.mcp.json`） |
+| `source/[AgentName]/skills/` | 该 Agent 专属的平台 skill 源文件（安装时复制到各 IDE skills 目录） |
+| `source/[AgentName]/references/` | 该 Agent 依赖的领域参考资源（API 文档、数据模型、字段定义、日志样例等），供 `meta-testcase-gen` 读取以生成贴近真实系统的测试用例 |
+| `source/[Agent]@[platform]/` | 平台版本 Agent（独立 prompt、用例、配置，详见第十四节） |
+| `source/[Agent]@[platform]/platform.yaml` | 平台连接配置（LLM + MCP + `{{PROMPT}}` 占位符） |
+| `scripts/` | 共享工具脚本（IDE 无关） |
+| `scripts/install.py` | Agent 安装脚本，将 source 同步到所有 IDE 目录 |
+| `scripts/scaffold.py` | Agent 目录脚手架创建（支持 `@platform` 命名） |
+| `scripts/platform_test.py` | 平台批量测试脚本（替代 `platform_observable_tester` Sub Agent） |
+| `scripts/prepare_config.py` | 平台配置占位符替换（兼容旧格式） |
+| `scripts/selftest.sh` | CLI 自检脚本 |
+| `scripts/yaml_tool.py` | YAML 测试用例读写工具（替代 yq CLI），支持 count/get/set/validate 子命令 |
+| `scripts/verify_setup.py` | 项目初始化状态验证脚本 |
+| `tools/` | 人工辅助工具目录（浏览器端小工具） |
+| `tools/testcase_viewer.html` | 测试用例可视化审阅工具（支持 YAML 加载、Rubric 渲染、批注导出） |
+| `tools/calibration_viewer.html` | 校准诊断可视化工具（加载 `calibration_report.json`，展示诊断卡片，导出 `decisions.json`） |
+| `.cursor/skills/` | Cursor IDE 的 skill 副本（由安装子流程从 source 同步） |
+| `.codebuddy/skills/` | CodeBuddy IDE 的 skill 副本（由安装子流程从 source 同步） |
+| `.claude/skills/` | Claude Code 的 skill 副本（由安装子流程从 source 同步） |
+| `.cursor/agents/` | Cursor IDE 的具体 Sub Agent 文件（YAML头 + prompt） |
+| `.codebuddy/agents/` | CodeBuddy IDE 的具体 Sub Agent 文件（YAML头 + prompt） |
+| `.claude/agents/` | Claude Code 的具体 Sub Agent 文件（YAML头 + prompt） |
+| `AGENTS.md` | Codex 的 Agent 指令文件（各 Agent 以独立章节追加） |
+| `CLAUDE.md` | Claude Code 的全局规则文件（对应 Cursor 的 `.cursor/rules/`） |
+
+---
+
+## 十四、平台测试模式
+
+### 13.1 概述
+
+平台模式通过名称中的 `@` 后缀标识（如 `cls-log-agent@observable`），每个平台版本在 `source/` 下有独立目录，prompt 独立迭代。
+
+测试执行由 `scripts/platform_test.py` 脚本完成（非 Sub Agent），日志转换和评估仍复用 `meta-log-converter` 和 `meta-eval-judge` Sub Agent。
+
+### 13.2 目录结构
+
+```
+source/cls-log-agent@observable/
+├── prompt.md          # 为该平台模型独立优化的提示词
+├── platform.yaml      # 平台连接配置（LLM + MCP + 占位符 {{PROMPT}}）
+├── testcases.yaml     # 独立的测试用例
+├── ideal_state.md     # 独立的理想态
+├── agent.json         # 元数据
+├── changelog.md       # 独立的迭代记录
+├── bak/
+└── tmp/
+```
+
+### 13.3 使用方式
+
+```bash
+# 创建平台版本脚手架
+./venv/bin/python scripts/scaffold.py cls-log-agent@observable -d "CLS Agent（可观测平台版）"
+
+# 批量测试（一次性运行所有 YAML 用例）
+./venv/bin/python scripts/platform_test.py cls-log-agent@observable
+
+# 指定 session 名称
+./venv/bin/python scripts/platform_test.py cls-log-agent@observable --session iter_1
+```
+
+### 14.4 配置文件 `platform.yaml`
+
+使用 `{{PROMPT}}` 作为占位符，由 `platform_test.py` 自动替换为同目录下 `prompt.md` 的内容：
+
+```yaml
+llm:
+  model: "your-model-name"
+  api_key: "your-api-key"
+  base_url: "http://your-platform-url/v1"
+
+prompts:
+  custom_system_prompt: |
+    {{PROMPT}}
+
+mcp_servers: []
+```
+
+### 13.5 与 IDE 模式的关系
+
+- 平台版本和 IDE 版本**完全独立**：各自有独立的 prompt、测试用例、迭代历史
+- 初始化时可从 IDE 版本手动复制 prompt.md 和 testcases.yaml 作为起点
+- `test_agent` 和 `evo_looper` 通过名称中的 `@` 自动识别模式切换（第六节）
+
+---
+
+## 十五、`calibrate` / `debug` 调试模式
+
+### 14.1 概述
+
+调试模式用于**初始化阶段**（`create_agent` 完成后、进入 `evo_looper` 之前），对三元组（提示词 / 理想态 / rubrics）进行一致性诊断，排除评估体系自身的设计缺陷。
+
+诊断的四类问题：
+
+| 问题类型 | 描述 |
+|---------|------|
+| **Rubric 自身设计问题** | criterion 过严/过松/描述歧义/权重失衡 |
+| **Rubric ↔ 理想态矛盾** | rubric 要求与理想态描述方向不一致，或理想态有要求但无对应 criterion |
+| **理想态 ↔ 提示词矛盾** | 提示词遗漏了理想态要求，或包含与理想态相悖的指令 |
+| **用户价值视角洞察** | 从 ≥3 条实际输出中客观呈现值得质疑当前设计的模式（以疑问形式，不做判断） |
+
+调试结果写入 `calibration_report.json`，通过 `tools/calibration_viewer.html` 呈现为选择题，用户决策后由编排器执行修改。
+
+### 14.2 触发方式
+
+| 触发词 | 自然语言触发 | 前置条件 |
+|--------|-------------|---------|
+| `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 已执行过至少一次 `test_agent` |
+
+**建议时机**：首次 `test_agent` 完成后、进入 `evo_looper` 之前。可多次执行，每次生成独立的 `calibration_[ts]/` 目录。
+
+### 14.3 执行流程
+
+```
+  test_agent 执行完毕
+          ↓
+  步骤 1: 确定输入路径
+          ↓
+  步骤 2: 调用 meta-debug
+          ↓
+  步骤 3: 引导用户使用 calibration_viewer.html 审阅
+          ↓
+  步骤 4: 执行用户决策（按 action_type 分发）
+```
+
+#### 步骤 1：确定输入
+
+确定最近一次 `test_agent` 的 session：扫描 `source/[AgentName]/tmp/` 下所有 `test_*` 目录，按时间戳排序取最新。若用户明确指定了 session 路径则使用指定值。
+
+确认以下文件路径：
+
+- `source/[AgentName]/prompt.md`（当前提示词）
+- `source/[AgentName]/testcases.yaml`（测试用例）
+- `source/[AgentName]/ideal_state.md`（理想态）
+- `source/[AgentName]/tmp/test_[session]/`（评估结果目录，含 `case_[N]_eval_result.md`）
+
+确定输出目录：`source/[AgentName]/tmp/calibration_[timestamp]/`（自动创建）
+
+#### 步骤 2：调用 `meta-debug`
+
+调用 `meta-debug` Sub Agent，传入以下参数：
+
+- `agent_name`：`[AgentName]`
+- `prompt_path`：`source/[AgentName]/prompt.md`
+- `ideal_state_path`：`source/[AgentName]/ideal_state.md`
+- `testcases_yaml_path`：`source/[AgentName]/testcases.yaml`
+- `eval_results_dir`：`source/[AgentName]/tmp/test_[session]/`
+- `output_dir`：`source/[AgentName]/tmp/calibration_[timestamp]/`
+
+`meta-debug` 将自行完成诊断分析，并直接写入 `calibration_report.json` 到 `output_dir`。等待其完成并确认文件已写入。
+
+#### 步骤 3：引导用户审阅与决策
+
+`meta-debug` 完成后会自动输出审阅提示。编排器确认文件路径正确后，等待用户提供 `decisions.json` 路径。
+
+#### 步骤 4：执行用户决策
+
+读取用户导出的 `decisions.json`，按 `action_type` 分发执行：
+
+**备份约束**：执行任何修改前，必须先将被修改的文件备份到 `source/[AgentName]/bak/`。
+
+| `action_type` | 执行方式 |
+|---------------|---------|
+| `modify_prompt` | 根据诊断建议的 `detail`，调用 `meta-prompt-engineer` 优化提示词 |
+| `modify_rubric` | 根据诊断建议的 `proposed`，使用 `./venv/bin/python scripts/yaml_tool.py set` 修改 `testcases.yaml` 中对应用例的 `Judge` 字段（将新值写入临时文件后用 `--value-file` 传入） |
+| `modify_ideal_state` | 根据诊断建议的 `detail`，修改 `ideal_state.md`（影响范围大时调用 `meta-ideal-state` 重新生成） |
+| `modify_testcase` | 根据诊断建议修改 `testcases.yaml` 中的 `Input` 或 `ExpectedOutput`；修改了 `ExpectedOutput` 后需重新运行 Agent 填充 |
+| `skip` | 跳过，不执行 |
+
+执行完成后：
+1. 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
+2. 向 `changelog.md` 追加调试记录：
+
+```
+## [调试] 评估体系调试
+
+**时间：** [YYYY-MM-DD]
+**操作：** 根据调试报告执行 [N] 项修改
+**修改明细：**
+- [提示词] [修改说明]
+- [评分标准] Case [N]: [修改说明]
+- [理想态] [修改说明]
+**诊断报告路径：** source/[AgentName]/tmp/calibration_[ts]/calibration_report.json
+```
+
+### 14.4 与其他模式的关系
+
+- **与 `test_agent` 的关系**：`calibrate` 在 `test_agent` 之后执行，消费其评估结果
+- **与 `evo_looper` 的关系**：建议在首次 `test_agent` 后、进入 `evo_looper` 前执行 `calibrate`，确保三元组一致性。`evo_looper` 步骤 D 调用的是 `meta-retrospective`（专注多轮迭代历史分析），与 `meta-debug` 职责不同
+- **与 `create_agent` 的关系**：`create_agent` 完成后，建议执行一次 `test_agent` + `calibrate` 验证评估体系健康度
+- **多轮调试**：允许多次执行，每次生成独立目录。当连续两轮诊断出的 rubric 问题数 < 2 时，可认为评估体系已基本稳定，适合进入 `evo_looper`

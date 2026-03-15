@@ -10,3 +10,13 @@
 - Markdown 报告增加第七节"下轮优化方向建议"
 - 分析流程（Phase 3）从依赖 execution_log.txt 改为优先读取 评估报告.md
 - 保存位置改为 `source/[AgentName]/tmp/evalooper/iter_[N]/` 目录
+
+## [手动] 职责收窄 v4.0
+
+**时间：** 2026-03-12
+**变更说明：**
+- 删除 Phase 2b（评估体系质量分析）及 `calibration_diagnostics` 输出字段
+- 三元组一致性诊断（rubric/理想态/提示词矛盾）移交新建的 `meta-debug` agent
+- `bak_dir` 改为必传参数（无迭代历史则拒绝执行，避免空转）
+- 删除 `testcases_yaml_path` 和 `ideal_state_path` 输入参数
+- 职责聚焦：专注多轮迭代历史分析、反模式识别、劣化主线归纳、`forced_new_directions` 输出

@@ -103,6 +103,12 @@
         .json-number { color: #79c0ff; }
         .json-boolean { color: #ff7b72; }
         .json-null { color: #ff7b72; }
+        .content-prewrap {
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.65;
+            color: #334155;
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -178,7 +184,55 @@
         // State
         let yamlData = null;
         let originalFileName = '';
-        let modifications = {}; // Key: case index, Value: { input_comment, output_comment, judge_comment, general_comment }
+        let modifications = {};
+
+        const SECTION_TYPE_TO_REMARK_FIELD = {
+            input: 'task_input_comment',
+            task_input: 'task_input_comment',
+            output: 'eval_output_comment',
+            reference_output: 'reference_output_comment',
+            source_judge: 'source_judge_comment',
+            actual_output: 'actual_output_comment',
+            run_log: 'run_log_comment',
+            judge: 'eval_judge_comment',
+            eval_judge: 'eval_judge_comment',
+            eval_output: 'eval_output_comment'
+        };
+
+        const REMARK_FIELD_META = {
+            general_comment: {
+                label: 'General',
+                placeholder: 'Overall feedback for this case...'
+            },
+            task_input_comment: {
+                label: 'Task Input',
+                placeholder: 'Feedback on the original user input...'
+            },
+            reference_output_comment: {
+                label: 'Reference ExpectedOutput',
+                placeholder: 'Feedback on the embedded reference answer...'
+            },
+            source_judge_comment: {
+                label: 'Embedded Judge',
+                placeholder: 'Feedback on the embedded task rubric...'
+            },
+            actual_output_comment: {
+                label: 'ActualOutput',
+                placeholder: 'Feedback on the actual model output being judged...'
+            },
+            run_log_comment: {
+                label: 'RunLog',
+                placeholder: 'Feedback on the run log / execution trace...'
+            },
+            eval_output_comment: {
+                label: 'Top-level ExpectedOutput',
+                placeholder: 'Feedback on the evaluator target output...'
+            },
+            eval_judge_comment: {
+                label: 'Top-level Judge / Rubric',
+                placeholder: 'Feedback on the eval-judge scoring rubric...'
+            }
+        };
 
         // Elements
         const fileInput = document.getElementById('file-input');
@@ -198,6 +252,409 @@
         fileInput.addEventListener('change', handleFileSelect);
         searchInput.addEventListener('input', handleSearch);
 
+        function normalizeContent(value) {
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string') return value;
+            if (Array.isArray(value)) return JSON.stringify(value, null, 2);
+            if (typeof value === 'object') return JSON.stringify(value, null, 2);
+            return String(value);
+        }
+
+        function escapeHtml(value) {
+            return normalizeContent(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function isPlaceholderExpectedOutput(value) {
+            return normalizeContent(value).trim() === '待基线模型运行后填入';
+        }
+
+        function extractWeightValue(weightLabel) {
+            const match = normalizeContent(weightLabel).match(/-?\d+(?:\.\d+)?/);
+            return match ? Number(match[0]) : null;
+        }
+
+        function renderInlineMarkdown(text) {
+            const normalized = normalizeContent(text).trim();
+            return normalized ? marked.parseInline(normalized) : '';
+        }
+
+        function parseRubricDimension(rawLine) {
+            const cleaned = normalizeContent(rawLine).replace(/^-\s*/, '').trim();
+            const match = cleaned.match(/^(.*?)(?:\s*[（(]([^（）()]+)[）)])?(?:\s*[:：]\s*(.*))?$/);
+            if (!match) {
+                return {
+                    title: cleaned,
+                    weightLabel: '',
+                    description: ''
+                };
+            }
+
+            return {
+                title: (match[1] || '').trim() || cleaned,
+                weightLabel: (match[2] || '').trim(),
+                description: (match[3] || '').trim()
+            };
+        }
+
+        function parseMarkdownRubric(text) {
+            if (typeof text !== 'string') return null;
+
+            const normalized = text.replace(/\r\n/g, '\n').trim();
+            if (!normalized) return null;
+
+            const lines = normalized.split('\n');
+            const intro = [];
+            const dimensions = [];
+            const specialNotes = [];
+            let currentDimension = null;
+            let sawRubricSignals = false;
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                if (/^评估维度[:：]?$/i.test(trimmed)) {
+                    sawRubricSignals = true;
+                    return;
+                }
+
+                if (/^特殊关注点[:：]/.test(trimmed)) {
+                    specialNotes.push(trimmed.replace(/^特殊关注点[:：]?\s*/, '').trim());
+                    currentDimension = null;
+                    sawRubricSignals = true;
+                    return;
+                }
+
+                const indent = (line.match(/^\s*/) || [''])[0].length;
+                const isBullet = /^-\s+/.test(trimmed);
+
+                if (isBullet && indent < 2) {
+                    sawRubricSignals = true;
+                    const parsed = parseRubricDimension(trimmed);
+                    currentDimension = {
+                        ...parsed,
+                        rules: []
+                    };
+                    dimensions.push(currentDimension);
+                    return;
+                }
+
+                if (isBullet && indent >= 2 && currentDimension) {
+                    currentDimension.rules.push(trimmed.replace(/^-\s*/, '').trim());
+                    return;
+                }
+
+                if (currentDimension) {
+                    currentDimension.description = currentDimension.description
+                        ? `${currentDimension.description}\n${trimmed}`
+                        : trimmed;
+                } else {
+                    intro.push(trimmed);
+                }
+            });
+
+            if (!sawRubricSignals || dimensions.length === 0) return null;
+
+            const explicitWeights = dimensions
+                .map(item => extractWeightValue(item.weightLabel))
+                .filter(value => value !== null);
+
+            return {
+                intro,
+                dimensions,
+                specialNotes,
+                explicitWeightTotal: explicitWeights.reduce((sum, value) => sum + value, 0),
+                explicitWeightCount: explicitWeights.length,
+                missingWeightCount: dimensions.length - explicitWeights.length
+            };
+        }
+
+        function renderMarkdownRubric(text) {
+            const parsed = parseMarkdownRubric(text);
+            if (!parsed) return null;
+
+            const summaryBadges = [
+                `<span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200"><i data-lucide="layout-list" class="h-3.5 w-3.5"></i>${parsed.dimensions.length} 个维度</span>`
+            ];
+
+            if (parsed.explicitWeightCount > 0) {
+                summaryBadges.push(`<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-100"><i data-lucide="percent" class="h-3.5 w-3.5"></i>显式权重合计 ${parsed.explicitWeightTotal}</span>`);
+            }
+
+            if (parsed.missingWeightCount > 0) {
+                summaryBadges.push(`<span class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-100"><i data-lucide="badge-alert" class="h-3.5 w-3.5"></i>${parsed.missingWeightCount} 个维度未写权重</span>`);
+            }
+
+            const introHtml = parsed.intro.length > 0
+                ? `
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 leading-6">
+                        ${marked.parse(parsed.intro.join('\n'))}
+                    </div>
+                `
+                : '';
+
+            const dimensionHtml = parsed.dimensions.map((item, index) => {
+                const weightText = item.weightLabel || '未显式权重';
+                const weightClass = item.weightLabel
+                    ? 'bg-blue-50 text-blue-700 border-blue-100'
+                    : 'bg-amber-50 text-amber-700 border-amber-100';
+                const descriptionHtml = item.description
+                    ? `<div class="text-sm text-slate-700 leading-6">${marked.parse(item.description)}</div>`
+                    : '<div class="text-sm text-slate-400">未提供维度说明</div>';
+                const rulesHtml = item.rules.length > 0
+                    ? `
+                        <div class="mt-4 space-y-2">
+                            <div class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                <i data-lucide="list-checks" class="h-3.5 w-3.5"></i>
+                                评分细则
+                            </div>
+                            <div class="space-y-2">
+                                ${item.rules.map(rule => `
+                                    <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 leading-6 shadow-sm">
+                                        <div class="flex gap-2 items-start">
+                                            <span class="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                                            <div>${renderInlineMarkdown(rule)}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `
+                    : '';
+
+                return `
+                    <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-900 px-2 text-[11px] font-bold text-white">${index + 1}</span>
+                                    <h5 class="text-base font-semibold text-slate-900 break-words">${escapeHtml(item.title)}</h5>
+                                </div>
+                            </div>
+                            <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold shrink-0 ${weightClass}">
+                                <i data-lucide="scale" class="h-3.5 w-3.5"></i>
+                                ${escapeHtml(weightText)}
+                            </span>
+                        </div>
+                        ${descriptionHtml}
+                        ${rulesHtml}
+                    </div>
+                `;
+            }).join('');
+
+            const notesHtml = parsed.specialNotes.length > 0
+                ? `
+                    <div class="rounded-2xl border border-violet-200 bg-violet-50 p-4 space-y-3">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-violet-800">
+                            <i data-lucide="sparkles" class="h-4 w-4"></i>
+                            特殊关注点
+                        </div>
+                        <div class="space-y-2">
+                            ${parsed.specialNotes.map(note => `
+                                <div class="rounded-lg bg-white/70 border border-violet-100 px-3 py-2 text-sm text-violet-900 leading-6">
+                                    ${renderInlineMarkdown(note)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `
+                : '';
+
+            return `
+                <div class="space-y-4 font-sans">
+                    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-900 text-white">
+                            <div class="flex items-center gap-2 text-sm font-semibold">
+                                <i data-lucide="clipboard-list" class="h-4 w-4"></i>
+                                Rubric Overview
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                ${summaryBadges.join('')}
+                            </div>
+                        </div>
+                        <div class="p-4 space-y-4">
+                            ${introHtml}
+                            <div class="space-y-3">${dimensionHtml}</div>
+                        </div>
+                    </div>
+                    ${notesHtml}
+                </div>
+            `;
+        }
+
+        function normalizeTaggedKey(label) {
+            return label.toLowerCase().replace(/[^a-z]/g, '');
+        }
+
+        function parseTaggedSections(text) {
+            if (typeof text !== 'string') return null;
+
+            const regex = /【([^】]+)】/g;
+            const matches = [...text.matchAll(regex)];
+            if (matches.length < 2) return null;
+
+            const sections = [];
+            for (let i = 0; i < matches.length; i += 1) {
+                const current = matches[i];
+                const next = matches[i + 1];
+                const label = current[1].trim();
+                const contentStart = current.index + current[0].length;
+                const contentEnd = next ? next.index : text.length;
+                const content = text.slice(contentStart, contentEnd).trim();
+
+                sections.push({
+                    rawLabel: label,
+                    key: normalizeTaggedKey(label),
+                    content
+                });
+            }
+
+            return sections;
+        }
+
+        function buildStructuredSections(testCase) {
+            const sections = parseTaggedSections(testCase.Input);
+            if (!sections) return null;
+
+            const sectionMetaMap = {
+                input: { title: 'Task Input', type: 'task_input', renderMode: 'markdown' },
+                expectedoutput: { title: 'Reference ExpectedOutput', type: 'reference_output', renderMode: 'markdown' },
+                judge: { title: 'Embedded Judge', type: 'source_judge', renderMode: 'rubric-markdown' },
+                actualoutput: { title: 'ActualOutput', type: 'actual_output', renderMode: 'markdown' },
+                runlog: { title: 'RunLog', type: 'run_log', renderMode: 'log' }
+            };
+
+            const structured = sections
+                .map(section => {
+                    const meta = sectionMetaMap[section.key];
+                    if (!meta) return null;
+                    return {
+                        title: meta.title,
+                        type: meta.type,
+                        renderMode: meta.renderMode,
+                        content: section.content
+                    };
+                })
+                .filter(Boolean);
+
+            const hasCorePacket = structured.some(section => section.type === 'actual_output')
+                && structured.some(section => section.type === 'reference_output');
+
+            return hasCorePacket ? structured : null;
+        }
+
+        function getSearchableText(testCase, structuredSections) {
+            const pieces = [
+                normalizeContent(testCase.Input),
+                normalizeContent(testCase.ExpectedOutput),
+                normalizeContent(testCase.Judge)
+            ];
+
+            if (structuredSections) {
+                structuredSections.forEach(section => pieces.push(normalizeContent(section.content)));
+            }
+
+            return pieces.join('\n').toLowerCase();
+        }
+
+        function resolveJudgeContent(judgeContent) {
+            if (Array.isArray(judgeContent)) {
+                return { content: judgeContent, renderMode: 'rubric-array' };
+            }
+
+            if (typeof judgeContent === 'string') {
+                try {
+                    const parsed = JSON.parse(judgeContent);
+                    if (Array.isArray(parsed)) {
+                        return { content: parsed, renderMode: 'rubric-array' };
+                    }
+                    return { content: JSON.stringify(parsed, null, 2), renderMode: 'json' };
+                } catch (error) {
+                    return { content: judgeContent, renderMode: 'rubric-markdown' };
+                }
+            }
+
+            return { content: judgeContent, renderMode: 'markdown' };
+        }
+
+        function createInfoNote(text) {
+            const note = document.createElement('div');
+            note.className = 'rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800';
+            note.innerHTML = `
+                <div class="flex items-start gap-2">
+                    <i data-lucide="info" class="h-4 w-4 mt-0.5 shrink-0"></i>
+                    <div>${text}</div>
+                </div>
+            `;
+            return note;
+        }
+
+        function indexSectionsByType(sections) {
+            return (sections || []).reduce((acc, section) => {
+                acc[section.type] = section;
+                return acc;
+            }, {});
+        }
+
+        function createLinkedReviewPanel({ title, description, badgeText, leftSection, rightSection, index }) {
+            const wrapper = document.createElement('section');
+            wrapper.className = 'rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden';
+
+            const header = document.createElement('div');
+            header.className = 'px-4 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white';
+            header.innerHTML = `
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <i data-lucide="link-2" class="h-4 w-4 text-indigo-600"></i>
+                            ${title}
+                        </div>
+                        <p class="mt-1 text-xs leading-5 text-slate-500">${description}</p>
+                    </div>
+                    ${badgeText ? `<span class="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 border border-indigo-100">${badgeText}</span>` : ''}
+                </div>
+                <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500">
+                    <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 border border-slate-200">先看输出目标</span>
+                    <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+                    <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 border border-slate-200">再看对应评分规则</span>
+                </div>
+            `;
+
+            const body = document.createElement('div');
+            body.className = 'p-4 grid grid-cols-1 xl:grid-cols-2 gap-5';
+
+            const leftCol = document.createElement('div');
+            leftCol.className = 'space-y-4';
+            leftCol.appendChild(createSection({
+                title: leftSection.title,
+                content: leftSection.content,
+                type: leftSection.type,
+                index,
+                renderMode: leftSection.renderMode
+            }));
+
+            const rightCol = document.createElement('div');
+            rightCol.className = 'space-y-4';
+            rightCol.appendChild(createSection({
+                title: rightSection.title,
+                content: rightSection.content,
+                type: rightSection.type,
+                index,
+                renderMode: rightSection.renderMode
+            }));
+
+            body.appendChild(leftCol);
+            body.appendChild(rightCol);
+            wrapper.appendChild(header);
+            wrapper.appendChild(body);
+            return wrapper;
+        }
+
         // File Handling
         function handleFileSelect(event) {
             const file = event.target.files[0];
@@ -212,7 +669,7 @@
                 try {
                     const content = e.target.result;
                     yamlData = jsyaml.load(content);
-                    modifications = {}; // Reset mods
+                    modifications = {};
                     renderCases();
                     emptyState.classList.add('hidden');
                     contentContainer.classList.remove('hidden');
@@ -228,87 +685,158 @@
         // Rendering
         function renderCases(filterText = '') {
             casesList.innerHTML = '';
-            
-            if (!yamlData || !yamlData.cases) return;
 
-            // Update Meta
+            if (!yamlData || !Array.isArray(yamlData.cases)) return;
+
             if (yamlData.meta) {
                 metaCount.textContent = `${yamlData.cases.length} Cases`;
                 metaNotice.textContent = yamlData.meta.notice || 'No notice provided';
             }
 
+            const query = filterText.trim().toLowerCase();
+
             yamlData.cases.forEach((testCase, index) => {
-                // Filter logic
-                const input = testCase.Input || '';
-                const output = testCase.ExpectedOutput || '';
-                const searchText = filterText.toLowerCase();
-                
-                if (filterText && !input.toLowerCase().includes(searchText) && !output.toLowerCase().includes(searchText)) {
+                const structuredSections = buildStructuredSections(testCase);
+                const searchText = getSearchableText(testCase, structuredSections);
+
+                if (query && !searchText.includes(query)) {
                     return;
                 }
 
-                // Create Card
                 const card = document.createElement('div');
                 card.className = 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md';
                 card.id = `case-${index}`;
 
-                // Header
                 const header = document.createElement('div');
-                header.className = 'bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center';
+                header.className = 'bg-gray-50 px-6 py-4 border-b border-gray-100 flex justify-between items-center gap-4';
                 header.innerHTML = `
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-3 flex-wrap">
                         <span class="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-md">#${index + 1}</span>
                         <h3 class="text-sm font-semibold text-gray-700">Test Case</h3>
+                        ${structuredSections ? '<span class="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">Structured Eval Packet</span>' : ''}
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button onclick="toggleSection(${index}, 'remarks')" class="text-gray-500 hover:text-blue-600 p-1 rounded-md hover:bg-blue-50 transition-colors" title="Add Remarks">
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="toggleSection('remarks', ${index})" class="text-gray-500 hover:text-blue-600 p-1 rounded-md hover:bg-blue-50 transition-colors" title="Add Remarks">
                             <i data-lucide="message-square-plus" class="h-4 w-4"></i>
                         </button>
                     </div>
                 `;
 
-                // Body
                 const body = document.createElement('div');
-                body.className = 'p-6 grid grid-cols-1 lg:grid-cols-2 gap-8';
+                body.className = 'p-6 space-y-6';
 
-                // Left Column: Input & Output
-                const leftCol = document.createElement('div');
-                leftCol.className = 'space-y-6';
+                const supportGrid = document.createElement('div');
+                supportGrid.className = 'grid grid-cols-1 xl:grid-cols-2 gap-6';
 
-                // Input Section
-                const inputSection = createSection('Input', testCase.Input, 'input', index, true);
-                leftCol.appendChild(inputSection);
+                const remarkFields = ['general_comment'];
+                const resolvedJudge = resolveJudgeContent(testCase.Judge);
 
-                // Output Section
-                const outputSection = createSection('Expected Output', testCase.ExpectedOutput, 'output', index, true);
-                leftCol.appendChild(outputSection);
+                if (structuredSections) {
+                    const sectionMap = indexSectionsByType(structuredSections);
 
-                // Right Column: Judge & Remarks
-                const rightCol = document.createElement('div');
-                rightCol.className = 'space-y-6';
-
-                // Judge Section
-                let judgeContent = testCase.Judge;
-                let isJson = false;
-                try {
-                    if (typeof judgeContent === 'string') {
-                        const parsed = JSON.parse(judgeContent);
-                        judgeContent = JSON.stringify(parsed, null, 2);
-                        isJson = true;
+                    if (sectionMap.task_input) {
+                        body.appendChild(createSection({
+                            title: sectionMap.task_input.title,
+                            content: sectionMap.task_input.content,
+                            type: sectionMap.task_input.type,
+                            index,
+                            renderMode: sectionMap.task_input.renderMode
+                        }));
+                        remarkFields.push('task_input_comment');
                     }
-                } catch (e) { /* Not JSON or error parsing */ }
 
-                const judgeSection = createSection('Judge / Rubric', judgeContent, 'judge', index, false, isJson);
-                rightCol.appendChild(judgeSection);
+                    if (sectionMap.reference_output && sectionMap.source_judge) {
+                        body.appendChild(createLinkedReviewPanel({
+                            title: '原任务参考答案 ↔ 原始评分标准',
+                            description: '这组内容一起定义了被评输出应该长什么样、以及原任务会如何打分。',
+                            badgeText: '原始任务包',
+                            leftSection: sectionMap.reference_output,
+                            rightSection: sectionMap.source_judge,
+                            index
+                        }));
+                        remarkFields.push('reference_output_comment', 'source_judge_comment');
+                    }
 
-                // General Remarks Section (Always visible if modified, or toggleable)
-                const remarksSection = createRemarksSection(index);
-                
-                // Append columns
-                body.appendChild(leftCol);
-                body.appendChild(rightCol);
+                    const topLevelExpectedSection = isPlaceholderExpectedOutput(testCase.ExpectedOutput)
+                        ? {
+                            title: 'Top-level ExpectedOutput',
+                            content: '> 当前仍是占位值 `待基线模型运行后填入`。\n\n可先重点审阅右侧 `Judge / Rubric`，确认评估器应如何打分。',
+                            type: 'eval_output',
+                            renderMode: 'markdown'
+                        }
+                        : {
+                            title: 'Top-level ExpectedOutput',
+                            content: testCase.ExpectedOutput,
+                            type: 'eval_output',
+                            renderMode: 'markdown'
+                        };
 
-                // Footer for Remarks (Full width)
+                    body.appendChild(createLinkedReviewPanel({
+                        title: '评估器目标输出 ↔ 评估器 Judge',
+                        description: '这组内容一起约束 `meta-eval-judge`：左边定义理想评估报告，右边定义最终评分标准。',
+                        badgeText: isPlaceholderExpectedOutput(testCase.ExpectedOutput) ? 'ExpectedOutput 占位中' : '评估器任务',
+                        leftSection: topLevelExpectedSection,
+                        rightSection: {
+                            title: 'Top-level Judge / Rubric',
+                            content: resolvedJudge.content,
+                            type: 'eval_judge',
+                            renderMode: resolvedJudge.renderMode
+                        },
+                        index
+                    }));
+                    remarkFields.push('eval_output_comment', 'eval_judge_comment');
+
+                    [sectionMap.actual_output, sectionMap.run_log].filter(Boolean).forEach(section => {
+                        supportGrid.appendChild(createSection({
+                            title: section.title,
+                            content: section.content,
+                            type: section.type,
+                            index,
+                            renderMode: section.renderMode
+                        }));
+
+                        const mappedField = SECTION_TYPE_TO_REMARK_FIELD[section.type];
+                        if (mappedField) {
+                            remarkFields.push(mappedField);
+                        }
+                    });
+                } else {
+                    body.appendChild(createSection({
+                        title: 'Input',
+                        content: testCase.Input,
+                        type: 'task_input',
+                        index,
+                        renderMode: 'markdown'
+                    }));
+                    remarkFields.push('task_input_comment');
+
+                    body.appendChild(createLinkedReviewPanel({
+                        title: 'ExpectedOutput ↔ Judge / Rubric',
+                        description: '在同一块里对照查看目标答案与评分规则，避免左右来回切换。',
+                        badgeText: '单层任务',
+                        leftSection: {
+                            title: 'Expected Output',
+                            content: testCase.ExpectedOutput,
+                            type: 'eval_output',
+                            renderMode: 'markdown'
+                        },
+                        rightSection: {
+                            title: 'Judge / Rubric',
+                            content: resolvedJudge.content,
+                            type: 'eval_judge',
+                            renderMode: resolvedJudge.renderMode
+                        },
+                        index
+                    }));
+                    remarkFields.push('eval_output_comment', 'eval_judge_comment');
+                }
+
+                if (supportGrid.childElementCount > 0) {
+                    body.appendChild(supportGrid);
+                }
+
+                const remarksSection = createRemarksSection(index, remarkFields);
+
                 const footer = document.createElement('div');
                 footer.className = 'px-6 pb-6';
                 footer.appendChild(remarksSection);
@@ -324,13 +852,115 @@
             hljs.highlightAll();
         }
 
+        function renderRubricArray(rubricItems) {
+            if (!Array.isArray(rubricItems) || rubricItems.length === 0) return null;
+
+            const groups = [
+                {
+                    title: '加分项',
+                    icon: 'check-circle-2',
+                    headerClass: 'text-emerald-700',
+                    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+                    cardClass: 'border-emerald-200 bg-emerald-50/60',
+                    items: rubricItems.filter(item => item.points > 0)
+                },
+                {
+                    title: '扣分项',
+                    icon: 'shield-alert',
+                    headerClass: 'text-red-700',
+                    badgeClass: 'bg-red-50 text-red-700 border-red-100',
+                    cardClass: 'border-red-200 bg-red-50/60',
+                    items: rubricItems.filter(item => item.points < 0)
+                },
+                {
+                    title: '中性项',
+                    icon: 'dot',
+                    headerClass: 'text-slate-600',
+                    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+                    cardClass: 'border-slate-200 bg-slate-50/80',
+                    items: rubricItems.filter(item => item.points === 0)
+                }
+            ];
+
+            const summaryBadges = groups
+                .filter(group => group.items.length > 0)
+                .map(group => {
+                    const total = group.items.reduce((sum, item) => sum + item.points, 0);
+                    return `
+                        <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${group.badgeClass}">
+                            <i data-lucide="${group.icon}" class="h-3.5 w-3.5"></i>
+                            ${group.title} ${group.items.length} 项
+                            <span class="font-mono">${total > 0 ? '+' : ''}${total}</span>
+                        </span>
+                    `;
+                })
+                .join('');
+
+            function renderItem(item, group) {
+                const axisTags = (item.tags || [])
+                    .filter(tag => tag.startsWith('axis:'))
+                    .map(tag => tag.replace('axis:', ''));
+                const metaTags = (item.tags || [])
+                    .filter(tag => !tag.startsWith('axis:'));
+                const pointsText = item.points > 0 ? `+${item.points}` : `${item.points}`;
+
+                return `
+                    <div class="rounded-xl border ${group.cardClass} p-4 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="text-sm font-medium text-slate-800 leading-6">${renderInlineMarkdown(item.criterion)}</div>
+                                ${(axisTags.length > 0 || metaTags.length > 0) ? `
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        ${axisTags.map(tag => `<span class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 border border-blue-100">${escapeHtml(tag)}</span>`).join('')}
+                                        ${metaTags.map(tag => `<span class="inline-flex items-center rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 border border-slate-200">${escapeHtml(tag)}</span>`).join('')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <span class="inline-flex min-w-[64px] items-center justify-center rounded-full border px-3 py-1 text-sm font-bold font-mono ${group.badgeClass}">${pointsText}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="space-y-4 font-sans">
+                    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-900 text-white">
+                            <div class="flex items-center gap-2 text-sm font-semibold">
+                                <i data-lucide="list-todo" class="h-4 w-4"></i>
+                                Rubric Breakdown
+                            </div>
+                            <span class="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">共 ${rubricItems.length} 项</span>
+                        </div>
+                        <div class="p-4 flex flex-wrap gap-2">
+                            ${summaryBadges}
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        ${groups.filter(group => group.items.length > 0).map(group => `
+                            <section class="space-y-3">
+                                <div class="flex items-center gap-2 ${group.headerClass}">
+                                    <i data-lucide="${group.icon}" class="h-4 w-4"></i>
+                                    <h5 class="text-sm font-semibold">${group.title}</h5>
+                                </div>
+                                <div class="space-y-3">
+                                    ${group.items.map(item => renderItem(item, group)).join('')}
+                                </div>
+                            </section>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
         function renderRubric(rubricData) {
             let data = rubricData;
             if (typeof data === 'string') {
                 try {
                     data = JSON.parse(data);
-                } catch (e) {
-                    return null; // Fallback to raw code block
+                } catch (error) {
+                    return null;
                 }
             }
 
@@ -341,7 +971,6 @@
 
             let html = `
                 <div class="space-y-4 font-sans">
-                    <!-- Header -->
                     <div class="flex items-center justify-between border-b border-gray-200 pb-2">
                         <div class="flex items-center gap-2">
                             <i data-lucide="scale" class="h-4 w-4 text-purple-600"></i>
@@ -350,7 +979,6 @@
                         <span class="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded-full">v${version}</span>
                     </div>
 
-                    <!-- Scale -->
                     ${scale.type ? `
                     <div class="bg-purple-50/50 rounded-md p-3 text-xs border border-purple-100/50">
                         <span class="font-bold text-purple-700 block mb-1">Scale: ${scale.type}</span>
@@ -358,13 +986,11 @@
                     </div>
                     ` : ''}
 
-                    <!-- Criteria List -->
                     <div class="space-y-4">
                         ${criteria.map(c => `
                             <div class="border border-gray-200 bg-white rounded-lg p-4 hover:border-purple-300 transition-colors shadow-sm">
-                                <!-- Title Row -->
-                                <div class="flex items-center justify-between mb-3">
-                                    <div class="flex items-center gap-2">
+                                <div class="flex items-center justify-between mb-3 gap-3">
+                                    <div class="flex items-center gap-2 min-w-0">
                                         <span class="bg-gray-800 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 shadow-sm">${c.id}</span>
                                         <span class="font-bold text-gray-800 text-sm">${c.name}</span>
                                     </div>
@@ -372,19 +998,16 @@
                                 </div>
 
                                 <div class="text-xs space-y-3 pl-1">
-                                    <!-- Intent -->
                                     ${c.intent ? `
                                     <div class="text-gray-500 italic flex gap-1.5 items-start">
                                         <i data-lucide="target" class="h-3 w-3 mt-0.5 shrink-0 text-purple-400"></i>
                                         <span>${c.intent}</span>
                                     </div>` : ''}
-                                    
-                                    <!-- Definition -->
+
                                     <div class="text-gray-700 leading-relaxed border-l-2 border-purple-100 pl-2.5 py-1">
                                         ${c.definition}
                                     </div>
 
-                                    <!-- Levels (Grid) -->
                                     ${c.levels ? `
                                     <div class="mt-2 bg-gray-50 rounded-md p-2 border border-gray-100">
                                         <span class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Scoring Levels</span>
@@ -399,7 +1022,6 @@
                                     </div>
                                     ` : ''}
 
-                                    <!-- Evidence & Failures (Columns) -->
                                     ${(c.evidence_to_look_for || c.common_failure_modes) ? `
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                                         ${c.evidence_to_look_for ? `
@@ -433,7 +1055,6 @@
                                         </div>` : ''}
                                     </div>
                                     ` : ''}
-
                                 </div>
                             </div>
                         `).join('')}
@@ -443,41 +1064,60 @@
             return html;
         }
 
-        function createSection(title, content, type, index, isMarkdown, isJson = false) {
+        function createSection({ title, content, type, index, renderMode = 'markdown' }) {
             const wrapper = document.createElement('div');
             wrapper.className = 'group relative';
 
             const header = document.createElement('div');
-            header.className = 'flex justify-between items-end mb-2';
+            header.className = 'flex justify-between items-end mb-2 gap-3';
             header.innerHTML = `
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">${title}</h4>
-                <button onclick="focusRemark('${type}', ${index})" class="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1">
+                <button onclick="focusRemark('${type}', ${index})" class="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 shrink-0">
                     <i data-lucide="edit-2" class="h-3 w-3"></i> Comment
                 </button>
             `;
 
             const contentDiv = document.createElement('div');
-            contentDiv.className = 'bg-gray-50 rounded-lg border border-gray-200 p-4 min-h-[100px] max-h-[800px] text-sm overflow-y-auto relative'; 
-            
+            contentDiv.className = 'bg-gray-50 rounded-lg border border-gray-200 p-4 min-h-[100px] max-h-[800px] text-sm overflow-y-auto relative';
+
             let rendered = false;
-            
-            if (isJson) {
+
+            if (renderMode === 'rubric-array' && Array.isArray(content)) {
+                const uiHtml = renderRubricArray(content);
+                if (uiHtml) {
+                    contentDiv.innerHTML = uiHtml;
+                    rendered = true;
+                }
+            }
+
+            if (!rendered && renderMode === 'json') {
                 const uiHtml = renderRubric(content);
                 if (uiHtml) {
                     contentDiv.innerHTML = uiHtml;
                     rendered = true;
-                    // Note: Icons will be initialized by renderCases' final lucide.createIcons() call
+                } else {
+                    contentDiv.innerHTML = `<pre><code class="language-json">${escapeHtml(content)}</code></pre>`;
+                    rendered = true;
                 }
             }
 
             if (!rendered) {
-                if (isMarkdown) {
+                if (renderMode === 'rubric-markdown') {
+                    const rubricHtml = renderMarkdownRubric(normalizeContent(content));
+                    if (rubricHtml) {
+                        contentDiv.innerHTML = rubricHtml;
+                    } else {
+                        contentDiv.classList.add('markdown-body');
+                        contentDiv.innerHTML = marked.parse(normalizeContent(content) || '*Empty*');
+                    }
+                } else if (renderMode === 'markdown') {
                     contentDiv.classList.add('markdown-body');
-                    contentDiv.innerHTML = marked.parse(content || '*Empty*');
-                } else if (isJson) {
-                    contentDiv.innerHTML = `<pre><code class="language-json">${content}</code></pre>`;
+                    contentDiv.innerHTML = marked.parse(normalizeContent(content) || '*Empty*');
+                } else if (renderMode === 'log') {
+                    contentDiv.innerHTML = `<pre><code class="language-text">${escapeHtml(content || 'Empty')}</code></pre>`;
                 } else {
-                    contentDiv.textContent = content;
+                    contentDiv.classList.add('content-prewrap');
+                    contentDiv.textContent = normalizeContent(content);
                 }
             }
 
@@ -486,16 +1126,31 @@
             return wrapper;
         }
 
-        function createRemarksSection(index) {
+        function createRemarksSection(index, fields) {
             const container = document.createElement('div');
-            container.className = 'bg-blue-50/50 rounded-xl border border-blue-100 p-4 hidden'; // Hidden by default
+            container.className = 'bg-blue-50/50 rounded-xl border border-blue-100 p-4 hidden';
             container.id = `remarks-container-${index}`;
-            
-            // Check if we have existing mods
+
             const mod = modifications[index] || {};
-            if (mod.general_comment || mod.input_comment || mod.output_comment || mod.judge_comment) {
+            const uniqueFields = [...new Set(fields.filter(Boolean))];
+            const hasAnyValue = uniqueFields.some(field => normalizeContent(mod[field]).trim());
+            if (hasAnyValue) {
                 container.classList.remove('hidden');
             }
+
+            const fieldsHtml = uniqueFields.map(field => {
+                const meta = REMARK_FIELD_META[field] || {
+                    label: field,
+                    placeholder: 'Add your comment...'
+                };
+                const textareaId = `${field}-remark-${index}`;
+                return `
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-blue-700">${meta.label}</label>
+                        <textarea id="${textareaId}" oninput="updateModification(${index}, '${field}', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="${meta.placeholder}">${mod[field] || ''}</textarea>
+                    </div>
+                `;
+            }).join('');
 
             container.innerHTML = `
                 <h4 class="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
@@ -503,70 +1158,59 @@
                     Remarks & Feedback
                 </h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-blue-700">General</label>
-                        <textarea oninput="updateModification(${index}, 'general_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="General feedback...">${mod.general_comment || ''}</textarea>
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-blue-700">Input Specific</label>
-                        <textarea id="input-remark-${index}" oninput="updateModification(${index}, 'input_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on input...">${mod.input_comment || ''}</textarea>
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-blue-700">Output Specific</label>
-                        <textarea id="output-remark-${index}" oninput="updateModification(${index}, 'output_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on expected output...">${mod.output_comment || ''}</textarea>
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-xs font-medium text-blue-700">Judge/Rubric Specific</label>
-                        <textarea id="judge-remark-${index}" oninput="updateModification(${index}, 'judge_comment', this.value)" class="w-full text-sm p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/80 transition-all h-24" placeholder="Feedback on grading criteria...">${mod.judge_comment || ''}</textarea>
-                    </div>
+                    ${fieldsHtml}
                 </div>
             `;
             return container;
         }
 
         // Logic
-        function toggleSection(index, section) {
+        function toggleSection(section, index) {
+            if (section !== 'remarks') return;
             const container = document.getElementById(`remarks-container-${index}`);
-            container.classList.toggle('hidden');
+            if (container) {
+                container.classList.toggle('hidden');
+            }
         }
 
         function focusRemark(type, index) {
             const container = document.getElementById(`remarks-container-${index}`);
+            if (!container) return;
+
             container.classList.remove('hidden');
-            
-            const map = {
-                'input': `input-remark-${index}`,
-                'output': `output-remark-${index}`,
-                'judge': `judge-remark-${index}`
-            };
-            
-            const id = map[type];
-            if (id) {
-                setTimeout(() => document.getElementById(id).focus(), 100);
-            }
+
+            const field = SECTION_TYPE_TO_REMARK_FIELD[type] || 'general_comment';
+            const id = `${field}-remark-${index}`;
+            setTimeout(() => {
+                const textarea = document.getElementById(id);
+                if (textarea) textarea.focus();
+            }, 100);
         }
 
         function updateModification(index, field, value) {
             if (!modifications[index]) {
-                modifications[index] = { index: index };
+                modifications[index] = { index };
             }
+
             modifications[index][field] = value;
-            
-            // Clean up empty entries
+
             const mod = modifications[index];
-            if (!mod.general_comment && !mod.input_comment && !mod.output_comment && !mod.judge_comment) {
+            const hasAnyValue = Object.keys(mod)
+                .filter(key => key !== 'index')
+                .some(key => normalizeContent(mod[key]).trim());
+
+            if (!hasAnyValue) {
                 delete modifications[index];
             }
         }
 
         function handleSearch(e) {
-            const val = e.target.value;
-            renderCases(val);
+            renderCases(e.target.value);
         }
 
         function exportPatch() {
             const patchList = Object.values(modifications).sort((a, b) => a.index - b.index);
-            
+
             if (patchList.length === 0) {
                 alert('No remarks or modifications to export.');
                 return;
@@ -582,10 +1226,10 @@
                 patches: patchList
             };
 
-            const yamlString = jsyaml.dump(patchData);
+            const yamlString = jsyaml.dump(patchData, { lineWidth: 120 });
             const blob = new Blob([yamlString], { type: 'text/yaml' });
             const url = URL.createObjectURL(blob);
-            
+
             const a = document.createElement('a');
             a.href = url;
             a.download = `testcase_${timestamp}.patch.yaml`;

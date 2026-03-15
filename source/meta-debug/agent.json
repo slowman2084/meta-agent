@@ -1,0 +1,8 @@
+{
+  "description": "评估体系调试专家（Debug/Calibrate）。诊断 rubric、理想态、提示词三元组的一致性问题，从实际输出中洞察设计缺陷，输出 calibration_report.json 供人工决策。",
+  "tools": [
+    "read",
+    "write",
+    "bash"
+  ]
+}

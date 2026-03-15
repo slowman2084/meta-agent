@@ -1,0 +1,86 @@
+---
+description: "Agent Factory - 共享测试-评估流程和 test_agent 测试模式。触发词：test_agent、测试 Agent、跑测试。evo_looper 和 calibrate 也依赖本规则。"
+globs:
+alwaysApply: false
+---
+
+# 共享测试-评估流程 & test_agent 测试模式
+
+## 一、共享测试-评估流程
+
+> 供 `test_agent` 和 `evo_looper` 共同引用。
+
+### 模式判断
+
+通过 Agent 名称中是否含 `@` 自动判断：
+- `cls-log-agent` → **IDE 模式**
+- `cls-log-agent@observable` → **平台模式**
+
+### 步骤 1：调用被测 Agent 获取实际输出
+
+**IDE 模式**：
+
+1. **执行前**，记录 CodeBuddy 会话快照：
+   ```bash
+   ./venv/bin/python scripts/subagent_sharegpt_exporter.py snapshot
+   ```
+
+2. 逐条调用 IDE Sub Agent，传入 `Input`，获得实际输出。支持 3~4 条并发。
+   每条用例调用结束后，**必须立即**将实际输出写入 `case_[N]_actual_output.txt`。
+
+3. **所有用例完成后**，导出 ShareGPT 格式的运行日志：
+   ```bash
+   ./venv/bin/python scripts/subagent_sharegpt_exporter.py export-split \
+     -d source/[AgentName]/tmp/[session_id]/ \
+     -a [AgentName]
+   ```
+   脚本会对比快照差异，提取新增的 Sub Agent 记录，每条保存为 `record_N_run_log.json`。
+   编排器根据每个 `record_N_run_log.json` 中 `metadata.description` 或 `conversations[1].value`（human prompt）
+   匹配对应 case，rename 为 `case_[N]_run_log.json`。
+
+**平台模式**：运行批量测试脚本：
+
+```bash
+./venv/bin/python scripts/platform_test.py [AgentName]@[platform] --session [session_id]
+```
+
+### 步骤 2：日志与评估准备
+
+- IDE 模式：`case_[N]_run_log.json` 由步骤 1 的 `export-split` 自动生成（ShareGPT 格式）
+- 平台模式：调用 `meta-log-converter` 将 `case_N/execution_log.txt` 转换为 `case_[N]_run_log.json`
+- 若 `ExpectedOutput` 为空，将实际输出填充到 YAML
+
+> RunLog 对 eval-judge 是**可选输入**。缺失时仅基于 actual_output 评估。
+
+### 步骤 3：评估
+
+**逐条调用约束（强制）**：
+- 每次调用 `meta-eval-judge` **只传一条用例**
+- **严禁**多条合并（上下文膨胀导致评分质量下降）
+- 支持并发：最多 3~4 条同时调用
+- 返回后立即写入 `case_[N]_eval_result.md`
+
+传参：Input + ExpectedOutput + Judge + ActualOutput（必选）；RunLog（可选）
+
+### 步骤 4：记录结果
+
+---
+
+## 二、`test_agent` 测试模式
+
+> 只测试 + 评估，不修改提示词。用于了解当前 Agent 的真实水平。
+
+### 流程
+
+1. **前置**：
+   - IDE 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定 `model: xxx`，加 `--model xxx`）
+   - 平台模式（名称含 `@`）：无需安装
+2. **初始化**：确定目标 Agent 名称、YAML 路径
+   - 若指定了 `model: xxx`，测试基于 `prompt_[model].md`
+3. **执行共享测试-评估流程**（本规则第一节）
+   - 评估结果保存为 `source/[AgentName]/tmp/test_[时间戳]/case_[N]_eval_result.md`
+4. **生成报告**：
+   - 汇总为 `source/[AgentName]/tmp/test_[时间戳]/评估报告.md`
+   - 展示汇总表格（序号 / Input 摘要 / 得分 / 主要不足）
+   - 计算平均分、最高分、最低分、低于 80 分的用例列表
+5. **完成提示**：建议 `calibrate`（首次测试时）或 `evo_looper`

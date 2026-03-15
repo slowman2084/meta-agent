@@ -204,14 +204,68 @@ def check_ide_directories():
             "name": "IDE Directories",
             "status": "warn",
             "message": f"Some missing: {', '.join(missing)}",
-            "fix_command": f"mkdir -p {' '.join([f'.{m}/agents' for m in missing])}",
+            "fix_command": "./venv/bin/python scripts/install.py",
         }
     else:
         return {
             "name": "IDE Directories",
             "status": "warn",
-            "message": "No IDE directories found (will be created by install.py)",
+            "message": "No IDE directories found (run install.py to create)",
+            "fix_command": "./venv/bin/python scripts/install.py",
+        }
+
+
+def check_rules_installed():
+    """Check if rules are installed to IDE directories."""
+    source_rules = os.path.join(PROJECT_ROOT, "source", "rules")
+    if not os.path.isdir(source_rules):
+        return {
+            "name": "Rules Installation",
+            "status": "warn",
+            "message": "source/rules/ not found",
             "fix_command": None,
+        }
+
+    rule_files = [f for f in os.listdir(source_rules) if f.endswith(".mdc")]
+    if not rule_files:
+        return {
+            "name": "Rules Installation",
+            "status": "warn",
+            "message": "No .mdc files in source/rules/",
+            "fix_command": None,
+        }
+
+    ide_rules_dirs = [".cursor/rules", ".codebuddy/rules", ".claude/rules"]
+    missing_dirs = []
+    missing_files = []
+
+    for ide_dir in ide_rules_dirs:
+        full_dir = os.path.join(PROJECT_ROOT, ide_dir)
+        if not os.path.isdir(full_dir):
+            missing_dirs.append(ide_dir)
+            continue
+        for rf in rule_files:
+            if not os.path.isfile(os.path.join(full_dir, rf)):
+                missing_files.append(f"{ide_dir}/{rf}")
+
+    if not missing_dirs and not missing_files:
+        return {
+            "name": "Rules Installation",
+            "status": "pass",
+            "message": f"{len(rule_files)} rule(s) installed to all IDE directories",
+            "fix_command": None,
+        }
+    else:
+        detail = []
+        if missing_dirs:
+            detail.append(f"missing dirs: {', '.join(missing_dirs)}")
+        if missing_files:
+            detail.append(f"missing files: {', '.join(missing_files[:3])}{'...' if len(missing_files) > 3 else ''}")
+        return {
+            "name": "Rules Installation",
+            "status": "warn",
+            "message": f"Rules not fully installed ({'; '.join(detail)})",
+            "fix_command": "./venv/bin/python scripts/install.py --rules-only",
         }
 
 
@@ -244,6 +298,7 @@ def run_all_checks():
         check_source_directory,
         check_scripts,
         check_ide_directories,
+        check_rules_installed,
     ]
 
     results = []
