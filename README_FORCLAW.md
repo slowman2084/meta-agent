@@ -64,7 +64,7 @@ cd meta-agent
 CodeBuddy --version
 
 # 或检查 Claude Code CLI
-claude-internal --version
+claude --version
 ```
 
 > 本 demo **不需要 MCP、不需要额外 API Key**。

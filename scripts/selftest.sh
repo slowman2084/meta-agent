@@ -3,7 +3,7 @@
 # Agent Factory 自检脚本
 #
 # 在 IDE 之外通过 CLI 工具调用 Agent，验证其基本能力。
-# 支持 claude-internal (Claude Code) 和 codebuddy 两个 CLI 后端。
+# 支持 claude (Claude Code CLI) 和 codebuddy 两个 CLI 后端。
 #
 # 用法:
 #   ./scripts/selftest.sh <agent_name> [options]
@@ -81,14 +81,14 @@ detect_cli() {
     if [[ -n "$CLI_BACKEND" ]]; then
         return
     fi
-    if command -v claude-internal &>/dev/null; then
+    if command -v claude &>/dev/null; then
         CLI_BACKEND="claude"
-        log_info "自动检测到 claude-internal CLI"
+        log_info "自动检测到 Claude Code CLI"
     elif command -v codebuddy &>/dev/null; then
         CLI_BACKEND="codebuddy"
         log_info "自动检测到 codebuddy CLI"
     else
-        log_error "未找到 claude-internal 或 codebuddy CLI，请确认已安装"
+        log_error "未找到 claude 或 codebuddy CLI，请确认已安装"
         exit 1
     fi
 }
@@ -153,12 +153,12 @@ invoke_agent() {
 
     case "$CLI_BACKEND" in
         claude)
-            # claude-internal 支持 --agent 直接指定 .claude/agents/ 中的 agent
+            # claude 支持 --agent 直接指定 .claude/agents/ 中的 agent
             if [[ "$DRY_RUN" == true ]]; then
-                echo "[DRY-RUN] echo '<input>' | claude-internal -p --agent $AGENT_NAME --dangerously-skip-permissions --max-turns 30"
+                echo "[DRY-RUN] echo '<input>' | claude -p --agent $AGENT_NAME --dangerously-skip-permissions --max-turns 30"
                 return 0
             fi
-            echo "$input" | timeout "$TIMEOUT" claude-internal \
+            echo "$input" | timeout "$TIMEOUT" claude \
                 -p \
                 --agent "$AGENT_NAME" \
                 --dangerously-skip-permissions \
@@ -211,7 +211,7 @@ EVALEOF
 
     case "$CLI_BACKEND" in
         claude)
-            echo "$eval_prompt" | timeout "$TIMEOUT" claude-internal \
+            echo "$eval_prompt" | timeout "$TIMEOUT" claude \
                 -p \
                 --agent "eval-judge" \
                 --dangerously-skip-permissions \
@@ -249,8 +249,8 @@ main() {
     log_info "评估模式:  $RUN_EVAL"
     echo ""
 
-    # 设置上下文
-    python3 "$SCRIPT_DIR/set_context.py" test_agent "$AGENT_NAME" "selftest_${TIMESTAMP}"
+    # 设置上下文（可选，set_context.py 已移至 deprecated/）
+    # python3 "$SCRIPT_DIR/set_context.py" test_agent "$AGENT_NAME" "selftest_${TIMESTAMP}"
 
     # 解析 CSV
     log_step "解析测试用例..."
@@ -341,8 +341,8 @@ for c in cases:
         echo "| $idx | ${input_preview:0:30} | $status | $output_len | $score |" >> "$summary_file"
     done
 
-    # 清理上下文
-    python3 "$SCRIPT_DIR/set_context.py" clear
+    # 清理上下文（可选）
+    # python3 "$SCRIPT_DIR/set_context.py" clear
 
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════${NC}"
