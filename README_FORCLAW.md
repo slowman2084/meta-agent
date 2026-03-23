@@ -4,7 +4,7 @@
 >
 > 你将用 5 条"流行歌金句"测试用例，体验 Agent 的创建、测试、迭代优化全流程。
 > 
-> **OpenClaw 用户**：无需安装任何工具，直接在浏览器中完成全部流程。
+> **OpenClaw 用户**：无需安装 CLI 工具，clone 项目后即可在浏览器中完成全部流程。
 
 ---
 
@@ -12,7 +12,7 @@
 
 **CLI / IDE 方式**：每一步都是一个独立的 CLI 调用（`-p` 模式）。每步**执行完后**，读取生成的文件，把有趣的内容展示给用户。
 
-**OpenClaw 方式**：每一步通过 spawn sub agent 完成。你（OpenClaw）读取 `source/meta-*/prompt.md` 作为各 sub agent 的 system prompt，在对话上下文中传递中间产物（提示词、输出、评分），无需文件系统。
+**OpenClaw 方式**：每一步通过 spawn sub agent 完成。你（OpenClaw）读取 `source/meta-*/prompt.md` 作为各 sub agent 的 system prompt，spawn 时通过 `tools` 参数赋予 `file_read`、`file_write`、`list_directory` 能力。因此中间产物（提示词、输出、评分）**写入文件系统**，与 CLI / IDE 方式共享相同的目录结构（`source/[AgentName]/`）。
 
 成就感来自"看到 AI 具体写了什么、推荐了什么金句、分数怎么变的"，而不是一句"已完成"。
 
@@ -54,13 +54,13 @@ Meta-Agent 支持三种体验方式，选**任意一种**即可：
 
 | 方式 | 需要安装 | 适合谁 | 体验完整度 |
 |------|---------|--------|-----------|
-| **🅰️ OpenClaw** | 无需安装（浏览器即可） | 想快速感受、不想装环境的人 | ⭐⭐⭐⭐ |
+| **🅰️ OpenClaw** | 无需安装（浏览器即可） | 想快速感受、不想装环境的人 | ⭐⭐⭐⭐⭐ |
 | **🅱️ AI IDE** | Cursor / CodeBuddy / Claude Code | 已有 IDE 的开发者 | ⭐⭐⭐⭐⭐ |
 | **🅲 CLI** | CodeBuddy CLI 或 Claude Code CLI | 喜欢终端和脚本化的人 | ⭐⭐⭐⭐⭐ |
 
 #### 🅰️ OpenClaw 方式（零门槛）
 
-**不需要安装任何工具**。OpenClaw 会通过 sub agent spawn 来调用 Meta-Agent 的各个 Sub Agent（如 meta-prompt-engineer、meta-eval-judge 等）。
+**不需要安装任何工具**。OpenClaw 会通过 spawn sub agent（spawn 时赋予 `file_read`、`file_write`、`list_directory` 工具）来调用 Meta-Agent 的各个 Sub Agent（如 meta-prompt-engineer、meta-eval-judge 等）。
 
 工作原理：
 - 本文档（`README_FORCLAW.md`）本身就是 OpenClaw 的执行手册
@@ -68,8 +68,9 @@ Meta-Agent 支持三种体验方式，选**任意一种**即可：
 - 通过 spawn sub agent 实现 **提示词生成 → 评估打分 → 迭代优化** 的完整流程
 - 编排规则（rules）已内嵌在本文档的步骤说明中，无需单独安装到 IDE
 - 每个 sub agent 有特定的输入格式（使用 `【】` 格式标记），本文档已在每步中提供了精确的模板
+- **Spawn 时赋予文件读写能力**：每次 spawn sub agent 时，通过 `tools` 参数赋予 `file_read`、`file_write`、`list_directory` 工具。这样 sub agent 可以直接读写本地文件系统，中间产物写入 `source/[AgentName]/` 目录，与 CLI / IDE 方式共享相同的目录结构
 
-> ⚠️ **限制**：OpenClaw spawn 的 sub agent 没有工具调用能力（无法读写文件、执行命令），因此只适合**纯文本生成类 Agent**（如本 demo 的歌词金句推荐）。需要 MCP / 工具调用的 Agent（如日志分析）仍需 CLI 或 IDE。
+> 💡 **与 CLI / IDE 的区别**：OpenClaw 不支持 MCP 工具调用和 shell 命令执行，但 spawn 时赋予的文件读写工具使其可以完成本 demo 的全部流程。需要 MCP 的 Agent（如日志分析）仍需 CLI 或 IDE。
 
 #### 🅱️ IDE 方式
 
@@ -88,17 +89,22 @@ Meta-Agent 支持三种体验方式，选**任意一种**即可：
 
 ### 🅰️ OpenClaw 方式
 
-**不需要 clone 项目、不需要安装环境。** 直接跳到「第 1 步」准备测试用例即可。
+**Clone 项目到本地**（OpenClaw spawn sub agent 时赋予文件读写工具，需要本地工作区）：
 
-OpenClaw 需要能读取 GitHub 仓库中以下 3 个提示词文件，作为 spawn sub agent 时的 system prompt：
+```bash
+git clone <your-repo-url>
+cd meta-agent
+```
+
+> 💡 不需要创建虚拟环境或安装 Python 依赖。OpenClaw 只需要读取仓库中的提示词文件（`source/meta-*/prompt.md`），并将产物写入 `source/` 目录。
+>
+> 如果 OpenClaw 无法直接访问本地文件系统，也可以通过 `web_fetch` 读取 GitHub Raw URL 获取提示词文件：
 
 | Sub Agent | GitHub Raw URL |
 |-----------|---------------|
 | 提示词生成/优化专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-prompt-engineer/prompt.md` |
 | 评估打分专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-eval-judge/prompt.md` |
 | 评分标准生成专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-rubric-gen/prompt.md` |
-
-> 💡 如果 OpenClaw 支持 `web_fetch` 或类似工具，可以直接读取上述 URL。如果不支持，可以在首轮对话中手动粘贴这 3 个文件的内容。
 
 ### 🅱️🅲 CLI / IDE 方式
 
@@ -134,7 +140,7 @@ claude --version
 
 ### 🅰️ OpenClaw 方式
 
-**不需要创建文件**。将下方 5 条测试用例的内容记在对话上下文中，后续步骤直接引用即可。
+与 CLI / IDE 方式相同，在项目根目录创建 `demo_testcases.yaml`（使用 `file_write` 写入下方内容）。
 
 ### 🅱️🅲 CLI / IDE 方式
 
@@ -146,41 +152,37 @@ meta:
   notice: "流行歌金句助手 demo 用例 —— Agent 每次需生成 10 句候选金句"
 cases:
   - Input: |
-      根据“跳楼机"生成 10 句歌词金句
+      根据关键词“跳楼机"和爱情主题生成 10 句歌词金句
     ExpectedOutput: |
       Baby 我们的感情好像跳楼机，让我突然地升空又急速落地
-      —— 五月天《跳楼机》
-      （以上为 10 句中最佳金句的参考方向，Agent 实际输出应包含 10 句候选）
     Judge: ""
 
   - Input: |
-      根据“世界赠予我的"生成 10 句歌词金句
+      根据关键词“世界赠予我的"和人生主题生成 10 句歌词金句
     ExpectedOutput: |
-      🎵 **世界赠予我虫鸣，也赠予我雷霆；赠我弯弯一枚月，也赠予我晚星**
-      —— (待 Agent 填充歌名和歌手)
-      （以上为 10 句中最佳金句的参考方向）
+      世界赠予我虫鸣，也赠予我雷霆；赠我弯弯一枚月，也赠予我晚星
     Judge: ""
 
   - Input: |
-      根据“字字句句都是暗恋"生成 10 句歌词金句
+      根据关键词“字字句句都是暗恋"和爱情主题生成 10 句歌词金句
     ExpectedOutput: |
       他字字未提喜欢你，你句句都是我愿意
     Judge: ""
 
   - Input: |
-      根据“敬自己"生成 10 句歌词金句
+      根据关键词“敬自己"和人生主题生成 10 句歌词金句
     ExpectedOutput: |
       敬自己一杯酒，往后余生不回头
     Judge: ""
 
   - Input: |
-      有没有关于"月亮"的歌词金句，请推荐 10 句。
+      根据关键词"月亮"、“窗台”的歌词金句，请推荐 10 句。
     ExpectedOutput: |
       若是月亮还没来，路灯也可照窗台
     Judge: ""
 ```
 
-> 📝 **评分核心逻辑**：Agent 需输出 **10 句**候选金句。要求 Judge 中的 Rubrics 主要加分项是：10 句中**至少有 1 句与 ExpectedOutput 达到 90% 相似度**。`Judge` 留空，后面由 AI 自动生成对应的
+> 📝 **评分核心逻辑**：Agent 需输出 **10 句**候选金句。要求 Judge 中的 Rubrics 主要加分项是：10 句中**至少有 1 句与 ExpectedOutput 达到 90% 相似度**。`Judge` 留空，后面由 AI 自动生成对应的评分标准（Rubrics）。
 
 ---
 
@@ -188,11 +190,22 @@ cases:
 
 ### 🅰️ OpenClaw 方式
 
-依次 spawn 2 个 sub agent 来完成创建：
+先创建 Agent 目录结构，然后依次 spawn 2 个 sub agent 来完成创建：
+
+**2.0 创建目录脚手架**
+
+使用 `file_write` 创建以下目录和文件：
+- `source/lyrics-golden-lines/tmp/`（运行时产物）
+- `source/lyrics-golden-lines/bak/`（备份）
+- `source/lyrics-golden-lines/changelog.md`（变更日志，初始内容为空）
 
 **2a. Spawn `meta-prompt-engineer`** —— 生成提示词
 
-用 `source/meta-prompt-engineer/prompt.md` 的完整内容作为 system prompt，spawn 一个 sub agent，传入以下 user message（注意使用 `【】` 格式标记，这是该 sub agent 要求的输入格式）：
+1. 用 `file_read` 读取 `source/meta-prompt-engineer/prompt.md` 作为 system prompt
+2. 用 `file_read` 读取 `demo_testcases.yaml`，从中提取 5 条用例的 Input 和 ExpectedOutput
+3. Spawn sub agent，**spawn 时通过 `tools` 参数赋予 `file_read`、`file_write`、`list_directory`**，传入以下 user message（注意使用 `【】` 格式标记，这是该 sub agent 要求的输入格式）：
+
+> 💡 **后续所有 spawn 均按此方式赋予 tools**，不再重复说明。
 
 ```
 【理想态描述】
@@ -204,44 +217,41 @@ cases:
 - 候选中至少有 1 句高度契合用户需求
 
 【示例用例】
-Input: 根据"跳楼机"生成 10 句歌词金句
-→ 最佳参考：Baby 我们的感情好像跳楼机，让我突然地升空又急速落地 —— 五月天《跳楼机》
-
-Input: 根据"世界赠予我的"生成 10 句歌词金句
-→ 最佳参考：世界赠予我虫鸣，也赠予我雷霆；赠我弯弯一枚月，也赠予我晚星
-
-Input: 根据"字字句句都是暗恋"生成 10 句歌词金句
-→ 最佳参考：他字字未提喜欢你，你句句都是我愿意
-
-Input: 根据"敬自己"生成 10 句歌词金句
-→ 最佳参考：敬自己一杯酒，往后余生不回头
-
-Input: 有没有关于"月亮"的歌词金句，请推荐 10 句
-→ 最佳参考：若是月亮还没来，路灯也可照窗台
+[从 demo_testcases.yaml 读取，按以下格式组织每条：]
+Input: [cases[i].Input]
+→ 最佳参考：[cases[i].ExpectedOutput]
 ```
 
-🎉 **从 sub agent 返回内容中提取产物**：
+> 💡 理想态描述和示例用例均从 `demo_testcases.yaml` 提取组装，无需手动硬编码。
 
-prompt-engineer 的输出会包含 `===PROMPT===` 标记，该标记**之后的内容**就是生成的 Agent 提示词。将其记录为 `PROMPT`（后续步骤使用）。
+🎉 **从 sub agent 返回内容中提取产物并写入文件**：
 
-同时，从输入中的【理想态描述】部分保留一份 `IDEAL_STATE`，后续迭代优化时传给 prompt-engineer。
+- prompt-engineer 的输出会包含 `===PROMPT===` 标记，该标记**之后的内容**就是生成的 Agent 提示词
+- 将提示词写入 `source/lyrics-golden-lines/prompt.md`
+- 将【理想态描述】部分写入 `source/lyrics-golden-lines/ideal_state.md`
 
 **2b. Spawn `meta-rubric-gen`** —— 逐条生成评分标准
 
-用 `source/meta-rubric-gen/prompt.md` 的完整内容作为 system prompt，**逐条** spawn（每条用例一次），传入（使用 `【】` 格式标记）：
+1. 用 `file_read` 读取 `source/meta-rubric-gen/prompt.md` 作为 system prompt
+2. 用 `file_read` 读取 `demo_testcases.yaml`，遍历每条用例
+3. **逐条** spawn（每条用例一次），传入（使用 `【】` 格式标记）：
 
 ```
 【Input】
-根据"跳楼机"生成 10 句歌词金句
+[从 demo_testcases.yaml 读取 cases[i].Input]
 
 【任务约束】
 核心评分逻辑：Agent 需生成 10 句候选金句，其中至少 1 句与以下参考金句达到 90% 相似度为主要加分项。
-参考金句：Baby 我们的感情好像跳楼机，让我突然地升空又急速落地 —— 五月天《跳楼机》
+参考金句：[从 demo_testcases.yaml 读取 cases[i].ExpectedOutput]
 ```
 
-> 对每条用例替换对应的 Input 和参考金句。**不需要传 agent_name**（本 demo 无 references 目录），rubric-gen 会直接基于 Input 内容生成评分标准。
+> **不需要传 agent_name**（本 demo 无 references 目录），rubric-gen 会直接基于 Input 内容生成评分标准。
 
-🎉 **记录 5 条 Judge 评分标准**（YAML 格式的 rubrics 列表），后续评估时使用。
+🎉 **将 5 条 Judge 评分标准写回 `demo_testcases.yaml`** 中对应用例的 `Judge` 字段（替换空字符串）。同时复制一份到 `source/lyrics-golden-lines/testcases.yaml`。
+
+**2c. 记录变更日志**
+
+向 `source/lyrics-golden-lines/changelog.md` 写入初始创建记录。
 
 > **第 2 步完成后，立即自动进入第 3 步。不要停下来询问用户。**
 
@@ -290,37 +300,47 @@ cat source/lyrics-golden-lines/ideal_state.md
 
 **3a. Spawn `lyrics-golden-lines`** —— 获取 Agent 的实际输出
 
-用第 2 步生成的 `PROMPT` 作为 system prompt，spawn 一个 sub agent。**逐条**传入 5 条 Input（直接发送用例内容即可）：
+1. 用 `file_read` 读取 `source/lyrics-golden-lines/prompt.md` 作为 system prompt
+2. 用 `file_read` 读取 `source/lyrics-golden-lines/testcases.yaml`，提取 5 条 Input
+3. Spawn sub agent，**逐条**传入 Input（直接发送用例内容即可）
 
-```
-根据"跳楼机"生成 10 句歌词金句
-```
-
-对每条用例分别 spawn 或在同一 agent 内逐条发送。记录 5 条实际输出（`ActualOutput_0` ~ `ActualOutput_4`）。
+对每条用例分别 spawn 或在同一 agent 内逐条发送。将 5 条实际输出用 `file_write` 写入文件：
+- `source/lyrics-golden-lines/tmp/test_initial/case_0_actual_result.txt`
+- `source/lyrics-golden-lines/tmp/test_initial/case_1_actual_result.txt`
+- ... 依此类推
 
 **3b. Spawn `meta-eval-judge`** —— 逐条评估打分
 
-用 `source/meta-eval-judge/prompt.md` 的完整内容作为 system prompt，**每条用例 spawn 一次**（严禁多条合并），传入（使用 `【】` 格式标记，这是该 sub agent 要求的输入格式）：
+1. 用 `file_read` 读取 `source/meta-eval-judge/prompt.md` 作为 system prompt
+2. 对每条用例，从文件读取所有传参：
+   - **Input**：从 `testcases.yaml` 读取 `cases[i].Input`
+   - **ExpectedOutput**：从 `testcases.yaml` 读取 `cases[i].ExpectedOutput`
+   - **Judge**：从 `testcases.yaml` 读取 `cases[i].Judge`
+   - **ActualOutput**：从 `tmp/test_initial/case_[i]_actual_result.txt` 读取
+3. **每条用例 spawn 一次**（严禁多条合并），传入（使用 `【】` 格式标记）：
 
 ```
 【Input】
-根据"跳楼机"生成 10 句歌词金句
+[从 testcases.yaml 读取]
 
 【ExpectedOutput】
-Baby 我们的感情好像跳楼机，让我突然地升空又急速落地
-—— 五月天《跳楼机》
-（以上为 10 句中最佳金句的参考方向，Agent 实际输出应包含 10 句候选）
+[从 testcases.yaml 读取]
 
 【Judge】
-[粘贴第 2b 步为该用例生成的 YAML rubrics]
+[从 testcases.yaml 读取]
 
 【ActualOutput】
-[粘贴第 3a 步该用例的实际输出]
+[从 case_[i]_actual_result.txt 读取]
 ```
 
-> 对每条用例替换对应的 Input、ExpectedOutput、Judge、ActualOutput。eval-judge 会按 rubrics 逐条打分，输出总分和不足之处。
+> eval-judge 会按 rubrics 逐条打分，输出总分和不足之处。
 
-🎉 **汇总 5 条评分**，计算平均分。向用户展示每条用例的金句推荐结果和得分。
+🎉 **将 5 条评估结果写入文件**：
+- `source/lyrics-golden-lines/tmp/test_initial/case_0_eval_result.md`
+- ... 依此类推
+- 汇总评估报告写入 `source/lyrics-golden-lines/tmp/test_initial/评估报告.md`
+
+向用户展示每条用例的金句推荐结果和得分。
 
 > 💡 **展示建议**：
 > ```
@@ -396,39 +416,56 @@ cat "$TEST_DIR/评估报告.md"
 
 > 🚨 **提醒：重读三条铁律**。迭代过程中 **绝对不要修改用例、Judge 或 ExpectedOutput**。eval-judge 报告中的 `[rubric]` / `[testcase]` 标签仅用于诊断参考，**不是修改用例的授权**。唯一允许改的是 Agent 的提示词。同时，3 轮迭代应 **全自动连续执行**，不要在每轮之间停下来询问用户。
 
-对话上下文中保存着：`PROMPT`（当前提示词）、`IDEAL_STATE`（理想态）、5 条 Judge（YAML rubrics）、上一轮的评分结果。
+所有产物通过文件系统持久化，大幅减轻上下文压力：
+- 提示词：`source/lyrics-golden-lines/prompt.md`（每轮更新）
+- 理想态：`source/lyrics-golden-lines/ideal_state.md`（不变）
+- 用例 + Judge：`source/lyrics-golden-lines/testcases.yaml`（不变）
+- 每轮产物：`source/lyrics-golden-lines/tmp/iter_[N]/`
 
 **每轮迭代执行 3 步（3 轮自动连续完成，中间不停顿）：**
 
-**4a. 运行 + 评估**（同第 3 步）
+**4a. 运行 + 评估**（同第 3 步，产物写入 `tmp/iter_[N]/`）
 
-1. 用当前 `PROMPT` 作为 system prompt，spawn `lyrics-golden-lines` sub agent，逐条传入 5 条 Input，记录 5 条 `ActualOutput`
-2. 用 eval-judge 的 prompt.md 作为 system prompt，逐条 spawn 评估（同第 3b 步的 `【】` 格式），得到 5 条评分和不足
+1. 用 `file_read` 读取当前 `source/lyrics-golden-lines/prompt.md` 作为 system prompt
+2. 用 `file_read` 读取 `source/lyrics-golden-lines/testcases.yaml`，提取每条用例的 Input
+3. spawn `lyrics-golden-lines` sub agent，逐条传入 5 条 Input，将输出写入 `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_actual_result.txt`
+4. 用 `file_read` 读取 eval-judge 的 prompt.md 作为 system prompt，逐条 spawn 评估——每条评估的 4 个字段均从文件读取：
+   - **Input**：从 `testcases.yaml` 读取 `cases[i].Input`
+   - **ExpectedOutput**：从 `testcases.yaml` 读取 `cases[i].ExpectedOutput`
+   - **Judge**：从 `testcases.yaml` 读取 `cases[i].Judge`
+   - **ActualOutput**：从 `tmp/iter_[N]/case_[i]_actual_result.txt` 读取
+5. 将评估结果写入 `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_eval_result.md`
+6. 汇总为 `source/lyrics-golden-lines/tmp/iter_[N]/评估报告.md`
 
 **4b. 优化提示词**
 
-Spawn `meta-prompt-engineer`（用其 prompt.md 作为 system prompt），传入（使用 `【】` 格式标记，这是模式 B 的标准输入格式）：
+先备份当前提示词：将 `source/lyrics-golden-lines/prompt.md` 复制到 `source/lyrics-golden-lines/bak/prompt_iter[N].bak`。
+
+Spawn `meta-prompt-engineer`（用 `file_read` 读取其 prompt.md 作为 system prompt），数据来源全部从文件读取：
+
+1. 用 `file_read` 读取 `source/lyrics-golden-lines/prompt.md`（当前 Agent 提示词）
+2. 用 `file_read` 读取 `source/lyrics-golden-lines/ideal_state.md`（理想态描述）
+3. 用 `file_read` 读取 `source/lyrics-golden-lines/changelog.md`（变更历史）
+4. 用 `file_read` 读取 `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_eval_result.md`（每条评估结果）
+5. 用 `file_read` 读取 `source/lyrics-golden-lines/testcases.yaml`，提取低于 80 分用例的 Input
+
+组装为模式 B 的 `【】` 格式传入（以下仅为结构示意，实际内容从文件读取）：
 
 ```
 【当前 Agent 提示词】
-[粘贴当前 PROMPT 的完整内容]
+[从 prompt.md 读取]
 
 【理想态描述】
-[粘贴 IDEAL_STATE]
+[从 ideal_state.md 读取]
+
+【变更历史】
+[从 changelog.md 读取]
 
 【评估反馈】
-用例 1（跳楼机）：[分数] 分
-不足：[eval-judge 输出的不足描述，忽略 [rubric] 和 [testcase] 标签的条目，只保留 [prompt] 标签的条目]
-改进建议：[eval-judge 输出的改进建议]
-
-用例 2（世界赠予我的）：[分数] 分
-不足：[不足描述，同样只保留 [prompt] 标签的条目]
-改进建议：[改进建议]
-
-...（共 5 条）
+[从 eval_result.md 文件中提取每条的分数和 [prompt] 标签的不足、改进建议]
 
 【低分用例 Input】
-[列出低于 80 分的用例的 Input 原文]
+[从 testcases.yaml 中读取低于 80 分用例的 Input 原文]
 ```
 
 > ⚠️ **严禁传入 ExpectedOutput**——只传 Input 和评估反馈。prompt-engineer 的禁令明确禁止接触 ExpectedOutput。
@@ -437,12 +474,12 @@ Spawn `meta-prompt-engineer`（用其 prompt.md 作为 system prompt），传入
 >
 > ⚠️ **传递评估反馈时的过滤规则**：eval-judge 的不足条目中，标注为 `[rubric]` 或 `[testcase]` 的条目**不要传给 prompt-engineer**，因为那些问题不是提示词能解决的。只传 `[prompt]` 标签的条目。
 
-🎉 **从返回内容的 `===PROMPT===` 标记之后提取新提示词**，用它替换上下文中的 `PROMPT`。
+🎉 **从返回内容的 `===PROMPT===` 标记之后提取新提示词**，用 `file_write` 写入 `source/lyrics-golden-lines/prompt.md`。同时向 `source/lyrics-golden-lines/changelog.md` 追加本轮优化记录。
 
 **4c. 展示本轮变化（然后立即进入下一轮，不要询问用户）**
 
 向用户展示：
-- 每条用例的得分变化（对比上一轮）
+- 每条用例的得分变化（对比上一轮，可从 `tmp/iter_[N-1]/评估报告.md` 和 `tmp/iter_[N]/评估报告.md` 中读取）
 - 提示词改了什么（用人话概括新旧提示词的差异）
 - 下一轮优化方向
 
@@ -460,13 +497,10 @@ Spawn `meta-prompt-engineer`（用其 prompt.md 作为 system prompt），传入
 >   3  |   91   | +8   | 新增 few-shot 示例
 > ```
 
-> ⚠️ **上下文管理提示**：每轮迭代涉及 11 次 sub agent spawn（5 次 Agent + 5 次 Judge + 1 次 Prompt Engineer），3 轮共 33 次。建议每轮结束后，仅保留以下关键产物到下一轮上下文，丢弃 spawn 的中间过程：
-> - `PROMPT`（最新版提示词）——**这是唯一会变化的产物**
-> - `IDEAL_STATE`（理想态，不变）
-> - 5 条 Judge（不变，**绝对不改**）
-> - 本轮 5 条评分摘要（分数 + `[prompt]` 标签的不足，不需要完整评估报告）
-> - 5 条 ExpectedOutput（不变，**绝对不改**，用于 eval-judge 传参）
-> - 5 条 Input（不变，**绝对不改**）
+> 💡 **上下文管理提示**：由于产物已写入文件系统，每轮迭代后上下文只需保留最小必要信息：
+> - 当前轮次号和上一轮平均分（用于判断进度）
+> - 本轮评估摘要（分数 + `[prompt]` 标签的不足，不需要完整评估报告）
+> - 其他所有内容（提示词、理想态、Judge、ActualOutput、历史评估报告）均可从文件读取
 >
 > ⚠️ **再次强调**：eval-judge 可能会在不足条目中标注 `[rubric]` 或 `[testcase]`，暗示评分标准或参考答案可能有问题。**忽略这些建议**，不要修改任何用例内容。用例是固定的评估尺子，只有提示词是可以改的。
 
@@ -592,12 +626,14 @@ cat "$TEST_DIR/case_4_actual_result.txt"
 
 ### 🅰️ OpenClaw 方式
 
-你的对话上下文中已经保存了全部历史：初始提示词、每轮优化后的提示词、每轮评分。直接在当前对话中生成全景对比报告：
+使用 `file_read` 读取文件系统中的历史产物，生成全景对比报告：
 
-> 请对比初始提示词（第 2 步生成的版本）和最终提示词（第 4 步第 3 轮优化后的版本）：
-> 1. 逐段对比差异，说明每处改动解决了什么问题
-> 2. 汇总各轮分数变化趋势
-> 3. 总结：哪些优化策略提分最多，哪些是关键转折点
+1. 读取 `source/lyrics-golden-lines/bak/prompt_iter1.bak`（初始版本）
+2. 读取 `source/lyrics-golden-lines/prompt.md`（最终版本）
+3. 读取 `source/lyrics-golden-lines/tmp/test_initial/评估报告.md` 和 `source/lyrics-golden-lines/tmp/iter_3/评估报告.md`
+4. 读取 `source/lyrics-golden-lines/changelog.md`
+
+逐段对比差异，汇总分数变化趋势，总结关键优化策略。将报告写入 `source/lyrics-golden-lines/tmp/optimization_summary.md`。
 
 ### 🅱️🅲 CLI / IDE 方式
 
@@ -645,14 +681,14 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 
 ### 🅰️ OpenClaw 方式
 
-| 步骤 | Spawn 的 Sub Agent | 传入内容 | 产出 |
-|------|-------------------|---------|------|
-| 0 | — | — | 无需准备 |
-| 1 | — | — | 5 条测试用例（保存在对话上下文中） |
-| 2 | `meta-prompt-engineer` → `meta-rubric-gen` × 5 | 理想态 + 示例用例 | 提示词 `PROMPT` + 5 条 Judge |
-| 3 | `lyrics-golden-lines` × 5 → `meta-eval-judge` × 5 | Input → 评估 | 5 条金句输出 + 5 条评分 |
-| 4 | 循环 3 轮：Agent × 5 → Judge × 5 → Prompt Engineer | 上轮反馈 | 每轮分数变化 + 新提示词 |
-| 5 | — | 对话上下文中的全部历史 | 初始 vs 最终全景对比 |
+| 步骤 | Spawn 的 Sub Agent | 传入内容 | 产出（写入文件） |
+|------|-------------------|---------|-----------------|
+| 0 | — | — | Clone 项目到本地 |
+| 1 | — | — | `demo_testcases.yaml`（写入文件系统） |
+| 2 | `meta-prompt-engineer` → `meta-rubric-gen` × 5 | 理想态 + 示例用例 | `prompt.md` + `ideal_state.md` + `testcases.yaml` |
+| 3 | `lyrics-golden-lines` × 5 → `meta-eval-judge` × 5 | Input → 评估 | `tmp/test_initial/case_[N]_*.txt` + `评估报告.md` |
+| 4 | 循环 3 轮：Agent × 5 → Judge × 5 → Prompt Engineer | 上轮反馈（从文件读取） | `tmp/iter_[N]/` + 更新 `prompt.md` + `changelog.md` |
+| 5 | — | 从文件读取全部历史 | `tmp/optimization_summary.md` |
 
 ### 🅱️🅲 CLI / IDE 方式
 
@@ -684,11 +720,13 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 
 | 维度 | OpenClaw | CLI / IDE |
 |------|---------|-----------|
-| 安装 | 无需安装 | 需要 CLI 工具或 IDE |
-| 文件系统 | 无（所有中间产物保存在对话上下文中） | 有（产物写入 `source/[Agent]/tmp/`） |
-| 工具调用 | 不支持（纯文本 sub agent） | 支持（MCP、文件读写、命令执行） |
-| 适用场景 | 纯文本生成类 Agent（如歌词金句） | 所有 Agent（含日志分析、代码审查等需要工具的） |
-| 体验完整度 | ⭐⭐⭐⭐（核心流程完整） | ⭐⭐⭐⭐⭐（全功能） |
+| 安装 | 无需安装 CLI 工具（需 clone 项目） | 需要 CLI 工具或 IDE |
+| 文件系统 | ✅ 支持（spawn 时赋予 `file_read` / `file_write` / `list_directory`），产物写入 `source/[Agent]/tmp/` | ✅ 支持（产物写入 `source/[Agent]/tmp/`） |
+| 工具调用 | 文件读写 + 目录列表（通过 spawn `tools` 参数赋予） | 全功能（MCP、文件读写、命令执行） |
+| Shell 命令 | ❌ 不支持 | ✅ 支持 |
+| MCP 服务 | ❌ 不支持 | ✅ 支持 |
+| 适用场景 | 纯文本生成类 Agent（如歌词金句） | 所有 Agent（含日志分析、代码审查等需要 MCP 的） |
+| 体验完整度 | ⭐⭐⭐⭐⭐（核心流程完整，产物持久化） | ⭐⭐⭐⭐⭐（全功能） |
 
 ### Q: 为什么 `evo_looper` 要拆成手动步骤？
 
@@ -710,7 +748,7 @@ CodeBuddy --dangerously-skip-permissions -p "calibrate lyrics-golden-lines"
 
 **CLI / IDE 方式**：任何"文本输入 → 文本输出"的 Agent，包括需要工具调用的：代码审查助手、翻译评估、客服话术、SQL 助手、日志分析等。
 
-**OpenClaw 方式**：仅限纯文本生成类 Agent（无工具调用）。金句助手、文案生成、翻译润色等都可以。需要 MCP / 文件操作 / 命令执行的 Agent 请使用 CLI 或 IDE。
+**OpenClaw 方式**：纯文本生成类 Agent + 涉及文件读写的 Agent。金句助手、文案生成、翻译润色、代码生成等都可以。需要 MCP 服务 / Shell 命令执行的 Agent（如日志分析）请使用 CLI 或 IDE。
 
 ---
 
@@ -745,7 +783,7 @@ meta-retrospective ──→ 每 3 轮全局复盘，防止优化方向跑偏
 ## 🎓 完成后的下一步
 
 1. **创建自己的 Agent** —— 换一组测试用例，走同样的流程
-2. **升级到 CLI / IDE** —— 如果你用的是 OpenClaw 方式，安装 CLI 工具可以解锁工具调用能力，支持更复杂的 Agent
+2. **升级到 CLI / IDE** —— 如果你用的是 OpenClaw 方式，安装 CLI 工具可以解锁 MCP 工具调用和 Shell 命令执行能力，支持更复杂的 Agent（如日志分析）
 3. **深入评估体系** —— `calibrate` 诊断三元组一致性（CLI / IDE）
 4. **多平台测试** —— `test_agent lyrics-golden-lines@codebuddycli`（CLI / IDE）
 5. **阅读完整文档** —— [README.md](README.md)、[SETUP.md](SETUP.md)
