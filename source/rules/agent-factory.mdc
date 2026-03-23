@@ -59,6 +59,7 @@ alwaysApply: true
 | Sub Agent | 触发时机 | 必传参数 | 禁止传入 |
 |-----------|---------|---------|---------|
 | `meta-prompt-engineer` | 生成/优化提示词 | 理想态 + 当前提示词或草稿 + changelog（优化时） | ExpectedOutput |
+| `meta-reviewer` | prompt-engineer 输出后、写入 prompt.md 前 | 待审查提示词 + 测试用例（Input + ExpectedOutput） + changelog（可选） | — |
 | `meta-testcase-gen` | 生成测试用例 | Agent 提示词 + 理想态 + 用户画像（≥5） | — |
 | `meta-rubric-gen` | 逐条生成 Judge | 每条 Input + agent_name + must_follow/risk_notes | ExpectedOutput |
 | `meta-eval-judge` | 每条用例评估 | Input + ExpectedOutput + Judge + ActualOutput；ShareGPT RunLog（可选）。**每次只传一条** | 多条合并 |
@@ -82,6 +83,8 @@ alwaysApply: true
 ### 4.3 反作弊约束
 
 严禁将 `ExpectedOutput` 的原文、近似表述、关键特征词植入提示词。优化必须基于通用能力提升。
+
+**独立审查机制**：`meta-prompt-engineer` 输出的提示词，在写入 `prompt.md` 前必须经过 `meta-reviewer` 独立审查（详见 `af-evo` 步骤 C.R）。审查 REJECT 时提示词不得写入，需重新优化或回退。
 
 ### 4.4 架构约束
 

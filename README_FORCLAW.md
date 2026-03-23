@@ -103,6 +103,7 @@ cd meta-agent
 | Sub Agent | GitHub Raw URL |
 |-----------|---------------|
 | 提示词生成/优化专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-prompt-engineer/prompt.md` |
+| 提示词反作弊审查专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-reviewer/prompt.md` |
 | 评估打分专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-eval-judge/prompt.md` |
 | 评分标准生成专家 | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-rubric-gen/prompt.md` |
 
@@ -474,7 +475,32 @@ Spawn `meta-prompt-engineer`（用 `file_read` 读取其 prompt.md 作为 system
 >
 > ⚠️ **传递评估反馈时的过滤规则**：eval-judge 的不足条目中，标注为 `[rubric]` 或 `[testcase]` 的条目**不要传给 prompt-engineer**，因为那些问题不是提示词能解决的。只传 `[prompt]` 标签的条目。
 
-🎉 **从返回内容的 `===PROMPT===` 标记之后提取新提示词**，用 `file_write` 写入 `source/lyrics-golden-lines/prompt.md`。同时向 `source/lyrics-golden-lines/changelog.md` 追加本轮优化记录。
+🎉 **从返回内容的 `===PROMPT===` 标记之后提取新提示词**，**暂存为候选提示词（先不写入 prompt.md）**。
+
+**4b-review. Spawn `meta-reviewer`** —— 反作弊审查（写入前的独立审查）
+
+> 💡 这一步是"生成与审查分离"架构的关键——prompt-engineer 负责生成，reviewer 负责审查，解决"运动员自己当裁判"的问题。
+
+1. 用 `file_read` 读取 `source/meta-reviewer/prompt.md` 作为 system prompt
+2. Spawn sub agent，传入：
+
+```
+【待审查提示词】
+[上一步 prompt-engineer 输出的候选提示词全文]
+
+【测试用例】
+[从 testcases.yaml 读取每条用例的 Input 和 ExpectedOutput，逐条列出]
+
+【审查上下文】
+[本轮优化的 changelog 说明]
+```
+
+3. 解析返回内容中 `===REVIEW_RESULT===` 之后的审查结果：
+   - **✅ PASS / ⚠️ WARN** → 候选提示词通过审查，用 `file_write` 写入 `source/lyrics-golden-lines/prompt.md`
+   - **❌ REJECT** → 候选提示词被打回，将审查发现（修改建议部分）反馈给 prompt-engineer 重新优化，最多重试 2 次
+   - 连续 3 次 REJECT → 回退到备份提示词，记录审查阻塞
+
+同时向 `source/lyrics-golden-lines/changelog.md` 追加本轮优化记录。
 
 **4c. 展示本轮变化（然后立即进入下一轮，不要询问用户）**
 
@@ -548,10 +574,12 @@ CodeBuddy --dangerously-skip-permissions -p "
 
 请调用 meta-prompt-engineer 优化提示词。
 要求：根据评估反馈中的不足进行针对性优化，不要照抄 ExpectedOutput。
-优化完成后：
-1. 将新提示词写入 source/lyrics-golden-lines/prompt.md
-2. 在 changelog.md 追加本轮优化记录（标签 [优化]）
-3. 运行 ./venv/bin/python scripts/install.py lyrics-golden-lines 同步
+优化完成后，先调用 meta-reviewer 审查提示词是否存在作弊或过拟合：
+- PASS / WARN → 将新提示词写入 source/lyrics-golden-lines/prompt.md
+- REJECT → 将审查发现反馈给 prompt-engineer 重新优化（最多重试 2 次）
+审查通过后：
+1. 在 changelog.md 追加本轮优化记录（标签 [优化]）
+2. 运行 ./venv/bin/python scripts/install.py lyrics-golden-lines 同步
 "
 ```
 
@@ -572,7 +600,7 @@ cat source/lyrics-golden-lines/changelog.md
 > ✨ 新增「推理链」：Agent 现在会先分析用户描述中的情绪关键词（如"升空又落地"→忽上忽下的刺激感），
 >    再去匹配歌词，而不是直接搜索字面关键词。
 >
-> ✨ 新增「输出格式约束」：要求统一用 🎵 金句 —— 《歌名》歌手 + 一句话共鸣解读 的格式回复。
+> ✨ 新增「输出格式约束」：要求统一用金句
 >
 > ✨ 新增「边界处理」：当用户描述比较模糊时（如"日常温柔"），要求 Agent 先确认理解再推荐。
 > ```
@@ -687,7 +715,7 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 | 1 | — | — | `demo_testcases.yaml`（写入文件系统） |
 | 2 | `meta-prompt-engineer` → `meta-rubric-gen` × 5 | 理想态 + 示例用例 | `prompt.md` + `ideal_state.md` + `testcases.yaml` |
 | 3 | `lyrics-golden-lines` × 5 → `meta-eval-judge` × 5 | Input → 评估 | `tmp/test_initial/case_[N]_*.txt` + `评估报告.md` |
-| 4 | 循环 3 轮：Agent × 5 → Judge × 5 → Prompt Engineer | 上轮反馈（从文件读取） | `tmp/iter_[N]/` + 更新 `prompt.md` + `changelog.md` |
+| 4 | 循环 3 轮：Agent × 5 → Judge × 5 → Prompt Engineer → **Reviewer 审查** | 上轮反馈（从文件读取） | `tmp/iter_[N]/` + 更新 `prompt.md` + `changelog.md` |
 | 5 | — | 从文件读取全部历史 | `tmp/optimization_summary.md` |
 
 ### 🅱️🅲 CLI / IDE 方式
@@ -770,8 +798,11 @@ meta-rubric-gen ──→ 为每条用例生成评分标准（核心：10 句中
 meta-eval-judge ──→ 逐条打分 + 指出不足
     │
     ▼
-meta-prompt-engineer ──→ 根据不足优化提示词（循环 ↑）
+meta-prompt-engineer ──→ 根据不足优化提示词
     │
+    ▼
+meta-reviewer ──→ 独立审查：是否作弊/过拟合？（✅ PASS → 写入 / ❌ REJECT → 打回重来）
+    │                                              （循环 ↑）
     ▼
 meta-retrospective ──→ 每 3 轮全局复盘，防止优化方向跑偏
 ```

@@ -123,3 +123,13 @@ scripts/yaml_tool.py               — YAML 测试用例读写工具
 ---
 
 <!-- 业务 Agent 章节（如 my-agent）请在本地通过 install.py 添加，不纳入版本控制 -->
+
+## Agent: meta-reviewer
+
+**描述**：提示词反作弊审查专家，独立审查 meta-prompt-engineer 生成的提示词是否存在作弊（抄袭 ExpectedOutput）、过拟合或泛化性不足的问题
+
+**提示词**：
+
+> 请参见 `source/meta-reviewer/prompt.md`
+
+---

@@ -282,7 +282,11 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 - 调用 `meta-prompt-engineer`（模式 B），传入：
   - 当前提示词 + 理想态 + 诊断摘要 + changelog（必须）
   - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
-- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
+- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，**暂存候选提示词（不直接写入 prompt.md）**
+- **调用 `meta-reviewer` 审查**（见下方「步骤 C.R：反作弊审查子流程」）
+  - ✅ PASS / ⚠️ WARN → 将候选提示词写入 `prompt.md`，CHANGELOG 追加到 `changelog.md`
+  - ❌ REJECT → 将审查发现反馈给 `meta-prompt-engineer` 重新优化（最多重试 2 次）
+  - 连续 3 次 REJECT → 回退到备份提示词，在计划文件中记录审查阻塞，继续下一轮
 - 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
 
 **每轮结束后同步计划文件（强制）**：
@@ -470,7 +474,11 @@ last_updated_at: 2026-03-21T10:00:00+08:00
   - 当前提示词 + 理想态 + **诊断摘要 JSON** + changelog（必须）
   - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
   - 被禁止的优化方向（若已有 `meta-retrospective` 输出，则传入）
-- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
+- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，**暂存候选提示词（不直接写入 prompt.md）**
+- **调用 `meta-reviewer` 审查**（见下方「步骤 C.R：反作弊审查子流程」）
+  - ✅ PASS / ⚠️ WARN → 将候选提示词写入 `prompt.md`，CHANGELOG 追加到 `changelog.md`
+  - ❌ REJECT → 将审查发现反馈给 `meta-prompt-engineer` 重新优化（最多重试 2 次）
+  - 连续 3 次 REJECT → 回退到备份提示词，在计划文件中记录审查阻塞，继续下一轮
 - 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
 
 #### C.2 多候选模式（数据驱动触发）
@@ -495,7 +503,11 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 4. 按 `===CANDIDATE_A===` / `===CANDIDATE_B===` / `===CANDIDATE_C===` 标记拆分输出
 5. 三个候选各自完整执行步骤 A（仅 8 条抽样用例），得到三个平均分
 6. 选最高分候选为胜者：
-   - 胜者 → 覆盖写入 `prompt.md`
+   - **对胜者调用 `meta-reviewer` 审查**（见下方「步骤 C.R：反作弊审查子流程」）
+     - ✅ PASS / ⚠️ WARN → 胜者写入 `prompt.md`
+     - ❌ REJECT → 胜者淘汰，检查次高分候选：
+       - 次高分也 REJECT → 检查第三候选
+       - 全部 REJECT → 回退到备份提示词，在计划文件中记录审查阻塞，继续下一轮
    - 败者 → 保存到 `bak/candidate_[A|B|C]_[ts].bak`
 7. 将胜者 CHANGELOG 追加到 `changelog.md`
 8. 运行 `install.py` 同步
@@ -503,6 +515,67 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 > **关键设计**：编排器不指定优化方向，3 个候选的方向由 `meta-prompt-engineer` 自行决定。编排器只负责传入诊断摘要、执行测试、选出胜者。
 >
 > **严禁将优化说明写入提示词；严禁传入 ExpectedOutput。**
+
+#### 步骤 C.R：反作弊审查子流程（C.1 / C.2 / 热身步骤 C 共用）
+
+> **核心原则**：`meta-prompt-engineer` 生成的提示词，**必须经过 `meta-reviewer` 独立审查后才能写入 `prompt.md`**。这是"生成与审查分离"架构的关键环节——解决"运动员自己当裁判"的问题。
+
+**触发时机**：每次 `meta-prompt-engineer` 输出候选提示词之后、写入 `prompt.md` 之前。
+
+**审查流程**：
+
+1. **调用 `meta-reviewer`**，传入：
+   - **待审查提示词**：`meta-prompt-engineer` 输出的候选提示词全文
+   - **测试用例**：从 `testcases.yaml` 中读取所有用例的 `Input` + `ExpectedOutput`（使用 `yaml_tool.py get ... --fields Input,ExpectedOutput`）
+   - **审查上下文**（可选）：本次优化的 changelog 说明
+
+2. **解析审查结果**（按 `===REVIEW_RESULT===` 标记提取）：
+
+   | 判定 | 后续动作 |
+   |------|---------|
+   | **✅ PASS** | 候选提示词直接写入 `prompt.md` |
+   | **⚠️ WARN** | 候选提示词写入 `prompt.md`，审查警告记录到计划文件进度日志 |
+   | **❌ REJECT** | 候选提示词**不写入** `prompt.md`，进入重试流程 |
+
+3. **REJECT 重试流程**（单路模式 C.1 / 热身步骤 C）：
+   - 将 `meta-reviewer` 的审查发现（修改建议部分）作为额外输入，连同原有参数一起传给 `meta-prompt-engineer`，要求其修正后重新输出
+   - 重新输出后，再次调用 `meta-reviewer` 审查
+   - **最多重试 2 次**（即总共 3 次审查机会）
+   - 连续 3 次 REJECT → **回退到备份提示词**，本轮优化视为失败：
+     - 从 `bak/` 恢复上一版提示词
+     - 在计划文件进度日志中记录："审查阻塞：连续 3 次 REJECT，回退到 [备份文件路径]"
+     - 不阻塞整体流程，继续进入下一轮迭代
+
+4. **REJECT 处理流程**（多候选模式 C.2）：
+   - 对最高分候选审查 REJECT → 检查次高分候选
+   - 次高分也 REJECT → 检查第三候选
+   - **全部候选 REJECT** → 回退到备份提示词，记录审查阻塞
+   - 多候选模式下**不做重试**（因为已有 3 个正交候选，重试收益低）
+
+5. **审查结果记录**：
+   - 所有审查结果（PASS/WARN/REJECT）保存到 `source/[AgentName]/tmp/[当前输出目录]/review_result.md`
+   - REJECT 时的审查发现同时追加到 `changelog.md`（标签 `[审查]`）
+
+**传参规范**（传给 `meta-reviewer` 的 prompt）：
+
+```
+【待审查提示词】
+[候选提示词全文]
+
+【测试用例】
+用例 0:
+  Input: [用例0的Input]
+  ExpectedOutput: [用例0的ExpectedOutput]
+用例 1:
+  Input: [用例1的Input]
+  ExpectedOutput: [用例1的ExpectedOutput]
+...
+
+【审查上下文】
+[本轮优化的 changelog 说明]
+```
+
+> ⚠️ **注意**：`meta-reviewer` 是唯一允许同时接触"提示词"和"ExpectedOutput"的 Sub Agent——这是其审查职责所需。`meta-prompt-engineer` 仍然**严禁**接触 ExpectedOutput。
 
 **步骤 D**：全局复盘检查
 
