@@ -37,8 +37,7 @@ source/[AgentName]/bak/            — 历史备份
 source/[AgentName]/tmp/            — 中间产物
 scripts/install.py                 — Agent 安装脚本（source → 所有 IDE 目录）
 scripts/scaffold.py                — Agent 目录脚手架创建（支持 @platform 命名）
-scripts/platform_test.py           — 平台批量测试脚本（替代 platform_observable_tester）
-scripts/prepare_config.py          — 平台测试配置占位符替换
+scripts/yaml_tool.py               — YAML 测试用例读写工具
 ```
 
 ---
@@ -113,18 +112,6 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ---
 
-<!-- 业务 Agent 章节（如 my-agent）请在本地通过 install.py 添加，不纳入版本控制 -->
-
-## Agent: cls-log-agent
-
-**描述**：腾讯云 CLS 日志检索分析专家，支持日志查询、错误分析及 APM 协同排障。
-
-**提示词**：
-
-> 请参见 `source/cls-log-agent/prompt.md`
-
----
-
 ## Agent: meta-debug
 
 **描述**：评估体系调试专家（Debug/Calibrate）。诊断 rubric、理想态、提示词三元组的一致性问题，从实际输出中洞察设计缺陷，输出 calibration_report.json 供人工决策。
@@ -135,22 +122,4 @@ scripts/prepare_config.py          — 平台测试配置占位符替换
 
 ---
 
-## Agent: cls-log-agent@observable
-
-**描述**：腾讯云 CLS 日志检索分析专家（可观测平台版，Qwen3 模型）
-
-**提示词**：
-
-> 请参见 `source/cls-log-agent@observable/prompt.md`
-
----
-
-## Agent: 歌词生成系统
-
-**描述**：根据用户提供的歌词创作需求（主题、风格、场景、核心意象、剧情要求），生成符合要求的原创歌词
-
-**提示词**：
-
-> 请参见 `source/歌词生成系统/prompt.md`
-
----
+<!-- 业务 Agent 章节（如 my-agent）请在本地通过 install.py 添加，不纳入版本控制 -->

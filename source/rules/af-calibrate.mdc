@@ -33,7 +33,7 @@ alwaysApply: false
 
 ### 步骤 1：确定输入
 
-扫描 `source/[AgentName]/tmp/` 下所有 `test_*` 目录，按时间戳排序取最新。确认以下文件路径：
+扫描 `source/[AgentName]/tmp/` 下所有 `test_*` 目录（包含各模式后缀如 `test_[ts]_subagent`、`test_[ts]_codebuddycli` 等），按时间戳排序取最新。确认以下文件路径：
 
 - `source/[AgentName]/prompt.md`
 - `source/[AgentName]/testcases.yaml`

@@ -13,7 +13,7 @@ alwaysApply: true
 你在整个过程中，要做到：
 - 每一步执行前，先简要告知用户当前步骤和目的
 - 每一步执行后，简要汇报结果和下一步计划
-- 遇到需要用户确认的节点，提供清晰的选项
+- 遇到需要用户确认的节点，提供清晰的选项；但 `evo_looper` 属于**默认全自动模式**，除非对应规则明确写出暂停/确认条件，否则不得主动停下来征询 `y/n`
 - 所有生成的文件都要实际写入磁盘
 
 ---
@@ -25,18 +25,32 @@ alwaysApply: true
 | `create_agent` | "创建 Agent"、"新建 Agent" | 创建模式 | 加载 `af-create` + `af-rubric-retry` |
 | `create_testcases` | "生成用例"、"补充测试用例" | 用例生成模式 | 加载 `af-create` + `af-rubric-retry` |
 | `test_agent` | "测试 Agent"、"跑测试" | 测试模式 | 加载 `af-test` |
-| `evo_looper` | "迭代优化"、"开始迭代" | 迭代优化模式 | 加载 `af-test` + `af-evo` |
+| `evo_looper` | "迭代优化"、"开始迭代" | 迭代优化模式（默认计划模式，支持通过 todo list / plan 文件续跑） | 加载 `af-test` + `af-evo` |
 | `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 调试模式 | 加载 `af-test` + `af-calibrate` |
+| `create_platformskill` | "创建平台 Skill"、"create platform skill" | 平台 Skill 创建 | 加载 `af-platformskill` |
 
 > **触发识别规则**：用户消息中包含上述触发词或自然语言表达时，**先用 read_rules 工具加载对应规则文件**，再按规则执行。
 >
 > **CodeBuddy CLI 兼容**：CLI 环境下子规则以 `.md` 格式自动全量加载（CLI 无 read_rules），无需手动加载。
 
-### IDE 模式 vs 平台模式
+### `@` 执行模式路由
 
-通过 Agent 名称中是否含 `@` 自动判断：
-- `test_agent cls-log-agent` → IDE 模式（调 Sub Agent）
-- `test_agent cls-log-agent@observable` → 平台模式（额外加载 `af-platform`）
+通过 Agent 名称中的 `@` 后缀路由到对应的 Platform Skill：
+
+| 用户输入 | Agent 目录 | 执行模式 |
+|---------|-----------|---------|
+| `test_agent cls-log-agent` | `source/cls-log-agent/` | subagent（IDE 直接调用） |
+| `test_agent cls-log-agent@codebuddycli` | `source/cls-log-agent/` | codebuddycli Platform Skill |
+| `test_agent cls-log-agent@claude` | `source/cls-log-agent/` | claude Platform Skill |
+
+**关键设计**：
+- `@` 前 = Agent 名称（对应 `source/` 下的目录，**不创建独立平台目录**）
+- `@` 后 = Platform Skill 名称，**通过 `use_skill` 工具加载**（如 `use_skill(command="codebuddycli")`）
+- 无 `@` = 等同于 `@subagent`（IDE 内置模式，适合无 MCP 调用的 Agent）
+- Platform Skill 安装在 `.<ide>/skills/platform-[name]/`，IDE 自动发现并注册到 available_skills
+- 含 `@` 时额外加载 `af-platformskill` 规则了解协议细节
+
+> ⚠️ **强制首步**：进入 `test_agent` 或 `evo_looper` 流程后，**第一个动作**必须是调用 `use_skill(command="[平台名]")` 加载 Platform Skill（即 `af-test` 中的步骤 0）。所有执行模式（包括 subagent）都需要此步骤。跳过此步骤将导致 Skill 说明未注入上下文，后续执行将缺少关键指引。
 
 ---
 
@@ -47,10 +61,11 @@ alwaysApply: true
 | `meta-prompt-engineer` | 生成/优化提示词 | 理想态 + 当前提示词或草稿 + changelog（优化时） | ExpectedOutput |
 | `meta-testcase-gen` | 生成测试用例 | Agent 提示词 + 理想态 + 用户画像（≥5） | — |
 | `meta-rubric-gen` | 逐条生成 Judge | 每条 Input + agent_name + must_follow/risk_notes | ExpectedOutput |
-| `meta-eval-judge` | 每条用例评估 | Input + ExpectedOutput + Judge + ActualOutput；RunLog（可选）。**每次只传一条** | 多条合并 |
-| `meta-log-converter` | 日志转换 | 源 transcript 路径 + 输出目录 + Agent 名称 | — |
+| `meta-eval-judge` | 每条用例评估 | Input + ExpectedOutput + Judge + ActualOutput；ShareGPT RunLog（可选）。**每次只传一条** | 多条合并 |
 | `meta-retrospective` | evo_looper 每 3 轮 | current_prompt_path + bak_dir + eval_dir + eval_results_dir | testcases_yaml_path |
 | `meta-debug` | calibrate 步骤 2 | agent_name + prompt_path + ideal_state_path + testcases_yaml_path + eval_results_dir + output_dir | bak_dir |
+
+> **注意**：`meta-log-converter` 主要服务于 subagent 模式下旧版 `platform_test.py` 产生的 stdout 日志转换。新的 Platform Skill 架构已直接输出 ShareGPT 格式的 `case_[N]_sharegpt.json`，无需额外转换。
 
 ---
 
@@ -100,21 +115,40 @@ cases:
     Judge: ""
 ```
 
+### 4.8 平台一致性约束
+
+- `@平台名` 一旦确定，本轮正式输出目录只能接收该平台产物
+- 判断依据以 `case_[N]_sharegpt.json` 中的 `metadata.platform` 为准
+- 若目录名为 `*_tcop/`，则其中正式产物的 `metadata.platform` 必须全部为 `tcop`
+- 任何 fallback / shadow 结果必须写入独立目录，**严禁**回写到当前正式目录
+- 若发现目录中混入了不同平台的产物，该目录只能作为诊断材料，不能继续用于正式评分或基线对比
+
 ---
 
 ## 五、安装子流程
 
 > 通过 `scripts/install.py` 自动完成，**严禁手动逐文件同步**。
 
+### Agent 安装
+
 | 命令 | 说明 |
 |------|------|
 | `./venv/bin/python scripts/install.py [AgentName]` | 安装指定 Agent |
 | `./venv/bin/python scripts/install.py [AgentName] --model xxx` | 指定模型安装 |
-| `./venv/bin/python scripts/install.py` | 安装所有 Agent |
+| `./venv/bin/python scripts/install.py` | 安装所有（Agent + Rules + Platform Skills） |
 
 前置条件：`source/[AgentName]/agent.json`（含 `description` + `tools` 语义值数组）。
 
 脚本自动：读取 agent.json + prompt.md + .mcp.json → 生成各平台文件头 → 写入 .cursor/agents/ + .codebuddy/agents/ + .claude/agents/ → 更新 AGENTS.md → 合并 MCP → 复制 skills。
+
+### Platform Skills 安装
+
+| 命令 | 说明 |
+|------|------|
+| `./venv/bin/python scripts/install.py --platform-skills` | 安装所有 Platform Skills |
+| `./venv/bin/python scripts/install.py --platform-skill [name]` | 安装指定 Platform Skill |
+
+安装目标：`.<ide>/skills/platform-[name]/`（含 SKILL.md、skill.json、scripts/）+ `platformskill-creator` + `registry.json`。
 
 ---
 
@@ -145,6 +179,9 @@ cases:
 | `source/[AgentName]/tmp/` | 运行时产物 |
 | `source/[AgentName]/references/` | 领域参考资源 |
 | `source/[AgentName]/skills/` | 专属 skill |
+| `source/platform-skills/` | 平台 Skill 源目录 |
+| `source/platform-skills/registry.json` | 平台 Skill 注册表 |
+| `source/platformskill-creator/` | 平台 Skill 创建工具（Skill） |
 | `scripts/yaml_tool.py` | YAML 用例读写工具 |
-| `scripts/install.py` | Agent 安装脚本 |
+| `scripts/install.py` | Agent + Rules + Platform Skills 安装脚本 |
 | `scripts/scaffold.py` | 目录脚手架创建 |

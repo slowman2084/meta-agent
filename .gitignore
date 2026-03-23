@@ -70,6 +70,9 @@ Desktop.ini
 # 各 Agent 的临时运行目录（测试日志、中间产物）
 **/tmp/
 
+# 废弃/临时脚本目录（含个人路径等敏感信息）
+scripts/deprecated/
+
 # 临时/一次性脚本（业务特定，不纳入版本控制）
 scripts/analyze_*.py
 scripts/batch_*.py

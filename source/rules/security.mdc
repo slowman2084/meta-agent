@@ -1,3 +1,9 @@
+---
+description: "敏感信息处理规范。所有涉及配置文件、密钥、API Key 操作时自动加载。"
+globs:
+alwaysApply: true
+---
+
 # 敏感信息处理规范 (Security Guidelines)
 
 > **适用对象**: 所有参与项目的开发者（人类与 AI）

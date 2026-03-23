@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Agent & Rules 安装脚本 — 将 source/ 中的 Agent 和 Rules 同步到所有 IDE 目录
+Agent & Rules & Platform Skills 安装脚本 — 将 source/ 中的资源同步到所有 IDE 目录
 
 用法:
-    ./venv/bin/python scripts/install.py                              # 安装所有 Rules + 所有 Agent
+    ./venv/bin/python scripts/install.py                              # 安装所有（Rules + Agent + Platform Skills）
     ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent（不安装 Rules）
     ./venv/bin/python scripts/install.py my-agent --model gpt-4       # 指定模型（使用 prompt_gpt-4.md）
     ./venv/bin/python scripts/install.py --rules-only                 # 仅安装 Rules
+    ./venv/bin/python scripts/install.py --platform-skills            # 安装所有 Platform Skills
+    ./venv/bin/python scripts/install.py --platform-skill codebuddycli  # 安装指定 Platform Skill
 """
 
 import json
@@ -18,6 +20,11 @@ import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
 RULES_SOURCE_DIR = os.path.join(SOURCE_DIR, "rules")
+PLATFORM_SKILLS_DIR = os.path.join(SOURCE_DIR, "platform-skills")
+PLATFORMSKILL_CREATOR_DIR = os.path.join(SOURCE_DIR, "platformskill-creator")
+
+# source/ 下不作为 Agent 安装的目录名
+NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks"}
 
 TOOL_MAP = {
     "cursor": {
@@ -256,6 +263,149 @@ def copy_skills(skills_src):
             print(f"    → {ide_skills}/{skill_name}/")
 
 
+# ── Platform Skills install ──────────────────────────────────────────
+
+IDE_SKILLS_TARGETS = [".cursor/skills", ".codebuddy/skills", ".claude/skills"]
+
+
+def install_one_platform_skill(skill_name):
+    """安装单个 Platform Skill 到所有 IDE skills 目录。
+    
+    源目录: source/platform-skills/<skill_name>/
+    目标目录: .<ide>/skills/platform-<skill_name>/
+    
+    返回: True=成功, False=失败
+    """
+    src_dir = os.path.join(PLATFORM_SKILLS_DIR, skill_name)
+    if not os.path.isdir(src_dir):
+        print(f"  ❌ Platform Skill 目录不存在: {src_dir}")
+        return False
+
+    # 验证必要文件
+    skill_json = os.path.join(src_dir, "skill.json")
+    skill_md = os.path.join(src_dir, "SKILL.md")
+    if not os.path.exists(skill_json):
+        print(f"  ⚠️  跳过 {skill_name}：缺少 skill.json")
+        return False
+
+    for ide_skills in IDE_SKILLS_TARGETS:
+        target_dir = os.path.join(PROJECT_ROOT, ide_skills, f"platform-{skill_name}")
+        # 清除旧版本
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir)
+        # 复制整个 skill 目录
+        shutil.copytree(src_dir, target_dir)
+        print(f"  ✅ {ide_skills}/platform-{skill_name}/")
+
+    return True
+
+
+def install_platformskill_creator():
+    """安装 platformskill-creator Skill 本身到所有 IDE skills 目录。
+    
+    源目录: source/platformskill-creator/
+    目标目录: .<ide>/skills/platformskill-creator/
+    
+    返回: True=成功, False=失败
+    """
+    if not os.path.isdir(PLATFORMSKILL_CREATOR_DIR):
+        print(f"  ⚠️  platformskill-creator 目录不存在，跳过")
+        return False
+
+    skill_md = os.path.join(PLATFORMSKILL_CREATOR_DIR, "SKILL.md")
+    if not os.path.exists(skill_md):
+        print(f"  ⚠️  platformskill-creator 缺少 SKILL.md，跳过")
+        return False
+
+    for ide_skills in IDE_SKILLS_TARGETS:
+        target_dir = os.path.join(PROJECT_ROOT, ide_skills, "platformskill-creator")
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir)
+        shutil.copytree(PLATFORMSKILL_CREATOR_DIR, target_dir)
+        print(f"  ✅ {ide_skills}/platformskill-creator/")
+
+    return True
+
+
+def install_platform_skills(specific_skill=None):
+    """安装 Platform Skills。
+    
+    Args:
+        specific_skill: 指定安装某个 Platform Skill，None 则安装全部。
+    
+    返回: (成功数, 失败数)
+    """
+    print(f"🔌 安装 Platform Skills\n")
+
+    ok, fail = 0, 0
+
+    if specific_skill:
+        # 安装指定的单个 Platform Skill
+        print(f"📦 platform-skills/{specific_skill}")
+        if install_one_platform_skill(specific_skill):
+            ok += 1
+        else:
+            fail += 1
+        print()
+    else:
+        # 安装全部 Platform Skills
+        if not os.path.isdir(PLATFORM_SKILLS_DIR):
+            print(f"  ⚠️  source/platform-skills/ 不存在，跳过")
+            return 0, 0
+
+        # 读取 registry.json 获取已注册的 Skills 列表
+        registry_path = os.path.join(PLATFORM_SKILLS_DIR, "registry.json")
+        if os.path.exists(registry_path):
+            registry = read_json(registry_path)
+            skill_names = list(registry.get("platforms", {}).keys())
+        else:
+            # 如果没有 registry，扫描目录
+            skill_names = sorted(
+                d for d in os.listdir(PLATFORM_SKILLS_DIR)
+                if os.path.isdir(os.path.join(PLATFORM_SKILLS_DIR, d))
+            )
+
+        if not skill_names:
+            print(f"  ⚠️  无 Platform Skills 可安装")
+            return 0, 0
+
+        print(f"  发现 {len(skill_names)} 个 Platform Skills: {', '.join(skill_names)}\n")
+
+        for name in skill_names:
+            # subagent 是内置模式，只有 SKILL.md 没有 scripts，也安装用于文档参考
+            src = os.path.join(PLATFORM_SKILLS_DIR, name)
+            if not os.path.isdir(src):
+                print(f"  ⚠️  跳过 {name}：目录不存在（仅在注册表中）")
+                fail += 1
+                continue
+
+            print(f"📦 platform-skills/{name}")
+            if install_one_platform_skill(name):
+                ok += 1
+            else:
+                fail += 1
+            print()
+
+        # 安装 platformskill-creator Skill
+        print(f"📦 platformskill-creator (Skill 创建工具)")
+        if install_platformskill_creator():
+            ok += 1
+        else:
+            fail += 1
+        print()
+
+        # 复制 registry.json 到各 IDE skills 根目录（供编排器查询）
+        if os.path.exists(registry_path):
+            for ide_skills in IDE_SKILLS_TARGETS:
+                target = os.path.join(PROJECT_ROOT, ide_skills, "platform-skills-registry.json")
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copy2(registry_path, target)
+            print(f"  ✅ registry.json → 各 IDE skills 目录\n")
+
+    print(f"  Platform Skills 安装完成：{ok} 成功, {fail} 失败\n")
+    return ok, fail
+
+
 # ── Rules install ────────────────────────────────────────────────────
 
 # .mdc 格式目标（Cursor / CodeBuddy IDE / Claude Code）
@@ -350,6 +500,30 @@ def install_rules():
         print()
 
     print(f"  共安装 {installed} 个规则到 {len(IDE_RULES_TARGETS)} IDE 目录 + CLI .md 格式\n")
+
+    # ── 清理 IDE 目录中已过时的规则文件 ──
+    # 将 source/rules/ 中不存在的规则文件从各 IDE 目录中删除
+    source_basenames = {f.replace(".mdc", "") for f in rule_files}  # e.g. {"agent-factory", "af-test", ...}
+    stale_count = 0
+
+    for ide_rules_dir in IDE_RULES_TARGETS:
+        target_dir = os.path.join(PROJECT_ROOT, ide_rules_dir)
+        if not os.path.isdir(target_dir):
+            continue
+        for existing in os.listdir(target_dir):
+            # 跳过非规则文件
+            if not (existing.endswith(".mdc") or existing.endswith(".md")):
+                continue
+            basename = existing.replace(".mdc", "").replace(".md", "")
+            if basename not in source_basenames:
+                stale_path = os.path.join(target_dir, existing)
+                os.remove(stale_path)
+                print(f"  🗑️  删除过时规则: {ide_rules_dir}/{existing}")
+                stale_count += 1
+
+    if stale_count > 0:
+        print(f"  共清理 {stale_count} 个过时规则文件\n")
+
     return installed
 
 
@@ -467,13 +641,22 @@ def install_agent(agent_name, model=None):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Agent & Rules 安装脚本")
-    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Rules）")
+    parser = argparse.ArgumentParser(description="Agent & Rules & Platform Skills 安装脚本")
+    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Rules + Platform Skills）")
     parser.add_argument("--model", "-m", default=None,
                         help="指定模型（使用 prompt_[model].md，不存在时自动从 prompt.md 复制）")
     parser.add_argument("--rules-only", action="store_true",
                         help="仅安装 Rules，不安装 Agent")
+    parser.add_argument("--platform-skills", action="store_true",
+                        help="安装所有 Platform Skills 到各 IDE skills 目录")
+    parser.add_argument("--platform-skill", default=None, metavar="NAME",
+                        help="安装指定的 Platform Skill（如 codebuddycli）")
     args = parser.parse_args()
+
+    # ── 仅安装 Platform Skills ──
+    if args.platform_skills or args.platform_skill:
+        install_platform_skills(specific_skill=args.platform_skill)
+        return 0
 
     # ── Rules 安装 ──
     # 无参数运行、或 --rules-only 时安装 rules
@@ -498,7 +681,7 @@ def main():
             d for d in os.listdir(SOURCE_DIR)
             if os.path.isdir(os.path.join(SOURCE_DIR, d))
             and not d.startswith(".")
-            and d not in ("rules",)  # 排除 rules 目录
+            and d not in NON_AGENT_DIRS  # 排除非 Agent 目录
         )
 
     model_info = f"（model: {args.model}）" if args.model else ""
@@ -519,7 +702,13 @@ def main():
         print()
 
     print(f"{'='*40}")
-    print(f"✅ 完成：{ok} 成功, {fail} 失败")
+    print(f"✅ Agent 安装完成：{ok} 成功, {fail} 失败")
+
+    # ── 全量安装时同时安装 Platform Skills ──
+    if not args.agents:
+        print()
+        install_platform_skills()
+
     return 0 if fail == 0 else 1
 
 

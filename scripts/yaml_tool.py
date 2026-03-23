@@ -6,10 +6,11 @@ YAML 测试用例工具 — 替代 yq CLI
 用于替代项目中所有对 yq 外部命令的依赖。
 
 子命令:
-  count    获取测试用例总数
-  get      读取特定索引的用例（支持字段过滤）
-  set      修改特定用例的特定字段
-  validate 验证 YAML 文件格式
+  count         获取测试用例总数
+  get           读取特定索引的用例（支持字段过滤）
+  set           修改特定用例的特定字段
+  validate      验证 YAML 文件格式
+  export-inputs 导出所有 Input 为批量 JSON（供 Platform Skill 使用）
 
 用法:
   ./venv/bin/python scripts/yaml_tool.py count <yaml_path>
@@ -71,8 +72,14 @@ import yaml  # pyyaml 作为兜底
 
 def _load_yaml(path: Path):
     """读取 YAML 文件，返回 Python 数据结构。
-    优先用 ruamel.yaml（保留格式），遇到 DuplicateKeyError 等问题时回退到 pyyaml。
+    读操作优先使用 pyyaml（性能更好），写操作仍用 ruamel（保留格式）。
     """
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def _load_yaml_for_write(path: Path):
+    """读取 YAML 文件（用于后续写回），优先 ruamel 以保留格式。"""
     if HAS_RUAMEL:
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -80,7 +87,6 @@ def _load_yaml(path: Path):
                 ry.preserve_quotes = True
                 return ry.load(f)
         except Exception:
-            # ruamel 对重复 key 等格式问题更严格，回退到 pyyaml
             print("⚠️  ruamel.yaml 解析失败，回退到 pyyaml", file=sys.stderr, flush=True)
             with open(path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
@@ -287,8 +293,8 @@ def cmd_set(args):
     if new_value is None and raw.strip():
         new_value = raw.strip()
 
-    # 加载 YAML
-    data = _load_yaml(path)
+    # 加载 YAML（用于写回，保留格式）
+    data = _load_yaml_for_write(path)
     cases = data.get('cases', []) if data else []
     total = len(cases)
 
@@ -420,6 +426,70 @@ def cmd_validate(args):
 
 
 # ============================================================
+# export-inputs 子命令
+# ============================================================
+
+def cmd_export_inputs(args):
+    """导出所有/指定范围的 Input 为批量 JSON，供 Platform Skill 批量执行使用。"""
+    path = Path(args.yaml_path)
+    if not path.exists():
+        print(f"❌ 文件不存在: {path}", flush=True)
+        return 1
+
+    data = _load_yaml(path)
+    if not isinstance(data, dict) or 'cases' not in data:
+        print("❌ YAML 格式错误: 缺少 'cases' 字段", flush=True)
+        return 1
+
+    cases = data['cases']
+    total = len(cases)
+
+    # 解析索引范围
+    if args.cases:
+        indices = _parse_indices(args.cases, total)
+    else:
+        indices = list(range(total))
+
+    # 构建输出
+    entries = []
+    for idx in indices:
+        if 0 <= idx < total:
+            case = cases[idx]
+            input_text = case.get('Input', '')
+            if isinstance(input_text, str):
+                input_text = input_text.strip()
+            entries.append({"index": idx, "input": input_text or ""})
+
+    output_json = json.dumps(entries, ensure_ascii=False, indent=2)
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(output_json)
+        print(f"✅ 已导出 {len(entries)} 条 Input 到: {out_path}", flush=True)
+    else:
+        print(output_json, flush=True)
+
+    return 0
+
+
+def _parse_indices(spec: str, total: int) -> List[int]:
+    """解析索引规范: '0', '0-4', '0,2,5', '0-4,7,9-11'"""
+    indices = []
+    for part in spec.split(','):
+        part = part.strip()
+        if '-' in part:
+            start, end = part.split('-', 1)
+            start = int(start.strip())
+            end = int(end.strip())
+            indices.extend(range(start, min(end + 1, total)))
+        else:
+            indices.append(int(part))
+    return sorted(set(indices))
+
+
+# ============================================================
 # 主入口
 # ============================================================
 
@@ -480,6 +550,13 @@ def main():
     p_validate.add_argument('yaml_path', help='YAML 文件路径')
     p_validate.add_argument('--json', action='store_true', help='以 JSON 格式输出')
     p_validate.set_defaults(func=cmd_validate)
+
+    # --- export-inputs ---
+    p_export = subparsers.add_parser('export-inputs', help='导出 Input 为批量 JSON（供 Platform Skill 使用）')
+    p_export.add_argument('yaml_path', help='YAML 文件路径')
+    p_export.add_argument('--cases', help='用例索引范围（如 0-4, 0,2,5）。不指定则导出全部')
+    p_export.add_argument('--output', '-o', help='输出 JSON 文件路径（不指定则输出到 stdout）')
+    p_export.set_defaults(func=cmd_export_inputs)
 
     args = parser.parse_args()
     return args.func(args)

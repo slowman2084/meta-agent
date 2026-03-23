@@ -6,76 +6,505 @@ alwaysApply: false
 
 # evo_looper 迭代优化模式
 
+## 概览：根据用例规模自动选择策略
+
+### 小规模用例集（≤ 10 条）：直接全量迭代
+
+当测试用例总数 **≤ 10 条**时，4 阶段分层策略的抽样/基线/验证开销不划算，**跳过分层，直接全量迭代**：
+
+```
+每轮全量执行（≤10 条） → 评估 → 优化 → 下一轮
+```
+
+**简化规则**：
+1. **跳过阶段 1~4**，直接进入「简化迭代循环」
+2. 每轮执行**全部用例**（无需抽样、无需热身、无需单独基线）
+3. **首轮**结果即为 baseline，写入 `baseline_scores.json`
+4. 优化模式：**默认单路**；连续 2 轮无改善（Δ ≤ 0）时切换为多候选模式
+5. 每 3 轮执行 `meta-retrospective` 全局复盘（同标准流程步骤 D）
+6. 停止条件：平均分 >= 目标阈值，或达到最大迭代次数
+7. 计划文件中 `总体计划` 写为「简化模式：全量直接迭代」，阶段标记为 `direct_iter`
+8. 其余约束（备份、反作弊、诊断摘要、changelog、计划文件同步）与标准流程完全一致
+
+> **判断时机**：初始化阶段（步骤 6 确定 YAML 路径后），通过 `yaml_tool.py count` 获取用例总数。若 ≤ 10 → 简化模式；> 10 → 标准 4 阶段。
+
+---
+
+### 大规模用例集（> 10 条）：4 阶段分层迭代
+
+当用例总数 **> 10 条**时，采用**样本量分层策略**节省执行成本：
+
+```
+阶段 1（小样本热身）  →  阶段 2（全样本基线）  →  阶段 3（抽样高效迭代）  →  阶段 4（全样本验证）
+     5 条 × 2~3 轮          全量 × 1 轮              8 条 × N 轮              全量 × 1 轮
+     快速验证方向             建立客观基准              密集优化                  验证普适性
+```
+
+---
+
+## 0. 计划模式 / Todo List / 续跑机制（强制）
+
+> **evo_looper 默认进入"计划模式"执行。**
+>
+> 目标：把长流程的关键状态写入磁盘，避免上下文中断、会话超长、平台切换或中途暂停后丢失进度。
+
+### 0.1 计划文件创建规则
+
+在进入任何测试、评估、优化动作之前，必须先确定计划文件：
+
+- **新开一轮 evo_looper**：
+  - 在 `source/[AgentName]/tmp/` 下创建：
+    - `plan_[YYYYMMDDHHmmss].md`
+- **从中断处恢复**：
+  - 若用户显式指定了 todo list / plan 文件路径，则直接进入**续跑模式**
+  - 若用户未指定，但 `tmp/` 下已有明确最近的 `plan_*.md` 且语义上是在"继续上一轮"，可以优先读取并恢复
+
+### 0.2 计划文件是长流程的持久化上下文
+
+计划文件必须包含以下信息：
+
+1. **基础信息**
+   - Agent 名称
+   - 平台模式（`subagent` / `codebuddycli` / `claude` / `tcop`）
+   - 模型（若有）
+   - 目标分数
+   - 最大迭代次数
+   - 计划创建时间
+2. **当前状态**
+   - `status`：`running` / `paused` / `completed` / `aborted`
+   - `current_phase`
+   - `current_step`
+   - `current_iteration`
+   - `last_updated_at`
+3. **总体计划**
+   - 阶段 1 / 2 / 3 / 4 的目标与进入条件
+4. **Todo List**
+   - 用 checkbox 或结构化列表表示每个阶段的步骤
+   - 至少标出：未开始 / 进行中 / 已完成 / 阻塞
+5. **关键产物路径**
+   - 当前使用的输出目录
+   - `warmup_cases.json`
+   - `sample_cases.json`
+   - `baseline_scores.json`
+   - `diagnostic_summary.json`
+   - 最近一次 `评估报告.md`
+   - 最近一次 prompt 备份
+6. **进度日志**
+   - 每完成一个关键步骤，追加一条带时间戳的进度记录
+7. **恢复说明**
+   - 明确"若中断，下次应从哪里继续"
+
+### 0.3 推荐文件结构
+
+推荐使用以下 Markdown 结构：
+
+```markdown
+---
+agent_name: cls-log-agent
+platform: tcop
+model: ""
+target_score: 98
+max_iterations: 10
+status: running
+current_phase: init
+current_step: create_plan
+current_iteration: 0
+created_at: 2026-03-21T10:00:00+08:00
+last_updated_at: 2026-03-21T10:00:00+08:00
+---
+
+## 基本信息
+
+## 总体计划
+- 阶段 1：小样本热身（5 条 × 2~3 轮）
+- 阶段 2：全样本基线（全量 × 1 轮）
+- 阶段 3：抽样高效迭代（8 条 × N 轮）
+- 阶段 4：全样本验证（全量 × 1 轮）
+
+## Todo List
+- [ ] 初始化 / 对账
+- [ ] 阶段1：热身（选择样本 → 热身轮次 → 是否结束热身）
+- [ ] 阶段2：基线（全量执行 → 建立 baseline_scores）
+- [ ] 阶段3：抽样迭代（构建 sample → 迭代执行 / 评估 / 优化）
+- [ ] 阶段4：全量验证（verify → 与 baseline 对比）
+- [ ] 收尾总结
+
+## 当前状态
+
+## 关键产物
+
+## 进度日志
+
+## 恢复说明
+```
+
+### 0.4 强制同步规则
+
+> **每个规划步骤完成后，都必须把进度同步回该计划文件。**
+
+必须同步的时机：
+
+- 初始化完成后
+- 代表性用例选取完成后
+- 每一轮热身结束后
+- 基线执行结束后
+- 每一轮阶段 3 迭代结束后
+- 每次 prompt 优化和安装完成后
+- 每次 retrospective 完成后
+- 每次抽样集调整后
+- 全量验证结束后
+- 最终完成 / 暂停 / 中止时
+
+每次同步至少更新：
+
+- `current_phase`
+- `current_step`
+- `current_iteration`
+- `last_updated_at`
+- 当前结论 / 阻塞项 / 下一步
+- 新产物路径
+
+### 0.5 续跑规则（恢复模式）
+
+当用户通过 `evo_looper` 指定 todo list / plan 文件时：
+
+1. **先读计划文件，再继续执行**
+2. 以计划文件中的 `current_phase` / `current_step` / `current_iteration` 作为恢复入口
+3. 读取计划文件中记录的关键产物路径，验证磁盘上的真实文件是否存在
+4. 若计划文件与磁盘状态冲突：
+   - 以**磁盘真实产物**为准
+   - 在计划文件 `进度日志` 中追加一条"状态对账 / reconciliation"记录
+5. 恢复时默认从：
+   - **第一个未完成步骤**
+   - 或"最后一个已完成步骤之后的安全断点"
+   继续
+6. 恢复模式下，禁止无依据地重置阶段、重抽样、重建基线
+
+### 0.6 与上下文长度相关的执行原则
+
+- 长流程状态**不能只保留在对话上下文里**，必须落盘到计划文件
+- 若上下文接近上限，应优先：
+  1. 同步计划文件
+  2. 在计划文件里写清楚当前阶段与下一步
+  3. 再结束本轮响应
+- 下一轮恢复时，应优先读取计划文件，而不是依赖聊天记忆
+
+---
+
 ## 初始化
 
-1. 运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定了 `model: xxx`，加 `--model xxx`）
-2. 确定：目标 Agent、YAML 路径、目标分数（默认 98）、最大迭代次数（默认 10）
+1. 解析 Agent 名称中的 `@` 后缀确定执行模式（无 `@` = subagent 模式）
+2. 判断是否进入**新计划模式**还是**续跑模式**：
+   - 若用户提供了 todo list / plan 文件路径 → 续跑模式
+   - 否则 → 新建 `source/[AgentName]/tmp/plan_[timestamp].md`
+3. 在计划文件中写入：
+   - Agent 名称
+   - 平台模式
+   - 模型
+   - 目标分数（默认 98；若用户指定则以用户要求为准）
+   - 最大迭代次数（默认 10）
+   - 当前状态 = `running`
+   - 当前阶段 = `init`
+   - 当前步骤 = `platform_setup`
+4. subagent 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定了 `model: xxx`，加 `--model xxx`）
+5. **立即调用 `use_skill` 加载 Platform Skill**（与 `af-test` 步骤 0 一致）：
+   ```
+   use_skill(command="subagent")       # 无 @ 或 @subagent
+   use_skill(command="codebuddycli")   # @codebuddycli
+   use_skill(command="claude")         # @claude
+   use_skill(command="tcop")           # @tcop
+   ```
+   - 若 Skill 不在 available_skills 中，需先运行 `./venv/bin/python scripts/install.py --platform-skills`
+   - 加载成功后，Skill 说明注入上下文，后续步骤 A 的测试执行按 Skill 说明操作
+6. 确定：目标 Agent、YAML 路径、目标分数、最大迭代次数、执行模式
    - 若指定了 `model: xxx`，后续所有操作使用 `prompt_[model].md`（首次自动从 `prompt.md` 复制）
+7. **同步计划文件并输出计划摘要**：
+   - 更新 `current_phase=init`
+   - 更新 `current_step=ready_for_phase1`
+   - 在 `进度日志` 追加"初始化完成，可进入阶段 1"
+   - 向用户展示：plan 文件路径、当前阶段、下一步、暂停条件
+8. **默认继续执行**：
+   - 除非用户明确要求"只输出 plan"或命中本规则定义的暂停条件，否则不得在此处询问"是否继续 / 输入 y 继续"
 
-## 迭代循环
+---
 
-### 步骤 A：测试 + 评估
+## 阶段 1：小样本热身（5 条用例 × 2~3 轮）
 
-按 `af-test` 规则中的共享测试-评估流程，逐条执行所有用例。
-- 平台模式下每轮迭代前需重新运行 `./venv/bin/python scripts/prepare_config.py [AgentName] [output_dir]`
-- 汇总评估报告到 `source/[AgentName]/tmp/evalooper/iter_[N]/评估报告.md`
+> **目标**：快速获得反馈，验证优化方向正确性，避免全量浪费时间。
 
-**Baseline 初始化（仅首轮执行）：**
-- 若 `baseline_scores.json` 不存在，将本轮得分写入：
-  ```json
-  { "cases": { "case_0": 72, "case_1": 85, ... }, "avg": 78.5 }
-  ```
+### 1.1 选择代表性用例
 
-**后续轮次（第 2 轮起）：**
-- 读取 `baseline_scores.json`，在报告中增加 `Δ分` 列
+从全量用例中选取 **5 条代表性用例**，覆盖高、中、低难度：
+
+- **高难度**（1~2 条）：复杂查询、多步推理、边界场景
+- **中难度**（2 条）：典型常见场景
+- **低难度**（1~2 条）：简单直接的查询
+
+选择依据（优先级从高到低）：
+1. 若已有历史评估数据，按历史分数分层抽取
+2. 若无历史数据，根据 Input 复杂度人工判断（查询字段数、是否跨 topic、是否涉及统计函数等）
+3. 确保用例类型多样化（统计类、排障类、趋势类、对比类等）
+
+将选中的用例序号记录到 `source/[AgentName]/tmp/warmup_cases.json`：
+```json
+{ "cases": [0, 4, 7, 15, 27], "reason": "高:[4,27] 中:[7,15] 低:[0]" }
+```
+
+**同步计划文件（强制）**：
+- 记录 `warmup_cases.json` 路径
+- 记录 5 条用例的选择理由
+- 将 Todo 中"阶段1 / 选择代表性用例"标记为已完成
+- 更新 `current_step=phase1_warmup_round_1`
+
+### 1.2 热身迭代循环（2~3 轮）
+
+每轮执行：
+
+**步骤 A**：按 `af-test` 共享流程，仅执行选中的 5 条用例
+- 输出目录：`source/[AgentName]/tmp/evalooper_warmup_[N]_[mode]/`
+- 使用 `--cases` 参数限定执行范围
+- 汇总评估报告到目录下的 `评估报告.md`
+
+**步骤 B**：判断热身是否结束
+- 热身最少 2 轮；**进入全量前的默认热身门槛**是：最近一轮 5 条样本平均分 **>= 90**
+- 进入阶段 2 之前，必须同时满足：
+  1. 最近一轮热身平均分 `>= 90`
+  2. 5 条样本中**无 case < 80**
+  3. 无用例连续下降
+  4. 最近一轮结果完整（5 条都有有效结果）
+- 若某轮执行超时 / 无结果 / 有效结果少于 5 条，**该轮不计入已完成热身轮次**，必须先排障并重跑当前轮
+- 若第 2 轮仍未达标 → 继续热身优化
+- 热身最多 5 轮；若第 5 轮后仍未达到上述门槛，或连续 2 轮超时 / 无结果，**不得进入阶段 2**，应暂停并优先修复 prompt、执行链路或先执行 `calibrate`
+
+**步骤 C**：优化提示词（单路模式）
+- 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
+- 构建**诊断摘要**（见下方「诊断摘要格式」），传给 `meta-prompt-engineer`
+- 调用 `meta-prompt-engineer`（模式 B），传入：
+  - 当前提示词 + 理想态 + 诊断摘要 + changelog（必须）
+  - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
+- 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
+- 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
+
+**每轮结束后同步计划文件（强制）**：
+- 记录本轮输出目录
+- 记录平均分 / 低分 case / 是否继续热身
+- 记录本轮是否存在超时、缺失结果、无效结果
+- 记录最新 prompt 备份路径
+- 记录是否已执行安装
+- 若热身结束（已满足 >=90 gate）：
+  - 更新 `current_phase=phase2_baseline`
+  - 更新 `current_step=run_baseline`
+- 若继续热身：
+  - 更新 `current_iteration`
+  - 更新 `current_step=phase1_warmup_round_[N+1]`
+- 若热身阻塞（5 轮未达标或连续 2 轮超时）：
+  - 更新 `status=paused`
+  - 更新 `current_step=warmup_blocked`
+  - 在 `恢复说明` 中写明：未达到进入全量的热身门槛，禁止直接执行阶段 2
+
+> **热身阶段的价值**：用 5 条 × 2~3 轮 = 10~15 次执行，快速锁定优化方向，相比直接全量（40 × 3 = 120 次）节省 80%+ 的执行成本。
+
+---
+
+## 阶段 2：全样本基线（全量用例 × 1 轮）
+
+> **目标**：用阶段 1 优化后的 prompt 跑完整用例，建立客观性能基准线。
+>
+> **前置门槛**：只有当阶段 1 热身已达到 `>=90` gate 时，才能进入本阶段。若热身阻塞，禁止为了"先看全量"而直接放行。
+
+### 2.1 执行全量测试
+
+- 阶段 2 属于自动执行阶段。即使预计耗时较长，也应在输出 plan/进度摘要后**直接执行**，不得停下来询问用户"是否继续执行全量基线测试"。
+- 按 `af-test` 共享流程，执行全部用例：
+- 输出目录：`source/[AgentName]/tmp/evalooper_baseline_[mode]/`
+- 汇总评估报告到目录下的 `评估报告.md`
+
+### 2.2 建立基线
+
+将本轮得分写入 `source/[AgentName]/tmp/baseline_scores.json`：
+```json
+{
+  "phase": "baseline",
+  "cases": { "case_0": 72, "case_1": 85, "case_2": 90, ... },
+  "avg": 78.5,
+  "distribution": {
+    "high": [2, 5, 8, ...],
+    "mid": [0, 3, 7, ...],
+    "low": [4, 15, 27, ...]
+  }
+}
+```
+
+**分数分层**（用于阶段 3 抽样）：
+- **高分**（≥ 85）：成功模式
+- **中分**（60~84）：稳定性待验证
+- **低分**（< 60）：重点修复目标
+
+### 2.3 判断是否跳过阶段 3
+
+- 若全量平均分 >= 目标阈值 → 直接跳到阶段 4 验证
+- 否则 → 进入阶段 3 抽样迭代
+
+**同步计划文件（强制）**：
+- 记录 baseline 输出目录
+- 记录 `baseline_scores.json` 路径
+- 记录 baseline 平均分与分层结果
+- 若跳过阶段 3：
+  - 更新 `current_phase=phase4_verify`
+  - 更新 `current_step=run_verify`
+- 若进入阶段 3：
+  - 更新 `current_phase=phase3_sampling`
+  - 更新 `current_step=build_sample_cases`
+
+---
+
+## 阶段 3：抽样高效迭代（8 条用例 × N 轮）
+
+> **目标**：用有代表性的 8 条抽样用例进行密集迭代优化。
+
+### 3.1 构建抽样集
+
+从阶段 2 的全量基线结果中，按分数分层抽取 **8 条用例**：
+
+| 分层 | 抽取数 | 目的 |
+|------|--------|------|
+| 低分（< 60） | 2~3 条 | 重点修复，拉升底线 |
+| 中分（60~84） | 2~3 条 | 稳定性验证，防止回退 |
+| 高分（≥ 85） | 2~3 条 | 成功模式复制，确保不破坏 |
+
+将选中的用例序号记录到 `source/[AgentName]/tmp/sample_cases.json`：
+```json
+{
+  "cases": [4, 15, 27, 0, 7, 21, 2, 8],
+  "low": [4, 15, 27],
+  "mid": [0, 7, 21],
+  "high": [2, 8],
+  "baseline_avg": 78.5
+}
+```
+
+**同步计划文件（强制）**：
+- 记录 `sample_cases.json` 路径
+- 记录抽样结构（low/mid/high）
+- 更新 `current_step=phase3_iter_1_execute`
+
+### 3.2 迭代循环
+
+每轮执行：
+
+**步骤 A**：按 `af-test` 共享流程，仅执行抽样的 8 条用例
+- 输出目录：`source/[AgentName]/tmp/evalooper_iter_[N]_[mode]/`
+- 使用 `--cases` 参数限定执行范围
+- 汇总评估报告到目录下的 `评估报告.md`
+- 读取 `baseline_scores.json`，在报告中增加 `Δ分` 列（与基线对比）
 - 对连续 2+ 轮 Δ 均为负值的用例，标记为「难例」
 
-### 步骤 B：判断是否停止
+**步骤 B**：判断是否停止
 
 > **evo_looper 是全自动循环，除非满足停止/暂停条件，否则不得暂停询问用户。**
 
-**停止条件：**
-- 排除「难例」后平均分 >= 目标阈值 → 跳到步骤 E
-- 达到最大迭代次数 → 跳到步骤 E
+**停止条件**：
+- 排除「难例」后，抽样 8 条平均分 >= 目标阈值 → 进入阶段 4
+- 达到最大迭代次数 → 进入阶段 4
 
 **暂停条件**（由步骤 D 触发）：
 - `meta-retrospective` 发现高严重度 rubric/ideal_state 问题 → 暂停，等待用户审阅
 
-**继续条件（自动进入步骤 C）：**
-- **热身阶段（轮次 ≤ 3）**：单路模式
-- **投票阶段（轮次 ≥ 4）**：3 路候选模式
-- **停滞触发**：本轮分数无改善 → 恢复上轮提示词，立即切换 3 路候选模式
+**继续条件**：
+- **默认**：单路模式（每轮一次 `meta-prompt-engineer` 调用）
+- **多候选触发**（满足任一即触发，见下方说明）：切换为多候选模式
 
-### 步骤 C：优化提示词
+**步骤 C**：优化提示词
 
-#### 单路模式（热身阶段，轮次 ≤ 3）
+#### C.0 构建诊断摘要（单路 & 多候选共用）
+
+编排器在调用 `meta-prompt-engineer` 前，必须先从评估结果中构建**诊断摘要 JSON**，作为结构化中间产物传递：
+
+```json
+{
+  "iteration": 3,
+  "phase": "phase3_sampling",
+  "sample_size": 8,
+  "avg_score": 72.5,
+  "baseline_avg": 78.5,
+  "delta": -6.0,
+  "score_distribution": {
+    "high": { "count": 2, "cases": [2, 8] },
+    "mid": { "count": 3, "cases": [0, 7, 21] },
+    "low": { "count": 3, "cases": [4, 15, 27] }
+  },
+  "problem_clusters": [
+    {
+      "pattern": "多步推理时中间步骤丢失",
+      "affected_cases": [4, 15],
+      "severity": "high",
+      "typical_score": 45
+    },
+    {
+      "pattern": "输出格式不稳定，时有时无结构",
+      "affected_cases": [0, 27],
+      "severity": "medium",
+      "typical_score": 65
+    }
+  ],
+  "hard_cases": [4, 15],
+  "trend": "declining",
+  "avoided_directions": ["CoT框架（连续2轮无效）"],
+  "suggested_directions": ["工具调用规范优化"],
+  "retrospective_available": true
+}
+```
+
+**字段说明**：
+- `problem_clusters`：编排器从评估结果中聚类提炼的问题模式（不是逐条罗列），每条包含模式描述、受影响用例、严重度、典型分数
+- `hard_cases`：连续 2+ 轮 Δ 均为负值的用例序号
+- `trend`：`improving` / `stagnating` / `declining`（对比上轮得分）
+- `avoided_directions` / `suggested_directions`：来自 `meta-retrospective` 的输出（若已执行过步骤 D）
+
+> **编排器的职责边界**：编排器只负责「诊断是什么问题」和「问题有多严重」，**不决定优化方向**。优化方向完全由 `meta-prompt-engineer` 根据诊断摘要自行推导。
+
+#### C.1 单路模式（默认）
 
 - 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
-- 调用 `meta-prompt-engineer`，严格控制传入内容：
-  - 当前提示词 + 理想态 + 评估不足与建议 + changelog（必须）
+- 调用 `meta-prompt-engineer`（**模式 B**），传入：
+  - 当前提示词 + 理想态 + **诊断摘要 JSON** + changelog（必须）
   - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
   - 被禁止的优化方向（若已有 `meta-retrospective` 输出，则传入）
 - 按 `===CHANGELOG===` / `===PROMPT===` 标记拆分输出，写入对应文件
 - 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
 
-#### 3 路候选模式（投票阶段或停滞触发）
+#### C.2 多候选模式（数据驱动触发）
+
+**触发条件**（满足任一即从单路切换为多候选）：
+
+| 触发类型 | 条件 | 说明 |
+|---------|------|------|
+| **停滞触发** | 连续 2 轮平均分无改善（Δ ≤ 0） | 单路优化陷入局部最优，需要探索多个方向 |
+| **复盘触发** | `meta-retrospective` 返回了 `forced_new_directions` | 复盘专家认为当前方向已耗尽，提供了强制新方向 |
+
+**触发后不可逆**：一旦在某轮触发多候选模式，后续轮次保持多候选直到阶段 3 结束。
+
+**执行流程**：
 
 1. 备份当前提示词（仅一次）
-2. 确定三条优化路线（若有 `forced_new_directions` 则替换路线 C）：
-   - **路线 A**：侧重推理链 / CoT 框架改进
-   - **路线 B**：侧重输出格式 / 结构化表达改进
-   - **路线 C**：侧重边界条件 / 异常输入覆盖改进
-3. 依次调用 `meta-prompt-engineer` 三次，每次明确指定本次优化路线
-4. 三个候选各自完整执行步骤 A（测试 + 评估），得到三个平均分
-5. 选最高分候选为胜者：
+2. 恢复上轮提示词（若因停滞触发）
+3. 调用 `meta-prompt-engineer`（**模式 C：多候选生成**），**单次调用**传入：
+   - 当前提示词 + 理想态 + **诊断摘要 JSON** + changelog
+   - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
+   - `meta-prompt-engineer` 在单次调用中自行分析诊断摘要，推导 3 条 MECE 正交方向，输出 3 个候选提示词
+4. 按 `===CANDIDATE_A===` / `===CANDIDATE_B===` / `===CANDIDATE_C===` 标记拆分输出
+5. 三个候选各自完整执行步骤 A（仅 8 条抽样用例），得到三个平均分
+6. 选最高分候选为胜者：
    - 胜者 → 覆盖写入 `prompt.md`
    - 败者 → 保存到 `bak/candidate_[A|B|C]_[ts].bak`
-6. 将胜者 CHANGELOG 追加到 `changelog.md`
-7. 运行 `install.py` 同步
+7. 将胜者 CHANGELOG 追加到 `changelog.md`
+8. 运行 `install.py` 同步
 
+> **关键设计**：编排器不指定优化方向，3 个候选的方向由 `meta-prompt-engineer` 自行决定。编排器只负责传入诊断摘要、执行测试、选出胜者。
+>
 > **严禁将优化说明写入提示词；严禁传入 ExpectedOutput。**
 
-### 步骤 D：全局复盘检查
+**步骤 D**：全局复盘检查
 
 迭代次数能被 3 整除时，调用 `meta-retrospective` 进行全局复盘。
 
@@ -87,11 +516,142 @@ alwaysApply: false
 - `baseline_scores_path`：`baseline_scores.json`（若存在）
 
 **处理返回结果**：
-- `avoided_directions` → 下一步骤 C 作为「被禁止的优化方向」
-- `suggested_directions` → 作为 3 路候选模式路线 C 的替代
+- `avoided_directions` → 下一轮诊断摘要的 `avoided_directions` 字段
+- `suggested_directions` → 下一轮诊断摘要的 `suggested_directions` 字段
+- `forced_new_directions` → 触发多候选模式（若当前为单路）
 
 > 若发现评估体系本身存在严重问题，应暂停 evo_looper，先执行 `calibrate` 修复后再恢复。
 
-### 步骤 E：迭代完成
+**每轮结束后同步计划文件（强制）**：
+- 记录本轮输出目录
+- 记录本轮平均分 / Δ分 / 低分 case / hard cases
+- 记录 `diagnostic_summary.json` 路径
+- 记录本轮 prompt 备份 / 胜者候选 / 安装结果
+- 若触发暂停：
+  - 更新 `status=paused`
+  - 更新 `current_step=await_user_decision`
+  - 在 `恢复说明` 中写明"需先处理 retrospective / calibrate 问题"
+- 若进入下一轮：
+  - 更新 `current_iteration=N+1`
+  - 更新 `current_step=phase3_iter_[N+1]_execute`
+- 若进入阶段 4：
+  - 更新 `current_phase=phase4_verify`
+  - 更新 `current_step=run_verify`
 
-输出：总迭代次数、最终得分、提示词版本路径、备份历史、建议补充的用户画像。
+### 3.3 抽样集动态调整
+
+每 3 轮迭代后（步骤 D 之后），评估是否需要调整抽样集：
+
+- 若某低分用例已连续 2 轮 ≥ 85 → 替换为另一个仍在低分区的用例
+- 若某高分用例连续 2 轮下降 → 关注是否存在优化回退
+- 更新 `sample_cases.json`，记录调整原因
+
+**同步计划文件（强制）**：
+- 记录抽样集是否调整
+- 若已调整，写入新的 `sample_cases.json` 路径与调整理由
+
+---
+
+## 阶段 4：全样本验证（全量用例 × 1 轮）
+
+> **目标**：用优化后的 prompt 跑全量用例，验证改进效果的普适性。
+
+### 4.1 执行全量测试
+
+按 `af-test` 共享流程，执行全部用例：
+- 输出目录：`source/[AgentName]/tmp/evalooper_verify_[mode]/`
+- 汇总评估报告到目录下的 `评估报告.md`
+
+### 4.2 与基线对比
+
+读取阶段 2 的 `baseline_scores.json`，生成对比报告：
+
+```markdown
+## 全量验证对比报告
+
+| 指标 | 基线（阶段2） | 验证（阶段4） | Δ |
+|------|-------------|-------------|---|
+| 平均分 | 78.5 | 89.2 | +10.7 |
+| 最低分 | 42 | 65 | +23 |
+| ≥85 占比 | 30% | 65% | +35% |
+| <60 占比 | 25% | 5% | -20% |
+```
+
+### 4.3 判断最终结果
+
+**达标**（排除「难例」后平均分 >= 目标阈值）：
+- 输出最终报告 → 跳到步骤 E
+
+**未达标**：
+- 若与基线相比有显著提升（Δ ≥ 5 分）但未达标 → 用验证结果重建抽样集，回到阶段 3 继续迭代
+- 若与基线相比提升微弱（Δ < 5 分）→ 建议执行 `calibrate` 检查评估体系，或人工介入
+
+**同步计划文件（强制）**：
+- 记录 verify 输出目录
+- 记录 verify 平均分、最低分、分布变化
+- 记录是否达标
+- 若返回阶段 3：
+  - 更新 `current_phase=phase3_sampling`
+  - 更新 `current_step=build_sample_cases_from_verify`
+- 若完成：
+  - 更新 `current_phase=done`
+  - 更新 `current_step=final_summary`
+
+---
+
+## 步骤 E：迭代完成
+
+输出：
+- 总阶段进度（阶段 1/2/3/4 各执行了多少轮）
+- 最终全量得分与基线对比
+- 提示词版本路径
+- 备份历史
+- 建议补充的用户画像
+
+**最终同步计划文件（强制）**：
+- 更新 `status=completed`
+- 更新 `current_phase=done`
+- 更新 `current_step=completed`
+- 在 `进度日志` 中追加最终总结
+- 在 `恢复说明` 中明确：本轮已结束；若后续继续优化，应基于该计划文件或新建新计划文件继续
+
+---
+
+## 中断 / 暂停 / 会话结束前的最低要求
+
+若由于任意原因需要结束当前响应，但 evo_looper 尚未完成，必须先做以下动作：
+
+1. 同步计划文件
+2. 写清：
+   - 当前阶段
+   - 当前步骤
+   - 当前已完成产物
+   - 当前阻塞项
+   - 下一步该做什么
+3. 将 `status` 标记为：
+   - `running`（可直接继续）
+   - `paused`（需用户处理某问题）
+   - `aborted`（本轮放弃）
+
+> **禁止**在未同步计划文件的情况下结束长流程响应。
+
+---
+
+## 执行成本对比
+
+> 以 40 条用例、迭代 6 轮为例（大规模 4 阶段分层）：
+
+| 策略 | 执行次数 | 说明 |
+|------|---------|------|
+| 旧：每轮全量 | 40 × 6 = **240 次** | 每轮都跑 40 条 |
+| 新：4 阶段分层 | 5×3 + 40 + 8×6 + 40 = **143 次** | 热身 15 + 基线 40 + 迭代 48 + 验证 40 |
+| **节省** | **~40%** | 执行次数减少近一半 |
+
+> 以 8 条用例、迭代 6 轮为例（小规模简化模式）：
+
+| 策略 | 执行次数 | 说明 |
+|------|---------|------|
+| 简化：每轮全量 | 8 × 6 = **48 次** | 每轮跑 8 条，无额外基线/验证开销 |
+| 若强行 4 阶段 | 5×3 + 8 + 8×6 + 8 = **79 次** | 热身 + 基线 + 迭代 + 验证，开销反而更大 |
+
+> **结论**：≤ 10 条用例时，全量直接迭代更高效，不需要分层策略的抽样/基线/验证步骤。
