@@ -1,10 +1,10 @@
-# Teach AI to Recommend Song Lyrics in 5 Minutes — Meta-Agent Quick Start
+# Teach AI to Write Golden Lines in 5 Minutes — Meta-Agent Quick Start
 
 > **⏱️ Estimated Time**: Environment setup 5 min + Workflow experience 20–30 min (depending on execution method)
 >
 > You'll use 5 "pop song golden lines" test cases to experience the full Agent creation, testing, and iterative optimization workflow.
 > 
-> **OpenClaw Users**: No installation needed — complete the entire workflow right in your browser.
+> **OpenClaw Users**: No installation needed — clone the project and complete the entire workflow in your browser.
 
 ---
 
@@ -12,20 +12,34 @@
 
 **CLI / IDE Approach**: Each step is an independent CLI call (`-p` mode). After each step **completes**, read the generated files and showcase interesting content to the user.
 
-**OpenClaw Approach**: Each step is completed via sub agent spawn. You (OpenClaw) read `source/meta-*/prompt.md` as the system prompt for each sub agent, passing intermediate artifacts (prompts, outputs, scores) through the conversation context — no file system needed.
+**OpenClaw Approach**: Each step is completed via spawn sub agent. You (OpenClaw) read `source/meta-*/prompt.md` as the system prompt for each sub agent, granting `file_read`, `file_write`, `list_directory` tools via the `tools` parameter when spawning. Intermediate artifacts (prompts, outputs, scores) are **written to the file system**, sharing the same directory structure (`source/[AgentName]/`) as CLI / IDE.
 
-The sense of achievement comes from "seeing what AI specifically wrote, what lyrics it recommended, how scores changed" — not just a "Done" message.
+The sense of achievement comes from "seeing what AI specifically wrote, what golden lines it created, how scores changed" — not just a "Done" message.
 
-**Lyrics Evaluation Logic**: The Agent must generate **10 candidate golden lines** each time. Scoring primarily checks whether there is **at least 1 line achieving 90% similarity with ExpectedOutput** — this is the core scoring criterion.
+**Golden Lines Evaluation Logic**: The Agent must **originate** **10 candidate golden lines** each time. Scoring primarily checks **originality** (no copying existing lyrics), **imagery alignment** (whether it captures the emotional core of the keywords), and **literary quality** (rhetoric, rhythm, imagery). ExpectedOutput serves as a style benchmark — evaluation checks whether **at least 1 of the Agent's original 10 lines reaches the benchmark level**.
+
+### 🚨 Three Iron Rules (OpenClaw Must Obey)
+
+> **Iron Rule 1: Test cases are the yardstick — never modify them.**
+>
+> The 5 test cases (Input + ExpectedOutput + Judge) become fixed evaluation standards after Step 2. Throughout the entire iteration process, you **must never modify, adjust, or replace any test case content**. Even if eval-judge's reports flag `[rubric]` (rubric may be unreasonable) or `[testcase]` (ExpectedOutput may be incorrect), you **must absolutely not modify test cases or scoring criteria based on this**. The only thing you're allowed to change is **the Agent's prompt**. If a test case consistently scores low, the prompt isn't good enough yet — keep optimizing the prompt, don't lower the bar.
+>
+> **Iron Rule 2: Optimization must ensure generalizability — no overfitting.**
+>
+> The goal of iterative optimization is to improve the Agent's **general capabilities**, not to make it "memorize" answers for these 5 cases. Each prompt optimization must ensure changes are equally effective for **inputs never seen before**. Specifically: no embedding few-shot examples highly similar to test cases in the prompt; no special handling for specific keywords from certain cases; all changes must be general capability improvements (reasoning frameworks, format specifications, edge case handling, etc.).
+>
+> **Iron Rule 3: Fully automated execution — don't stop to ask the user.**
+>
+> Unless encountering an unrecoverable error (e.g., sub agent spawn failure), **do not stop to ask the user "should I continue" or "proceed to next step?"**. The entire flow from Step 2 through Step 5 should execute seamlessly and automatically. After each step completes, display results and immediately proceed to the next step. The user choosing to execute this document means authorizing you to complete the entire workflow automatically.
 
 ---
 
 ## 🎯 What You'll Accomplish
 
 ```
-5 song lyrics test cases (each requiring the Agent to recommend 10 candidate golden lines)
-    → AI reverse-engineers a prompt (see how it understands "lyrics recommendation")
-    → First test: see which 10 golden lines the Agent recommends for each query (actual content!)
+5 lyrics golden-line test cases (each requiring the Agent to originate 10 candidate golden lines)
+    → AI reverse-engineers a prompt (see how it understands "original golden lines")
+    → First test: see which 10 golden lines the Agent wrote for each query (actual content!)
     → 3 rounds of iterative optimization, each round showing prompt changes and score improvements
     → Final comparison: initial vs. final prompt, understanding AI's optimization strategy
 ```
@@ -40,13 +54,13 @@ Meta-Agent supports three experience modes — pick **any one**:
 
 | Mode | Installation Required | Best For | Completeness |
 |------|----------------------|----------|-------------|
-| **🅰️ OpenClaw** | None (browser only) | Quick exploration without setup | ⭐⭐⭐⭐ |
+| **🅰️ OpenClaw** | None (browser only) | Quick exploration without setup | ⭐⭐⭐⭐⭐ |
 | **🅱️ AI IDE** | Cursor / CodeBuddy / Claude Code | Developers with existing IDEs | ⭐⭐⭐⭐⭐ |
 | **🅲 CLI** | CodeBuddy CLI or Claude Code CLI | Terminal and scripting enthusiasts | ⭐⭐⭐⭐⭐ |
 
 #### 🅰️ OpenClaw (Zero Barrier)
 
-**No tools need to be installed.** OpenClaw calls Meta-Agent's sub agents (such as meta-prompt-engineer, meta-eval-judge, etc.) via sub agent spawn.
+**No tools need to be installed.** OpenClaw calls Meta-Agent's sub agents (such as meta-prompt-engineer, meta-eval-judge, etc.) via sub agent spawn, granting `file_read`, `file_write`, `list_directory` tools via the `tools` parameter.
 
 How it works:
 - This document (`README_FORCLAW_EN.md`) itself is OpenClaw's execution handbook
@@ -54,8 +68,9 @@ How it works:
 - Completes the full **prompt generation → evaluation scoring → iterative optimization** workflow via sub agent spawn
 - Orchestration rules are embedded in the step-by-step instructions in this document — no separate IDE installation needed
 - Each sub agent has a specific input format (using `【】` format markers); this document provides exact templates at each step
+- **File read/write capability via spawn**: When spawning each sub agent, grant `file_read`, `file_write`, `list_directory` tools via the `tools` parameter. This allows sub agents to directly read/write the local file system, with artifacts written to `source/[AgentName]/` directory, sharing the same directory structure as CLI / IDE
 
-> ⚠️ **Limitation**: Sub agents spawned by OpenClaw have no tool-calling capability (cannot read/write files or execute commands), so they're only suitable for **pure text-generation Agents** (like this demo's lyrics recommendation). Agents requiring MCP / tool calling (e.g., log analysis) still need CLI or IDE.
+> 💡 **Difference from CLI / IDE**: OpenClaw doesn't support MCP tool calling or shell command execution, but the file read/write tools granted during spawn allow it to complete the entire demo workflow. Agents requiring MCP (like log analysis) still need CLI or IDE.
 
 #### 🅱️ IDE Mode
 
@@ -74,17 +89,23 @@ Open the project directly in your IDE (Cursor / CodeBuddy / Claude Code) and typ
 
 ### 🅰️ OpenClaw
 
-**No need to clone the project or set up any environment.** Jump directly to "Step 1" to prepare test cases.
+**Clone the project locally** (OpenClaw grants file read/write tools when spawning sub agents, requiring a local workspace):
 
-OpenClaw needs to read the following 3 prompt files from the GitHub repository as system prompts when spawning sub agents:
+```bash
+git clone <your-repo-url>
+cd meta-agent
+```
+
+> 💡 No need to create a virtual environment or install Python dependencies. OpenClaw only needs to read prompt files (`source/meta-*/prompt.md`) from the repository and write artifacts to the `source/` directory.
+>
+> If OpenClaw cannot directly access the local file system, you can also read prompt files via `web_fetch` from GitHub Raw URLs:
 
 | Sub Agent | GitHub Raw URL |
 |-----------|---------------|
 | Prompt Generation/Optimization Expert | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-prompt-engineer/prompt.md` |
+| Prompt Anti-cheat Review Expert | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-reviewer/prompt.md` |
 | Evaluation Scoring Expert | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-eval-judge/prompt.md` |
 | Scoring Criteria Generation Expert | `https://raw.githubusercontent.com/slowman2084/meta-agent/main/source/meta-rubric-gen/prompt.md` |
-
-> 💡 If OpenClaw supports `web_fetch` or similar tools, you can read the above URLs directly. If not, you can manually paste the contents of these 3 files in the first conversation turn.
 
 ### 🅱️🅲 CLI / IDE
 
@@ -120,7 +141,7 @@ claude --version
 
 ### 🅰️ OpenClaw
 
-**No need to create files.** Keep the 5 test cases below in your conversation context — they'll be referenced directly in subsequent steps.
+Same as CLI / IDE — create `demo_testcases.yaml` in the project root (use `file_write` to write the content below).
 
 ### 🅱️🅲 CLI / IDE
 
@@ -129,44 +150,40 @@ Create `demo_testcases.yaml` in the project root:
 ```yaml
 meta:
   count: 5
-  notice: "Pop song golden lines assistant demo — Agent must generate 10 candidate golden lines per query"
+  notice: "Original golden lines assistant demo — Agent must originate 10 candidate golden lines per query (no copying existing lyrics)"
 cases:
   - Input: |
-      Generate 10 golden lyric lines based on "roller coaster ride"
+      Create 10 original lyric golden lines around the keyword "roller coaster ride" and the theme of love. Requirements: must not copy existing lyrics, must be entirely new creations.
     ExpectedOutput: |
-      Baby our love is like a roller coaster ride, shooting me up to the sky then plummeting me down
-      —— Mayday "Roller Coaster"
-      (Above is a reference direction for the best among 10 lines; Agent output should contain 10 candidates)
+      Style benchmark (reproduction not required, used as imagery and quality reference for evaluation): Baby our love is like a roller coaster ride, shooting me up to the sky then plummeting me down — capture the love imagery of "sudden ups and downs, thrilling yet unsettling"
     Judge: ""
 
   - Input: |
-      Generate 10 golden lyric lines based on "what the world gave me"
+      Create 10 original lyric golden lines around the keyword "what the world gave me" and the theme of life. Requirements: must not copy existing lyrics, must be entirely new creations.
     ExpectedOutput: |
-      🎵 **The world gave me crickets chirping, and also gave me thunder; gave me a crescent moon, and also gave me evening stars**
-      —— (Song name and artist to be filled by Agent)
-      (Above is a reference direction for the best among 10 lines)
+      Style benchmark (reproduction not required, used as imagery and quality reference for evaluation): The world gave me crickets chirping, and also gave me thunder; gave me a crescent moon, and also gave me evening stars — capture the life imagery of "gifts of contrast and gratitude"
     Judge: ""
 
   - Input: |
-      Generate 10 golden lyric lines about "every word is a secret crush"
+      Create 10 original lyric golden lines around the keyword "every word is a secret crush" and the theme of love. Requirements: must not copy existing lyrics, must be entirely new creations.
     ExpectedOutput: |
-      Every word of his never mentioned loving you, yet every sentence of yours says "I'm willing"
+      Style benchmark (reproduction not required, used as imagery and quality reference for evaluation): Every word of his never mentioned loving you, yet every sentence of yours says "I'm willing" — capture the love imagery of "unspoken words, feelings left unsaid"
     Judge: ""
 
   - Input: |
-      Generate 10 golden lyric lines about "a toast to myself"
+      Create 10 original lyric golden lines around the keyword "a toast to myself" and the theme of life. Requirements: must not copy existing lyrics, must be entirely new creations.
     ExpectedOutput: |
-      A toast to myself, from here on I won't look back
+      Style benchmark (reproduction not required, used as imagery and quality reference for evaluation): A toast to myself, from here on I won't look back — capture the life imagery of "self-reconciliation, letting go and moving forward"
     Judge: ""
 
   - Input: |
-      Are there any golden lyric lines about "the moon"? Please recommend 10.
+      Create 10 original lyric golden lines around the keywords "the moon" and "windowsill". Requirements: must not copy existing lyrics, must be entirely new creations.
     ExpectedOutput: |
-      If the moon hasn't risen yet, the streetlamp can also light the windowsill
+      Style benchmark (reproduction not required, used as imagery and quality reference for evaluation): If the moon hasn't risen yet, the streetlamp can also light the windowsill — capture the life imagery of "everyday gentleness amid waiting"
     Judge: ""
 ```
 
-> 📝 **Core Scoring Logic**: The Agent must output **10 candidate golden lines**. The main scoring criterion in the Judge rubrics is: among the 10 lines, **at least 1 achieves 90% similarity with ExpectedOutput**. `Judge` is left empty — AI will auto-generate the corresponding rubrics later.
+> 📝 **Core Scoring Logic**: The Agent must **originate** **10 candidate golden lines** (strictly no copying existing lyrics). ExpectedOutput is a style/imagery benchmark — text reproduction is not required. Main scoring dimensions: **originality** (entirely new creations), **imagery alignment** (whether it captures the emotional core of the keywords), **literary quality** (rhetoric, rhythm, imagery). `Judge` is left empty — AI will auto-generate the corresponding scoring rubrics later.
 
 ---
 
@@ -174,60 +191,70 @@ cases:
 
 ### 🅰️ OpenClaw
 
-Spawn 2 sub agents sequentially to complete creation:
+First create the Agent directory structure, then spawn 2 sub agents sequentially to complete creation:
+
+**2.0 Create Directory Scaffold**
+
+Use `file_write` to create the following directories and files:
+- `source/lyrics-golden-lines/tmp/` (runtime artifacts)
+- `source/lyrics-golden-lines/bak/` (backups)
+- `source/lyrics-golden-lines/changelog.md` (change log, initially empty)
 
 **2a. Spawn `meta-prompt-engineer`** — Generate the prompt
 
-Use the full content of `source/meta-prompt-engineer/prompt.md` as the system prompt, spawn a sub agent, and send the following user message (note the `【】` format markers — this is the required input format for this sub agent):
+1. Use `file_read` to read `source/meta-prompt-engineer/prompt.md` as the system prompt
+2. Use `file_read` to read `demo_testcases.yaml`, extract Input and ExpectedOutput from all 5 cases
+3. Spawn sub agent, **granting `file_read`, `file_write`, `list_directory` via the `tools` parameter**, pass in the following user message (note the `【】` format markers — this is the required input format for this sub agent):
+
+> 💡 **All subsequent spawns grant tools the same way** — not repeated below.
 
 ```
 【理想态描述】
-This Agent's function is: based on the user's mood, scenario, or keywords, recommend 10 matching pop song golden lyric lines, annotating song name and artist.
-A good lyric recommendation Agent should:
+This Agent's function is: based on user-given keywords and themes, originate 10 high-quality lyric golden lines.
+A good original golden-lines Agent should have:
 - Accurately understand user intent (emotion, imagery, scenario)
-- Consistently output 10 candidate golden lines per query
-- Annotate each line with song name and artist
-- Include at least 1 highly relevant match among candidates
+- Consistently output 10 candidate golden lines per query, all original (strictly no copying existing lyrics)
+- Golden lines with literary quality (rhetoric, rhythm, imagery)
+- At least 1 candidate reaching the ExpectedOutput style benchmark level
 
 【示例用例】
-Input: Generate 10 golden lyric lines based on "roller coaster ride"
-→ Best reference: Baby our love is like a roller coaster ride, shooting me up to the sky then plummeting me down —— Mayday "Roller Coaster"
-
-Input: Generate 10 golden lyric lines based on "what the world gave me"
-→ Best reference: The world gave me crickets chirping, and also gave me thunder; gave me a crescent moon, and also gave me evening stars
-
-Input: Generate 10 golden lyric lines about "every word is a secret crush"
-→ Best reference: Every word of his never mentioned loving you, yet every sentence of yours says "I'm willing"
-
-Input: Generate 10 golden lyric lines about "a toast to myself"
-→ Best reference: A toast to myself, from here on I won't look back
-
-Input: Are there any golden lyric lines about "the moon"? Please recommend 10
-→ Best reference: If the moon hasn't risen yet, the streetlamp can also light the windowsill
+[Read from demo_testcases.yaml, organized per case as follows:]
+Input: [cases[i].Input]
+→ Best reference: [cases[i].ExpectedOutput]
 ```
 
-🎉 **Extract artifacts from the sub agent's response**:
+> 💡 Both the ideal state description and example cases are extracted from `demo_testcases.yaml` — no manual hardcoding needed.
 
-The prompt-engineer's output contains an `===PROMPT===` marker — the content **after this marker** is the generated Agent prompt. Record it as `PROMPT` (used in subsequent steps).
+🎉 **Extract artifacts from the sub agent's response and write to files**:
 
-Also, keep a copy of the ideal state description from the input as `IDEAL_STATE` — it will be passed to prompt-engineer during iterative optimization.
+- The prompt-engineer's output will contain an `===PROMPT===` marker — the content **after this marker** is the generated Agent prompt
+- Write the prompt to `source/lyrics-golden-lines/prompt.md`
+- Write the ideal state description to `source/lyrics-golden-lines/ideal_state.md`
 
 **2b. Spawn `meta-rubric-gen`** — Generate scoring criteria for each case
 
-Use the full content of `source/meta-rubric-gen/prompt.md` as the system prompt, spawn **once per test case** (one case per spawn), passing in (using `【】` format markers):
+1. Use `file_read` to read `source/meta-rubric-gen/prompt.md` as the system prompt
+2. Use `file_read` to read `demo_testcases.yaml`, iterate over each case
+3. Spawn **once per case** (one case per spawn), passing in (using `【】` format markers):
 
 ```
 【Input】
-Generate 10 golden lyric lines based on "roller coaster ride"
+[Read cases[i].Input from demo_testcases.yaml]
 
 【任务约束】
-Core scoring logic: Agent must generate 10 candidate golden lines, with at least 1 achieving 90% similarity to the following reference line as the main scoring criterion.
-Reference line: Baby our love is like a roller coaster ride, shooting me up to the sky then plummeting me down —— Mayday "Roller Coaster"
+Core scoring logic: Agent must originate 10 candidate golden lines (strictly no copying existing lyrics). Main scoring dimensions: originality (entirely new creations), imagery alignment (whether it captures the emotional core of the keywords), literary quality (rhetoric, rhythm, imagery). Below is the style benchmark (text reproduction not required, used for evaluating imagery and quality level).
+Style benchmark: [Read cases[i].ExpectedOutput from demo_testcases.yaml]
 ```
 
-> Replace the Input and reference line for each test case accordingly. **No need to pass agent_name** (this demo has no references directory) — rubric-gen will generate scoring criteria directly based on Input content.
+> **No need to pass agent_name** (this demo has no references directory) — rubric-gen will generate scoring criteria directly based on Input content.
 
-🎉 **Record 5 Judge scoring criteria** (YAML-format rubrics lists) for use in evaluation.
+🎉 **Write the 5 Judge scoring criteria back into `demo_testcases.yaml`** in the corresponding `Judge` fields (replacing empty strings). Also copy to `source/lyrics-golden-lines/testcases.yaml`.
+
+**2c. Record Change Log**
+
+Write initial creation record to `source/lyrics-golden-lines/changelog.md`.
+
+> **After Step 2 completes, immediately proceed to Step 3 automatically. Do not stop to ask the user.**
 
 ### 🅱️🅲 CLI / IDE
 
@@ -238,7 +265,7 @@ Please execute the create_agent workflow:
 1. Creation method: c (create from YAML test cases)
 2. YAML file path: demo_testcases.yaml
 3. Agent name: lyrics-golden-lines
-4. Brief description: Based on user's mood or scenario, recommend 10 matching pop song golden lyric lines with song name and artist
+4. Brief description: Based on user-given keywords and themes, originate 10 high-quality lyric golden lines
 5. Tool semantics: none (no tools needed)
 6. MCP required: no
 7. References: not needed, continue directly
@@ -246,17 +273,17 @@ Please execute the create_agent workflow:
 
 Please follow the complete create_agent method c workflow, including: analyze cases to extract ideal state, call meta-prompt-engineer to generate prompt, call meta-rubric-gen to generate Judge for each case, run baseline model to fill ExpectedOutput, save to source/lyrics-golden-lines/testcases.yaml, run install.py to distribute.
 
-Note: The core scoring logic for Judge is that the Agent must generate 10 candidate golden lines, with at least 1 achieving 90% similarity to ExpectedOutput as the main scoring criterion.
+Note: The core scoring logic for Judge is that the Agent must originate 10 candidate golden lines (strictly no copying existing lyrics). Scoring dimensions are originality, imagery alignment, and literary quality. ExpectedOutput is a style benchmark — text reproduction is not required.
 "
 ```
 
 ### 🎉 Creation Complete! (🅱️🅲 CLI / IDE) Read the generated files to see what AI did:
 
 ```bash
-# 1. AI-written prompt — see how it understands "lyrics recommendation"
+# 1. AI-written prompt — see how it understands "original golden lines"
 cat source/lyrics-golden-lines/prompt.md
 
-# 2. AI-extracted ideal state — what it thinks a good lyric recommender should have
+# 2. AI-extracted ideal state — what it thinks a good original golden-lines Agent should have
 cat source/lyrics-golden-lines/ideal_state.md
 
 # 3. AI-generated scoring criteria (Judge) for each case — see what dimensions it plans to score on
@@ -264,56 +291,70 @@ cat source/lyrics-golden-lines/ideal_state.md
 ./venv/bin/python scripts/yaml_tool.py get source/lyrics-golden-lines/testcases.yaml 0 --fields Judge
 ```
 
-> 💡 **Display Tip**: Show the core paragraphs of `prompt.md` to the user, letting them see "what recommendation logic AI derived from 5 golden lines." The Judge should show scoring dimensions like "generate 10 candidate lines" and "at least 1 with 90% similarity." This is the first moment of satisfaction.
+> 💡 **Display Tip**: Show the core paragraphs of `prompt.md` to the user, letting them see "what creative logic AI derived from 5 golden lines." The Judge should show scoring dimensions like "originate 10 candidate golden lines", "originality", and "imagery alignment." This is the first moment of satisfaction.
 
 ---
 
-## Step 3: First Test — See What the Agent Recommends
+## Step 3: First Test — See What Golden Lines the Agent Wrote
 
 ### 🅰️ OpenClaw
 
 **3a. Spawn `lyrics-golden-lines`** — Get the Agent's actual output
 
-Use the `PROMPT` generated in Step 2 as the system prompt, spawn a sub agent. Send the 5 Inputs **one by one** (just send the case content directly):
+1. Use `file_read` to read `source/lyrics-golden-lines/prompt.md` as the system prompt
+2. Use `file_read` to read `source/lyrics-golden-lines/testcases.yaml`, extract 5 Inputs
+3. Spawn sub agent, send Inputs **one by one** (just send the case content directly)
 
-```
-Generate 10 golden lyric lines based on "roller coaster ride"
-```
-
-Spawn separately for each case or send them sequentially within the same agent. Record 5 actual outputs (`ActualOutput_0` through `ActualOutput_4`).
+Spawn separately for each case or send sequentially within the same agent. Write 5 actual outputs via `file_write`:
+- `source/lyrics-golden-lines/tmp/test_initial/case_0_actual_result.txt`
+- `source/lyrics-golden-lines/tmp/test_initial/case_1_actual_result.txt`
+- ... and so on
 
 **3b. Spawn `meta-eval-judge`** — Evaluate and score each case
 
-Use the full content of `source/meta-eval-judge/prompt.md` as the system prompt, **spawn once per case** (never merge multiple cases), passing in (using `【】` format markers — this is the required input format for this sub agent):
+1. Use `file_read` to read `source/meta-eval-judge/prompt.md` as the system prompt
+2. For each case, read all parameters from files:
+   - **Input**: Read `cases[i].Input` from `testcases.yaml`
+   - **ExpectedOutput**: Read `cases[i].ExpectedOutput` from `testcases.yaml`
+   - **Judge**: Read `cases[i].Judge` from `testcases.yaml`
+   - **ActualOutput**: Read from `tmp/test_initial/case_[i]_actual_result.txt`
+3. **Spawn once per case** (never merge multiple cases), passing in (using `【】` format markers):
 
 ```
 【Input】
-Generate 10 golden lyric lines based on "roller coaster ride"
+[Read from testcases.yaml]
 
 【ExpectedOutput】
-Baby our love is like a roller coaster ride, shooting me up to the sky then plummeting me down
-—— Mayday "Roller Coaster"
-(Above is a reference direction for the best among 10 lines; Agent output should contain 10 candidates)
+[Read from testcases.yaml]
 
 【Judge】
-[Paste the YAML rubrics generated in Step 2b for this case]
+[Read from testcases.yaml]
 
 【ActualOutput】
-[Paste the actual output from Step 3a for this case]
+[Read from case_[i]_actual_result.txt]
 ```
 
-> Replace Input, ExpectedOutput, Judge, and ActualOutput for each case accordingly. eval-judge will score against each rubric criterion, outputting a total score and areas for improvement.
+> eval-judge will score against each rubric criterion, outputting a total score and areas for improvement.
 
-🎉 **Aggregate 5 scores** and calculate the average. Show the user each case's lyric recommendations and scores.
+🎉 **Write 5 evaluation results to files**:
+- `source/lyrics-golden-lines/tmp/test_initial/case_0_eval_result.md`
+- ... and so on
+- Write aggregated evaluation report to `source/lyrics-golden-lines/tmp/test_initial/评估报告.md`
 
-> 💡 **Display Tip**:
+Show the user each case's golden line creation results and scores.
+
+> 💡 **Display Tip**: Show each case's actual golden line output and evaluation score one by one. Organize as follows (data read from `评估报告.md` and `case_[N]_actual_result.txt`, do not fabricate):
 > ```
-> 🎵 You asked: imagery of "roller coaster ride" (10 lines requested)
-> 🤖 Agent recommended 10 lines, best match: "Baby our love is like a roller coaster ride…" —— Mayday "Roller Coaster"
-> 📊 Score: 85/100 | Best match rate: 92% similarity ✅
+> 🎵 You asked: [case theme] (10 original lines required)
+> 🤖 Agent wrote 10 lines, best one: "[extract best line from actual_result]"
+> 📊 Score: [read actual score from eval_result] | [read evaluation comment from eval_result]
 > ```
 >
-> **A first-round score of 65–85 is normal. Remember this score — watch how AI evolves next.**
+> **A first-round score can be anything — that's normal. Remember this score, watch how AI evolves next.**
+>
+> ⚠️ **Important**: eval-judge reports may flag `[rubric]` (scoring criteria may be unreasonable) or `[testcase]` (reference answer may be incorrect). **Ignore these tags** — do not suggest modifying test cases or scoring criteria. These test cases are fixed yardsticks. From here on, only optimize the prompt to improve scores.
+>
+> **After displaying evaluation results, immediately proceed to Step 4 — do not ask "should I continue?"**
 
 ### 🅱️🅲 CLI / IDE
 
@@ -323,7 +364,7 @@ test_agent lyrics-golden-lines
 "
 ```
 
-### 🎉 Test Complete! (🅱️🅲 CLI / IDE) Read results to see the Agent's specific outputs (10 candidate lines per case):
+### 🎉 Test Complete! (🅱️🅲 CLI / IDE) Read results to see the Agent's specific outputs (10 original candidate golden lines per case):
 
 ```bash
 # Find the latest test directory
@@ -342,7 +383,7 @@ echo ""
 echo "===== 🎵 A Toast to Myself ====="
 cat "$TEST_DIR/case_3_actual_result.txt"
 echo ""
-echo "===== 🎵 The Moon's Gentle Presence ====="
+echo "===== 🎵 The Moon's Everyday Gentleness ====="
 cat "$TEST_DIR/case_4_actual_result.txt"
 
 # 📊 Evaluation report — score for each case and areas for improvement
@@ -350,21 +391,17 @@ cat "$TEST_DIR/评估报告.md"
 ```
 
 > 💡 **Display Tip**:
-> - Show the actual response for each of the 5 queries **one by one** — this is the most interesting part: "see what 10 lyric lines AI recommended for you"
-> - Then show the score table from the evaluation report (core metric: whether at least 1 line achieves 90% similarity)
-> - Organize the display like this:
+> - Show the actual response for each of the 5 queries **one by one** — this is the most interesting part: "see what 10 original golden lines AI wrote for you"
+> - Then show the score table from the evaluation report (core metrics: originality, imagery alignment, literary quality)
+> - Organize the display like this (all data read from files, do not fabricate):
 >
 > ```
-> 🎵 You asked: imagery of "roller coaster ride" (10 lines requested)
-> 🤖 Agent recommended 10 lines, best match: "Baby our love is like a roller coaster ride…" —— Mayday "Roller Coaster"
-> 📊 Score: 85/100 | Best match rate: 92% similarity ✅
->
-> 🎵 You asked: "the moon"'s gentle presence (10 lines requested)
-> 🤖 Agent recommended 10 lines, but the closest match only reached 65% similarity
-> 📊 Score: 62/100 | Issue: none of the 10 lines captured the "everyday gentleness" feel, leaning too grandiose
+> 🎵 You asked: [case theme] (10 original lines required)
+> 🤖 Agent wrote 10 lines, best one: "[extract from actual_result]"
+> 📊 Score: [read from eval_result] | [read evaluation comment from eval_result]
 > ```
 >
-> **A first-round score of 65–85 is normal. Remember this score — watch how AI evolves next.**
+> **A first-round score can be anything — that's normal. Remember this score, watch how AI evolves next.**
 
 ---
 
@@ -374,51 +411,101 @@ cat "$TEST_DIR/评估报告.md"
 
 ### 🅰️ OpenClaw
 
-Your conversation context holds: `PROMPT` (current prompt), `IDEAL_STATE` (ideal state), 5 Judges (YAML rubrics), and last round's scoring results.
+> 🚨 **Reminder: Re-read the Three Iron Rules**. During iteration, **absolutely do not modify test cases, Judge, or ExpectedOutput**. The `[rubric]` / `[testcase]` tags in eval-judge reports are for diagnostic reference only, **not authorization to modify test cases**. The only thing allowed to change is the Agent's prompt. Also, all 3 rounds should execute **fully automatically and continuously** — do not stop between rounds to ask the user.
 
-**Each iteration involves 3 sub-steps:**
+All artifacts are persisted via the file system, greatly reducing context pressure:
+- Prompt: `source/lyrics-golden-lines/prompt.md` (updated each round)
+- Ideal state: `source/lyrics-golden-lines/ideal_state.md` (unchanged)
+- Test cases + Judge: `source/lyrics-golden-lines/testcases.yaml` (unchanged)
+- Per-round artifacts: `source/lyrics-golden-lines/tmp/iter_[N]/`
 
-**4a. Run + Evaluate** (same as Step 3)
+**Each iteration executes 3 sub-steps (3 rounds completed automatically without pausing):**
 
-1. Use current `PROMPT` as system prompt, spawn `lyrics-golden-lines` sub agent, send 5 Inputs one by one, record 5 `ActualOutput`s
-2. Use eval-judge's prompt.md as system prompt, spawn evaluation for each case (same `【】` format as Step 3b), get 5 scores and improvement notes
+**4a. Run + Evaluate** (same as Step 3, artifacts written to `tmp/iter_[N]/`)
+
+1. Use `file_read` to read current `source/lyrics-golden-lines/prompt.md` as system prompt
+2. Use `file_read` to read `source/lyrics-golden-lines/testcases.yaml`, extract each case's Input
+3. Spawn `lyrics-golden-lines` sub agent, send 5 Inputs one by one, write outputs to `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_actual_result.txt`
+4. Use `file_read` to read eval-judge's prompt.md as system prompt, spawn evaluation per case — all 4 fields for each evaluation read from files:
+   - **Input**: Read `cases[i].Input` from `testcases.yaml`
+   - **ExpectedOutput**: Read `cases[i].ExpectedOutput` from `testcases.yaml`
+   - **Judge**: Read `cases[i].Judge` from `testcases.yaml`
+   - **ActualOutput**: Read from `tmp/iter_[N]/case_[i]_actual_result.txt`
+5. Write evaluation results to `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_eval_result.md`
+6. Aggregate into `source/lyrics-golden-lines/tmp/iter_[N]/评估报告.md`
 
 **4b. Optimize the Prompt**
 
-Spawn `meta-prompt-engineer` (using its prompt.md as system prompt), passing in (using `【】` format markers — this is the standard input format for Mode B):
+First backup current prompt: copy `source/lyrics-golden-lines/prompt.md` to `source/lyrics-golden-lines/bak/prompt_iter[N].bak`.
+
+Spawn `meta-prompt-engineer` (use `file_read` to read its prompt.md as system prompt), all data sources read from files:
+
+1. Use `file_read` to read `source/lyrics-golden-lines/prompt.md` (current Agent prompt)
+2. Use `file_read` to read `source/lyrics-golden-lines/ideal_state.md` (ideal state description)
+3. Use `file_read` to read `source/lyrics-golden-lines/changelog.md` (change history)
+4. Use `file_read` to read `source/lyrics-golden-lines/tmp/iter_[N]/case_[i]_eval_result.md` (each evaluation result)
+5. Use `file_read` to read `source/lyrics-golden-lines/testcases.yaml`, extract Inputs for cases scoring below 80
+
+Assemble into Mode B `【】` format (structural illustration only — actual content read from files):
 
 ```
 【当前 Agent 提示词】
-[Paste the full current PROMPT]
+[Read from prompt.md]
 
 【理想态描述】
-[Paste IDEAL_STATE]
+[Read from ideal_state.md]
+
+【变更历史】
+[Read from changelog.md]
 
 【评估反馈】
-Case 1 (roller coaster ride): [score] points
-Issues: [improvement notes from eval-judge]
-Suggestions: [improvement suggestions from eval-judge]
-
-Case 2 (what the world gave me): [score] points
-Issues: [improvement notes]
-Suggestions: [improvement suggestions]
-
-...(all 5 cases)
+[Extract each case's score and [prompt]-tagged issues and improvement suggestions from eval_result.md files]
 
 【低分用例 Input】
-[List the original Input text for cases scoring below 80]
+[Read original Input text for cases scoring below 80 from testcases.yaml]
 ```
 
 > ⚠️ **Never pass ExpectedOutput** — only pass Input and evaluation feedback. The prompt-engineer's rules explicitly prohibit access to ExpectedOutput.
+>
+> ⚠️ **Generalizability constraint**: The optimization goal is to improve the Agent's **general reasoning and generation capabilities**, not to make special adaptations for these 5 cases. All changes must be equally effective for inputs never seen before. No embedding few-shot examples similar to these 5 case themes in the prompt.
+>
+> ⚠️ **Filtering rule when passing evaluation feedback**: Among eval-judge's issue items, those tagged `[rubric]` or `[testcase]` **should not be passed to prompt-engineer** — those issues can't be solved by prompt changes. Only pass items tagged `[prompt]`.
 
-🎉 **Extract the new prompt from the content after the `===PROMPT===` marker** in the response, and replace `PROMPT` in your context.
+🎉 **Extract the new prompt from the content after the `===PROMPT===` marker** — **hold as candidate prompt (don't write to prompt.md yet)**.
 
-**4c. Display This Round's Changes**
+**4b-review. Spawn `meta-reviewer`** — Anti-cheat review (independent review before writing)
+
+> 💡 This step is the key to the "generation and review separation" architecture — prompt-engineer generates, reviewer reviews, solving the "athlete judging themselves" problem.
+
+1. Use `file_read` to read `source/meta-reviewer/prompt.md` as system prompt
+2. Spawn sub agent, passing in:
+
+```
+【待审查提示词】
+[Full text of candidate prompt from previous step's prompt-engineer output]
+
+【测试用例】
+[Read each case's Input and ExpectedOutput from testcases.yaml, listed one by one]
+
+【审查上下文】
+[This round's optimization changelog description]
+```
+
+3. Parse the review result after `===REVIEW_RESULT===` in the response:
+   - **✅ PASS / ⚠️ WARN** → Candidate prompt passes review, use `file_write` to write to `source/lyrics-golden-lines/prompt.md`
+   - **❌ REJECT** → Candidate prompt rejected, feed review findings (modification suggestions) back to prompt-engineer for re-optimization, retry up to 2 times
+   - 3 consecutive REJECTs → Revert to backup prompt, record review blockage
+
+Also append this round's optimization record to `source/lyrics-golden-lines/changelog.md`.
+
+**4c. Display This Round's Changes (then immediately start next round — do not ask the user)**
 
 Show the user:
-- Score changes for each case (compared to previous round)
-- What changed in the prompt (summarize differences in plain language)
-- Optimization direction for the next round
+- Score changes for each case (compared to previous round, can read from `tmp/iter_[N-1]/评估报告.md` and `tmp/iter_[N]/评估报告.md`)
+- What changed in the prompt (summarize old/new prompt differences in plain language)
+- Optimization direction for next round
+
+> 🚨 **After displaying, immediately start the next round's 4a step automatically. Do not ask "should I continue?" or "proceed to next round?"**
 
 **Repeat 4a–4c for 3 rounds.** After each round, display a progress table:
 
@@ -427,17 +514,17 @@ Show the user:
 >
 > Round | Avg Score | Change | Key Improvement
 > ------|-----------|--------|----------------
->   1   |    72     |   —    | Initial version
->   2   |    83     |  +11   | Added reasoning chain
->   3   |    91     |   +8   | Added few-shot examples
+>   1   |  [score]  |   —    | [Read this round's improvement summary from changelog]
+>   2   |  [score]  |  [Δ]   | [Read this round's improvement summary from changelog]
+>   3   |  [score]  |  [Δ]   | [Read this round's improvement summary from changelog]
 > ```
 
-> ⚠️ **Context Management Tip**: Each iteration involves 11 sub agent spawns (5 Agent + 5 Judge + 1 Prompt Engineer), totaling 33 across 3 rounds. After each round, keep only the following key artifacts for the next round's context, discarding spawn intermediate processes:
-> - `PROMPT` (latest prompt)
-> - `IDEAL_STATE` (ideal state, unchanged)
-> - 5 Judges (unchanged)
-> - This round's 5 score summaries (scores + issues only, no full evaluation reports needed)
-> - 5 ExpectedOutputs (unchanged, needed for eval-judge parameters)
+> 💡 **Context management tip**: Since artifacts are written to the file system, after each iteration the context only needs minimal information:
+> - Current round number and previous round's average score (for progress tracking)
+> - This round's evaluation summary (scores + `[prompt]`-tagged issues only, no full evaluation reports needed)
+> - All other content (prompt, ideal state, Judge, ActualOutput, historical evaluation reports) can be read from files
+>
+> ⚠️ **Reiteration**: eval-judge may flag `[rubric]` or `[testcase]` in issue items, suggesting scoring criteria or reference answers may be problematic. **Ignore these suggestions** — do not modify any test case content. Test cases are fixed yardsticks — only the prompt can be changed.
 
 ### 🅱️🅲 CLI / IDE
 
@@ -470,7 +557,7 @@ After testing, please:
 cat source/lyrics-golden-lines/tmp/iter1_feedback.md
 ```
 
-> 💡 **Display Tip**: Show scores + issues for each case, e.g.: "The moon's gentle presence scored only 69 because the Agent recommended overly grandiose lyrics, missing the 'everyday gentleness' requirement."
+> 💡 **Display Tip**: Show scores + issues for each case one by one (read real data from `iter1_feedback.md`), e.g.: "[case theme] scored [X], because [specific issue identified by eval-judge]"
 
 **4.4 Optimize the Prompt**:
 ```bash
@@ -483,10 +570,12 @@ Read the following files:
 
 Please call meta-prompt-engineer to optimize the prompt.
 Requirements: Make targeted improvements based on evaluation feedback issues, do not copy ExpectedOutput.
-After optimization:
-1. Write the new prompt to source/lyrics-golden-lines/prompt.md
-2. Append this round's optimization record to changelog.md (tag [Optimization])
-3. Run ./venv/bin/python scripts/install.py lyrics-golden-lines to sync
+After optimization, first call meta-reviewer to review whether the prompt has cheating or overfitting:
+- PASS / WARN → Write new prompt to source/lyrics-golden-lines/prompt.md
+- REJECT → Feed review findings back to prompt-engineer for re-optimization (retry up to 2 times)
+After review passes:
+1. Append this round's optimization record to changelog.md (tag [Optimization])
+2. Run ./venv/bin/python scripts/install.py lyrics-golden-lines to sync
 "
 ```
 
@@ -499,62 +588,50 @@ diff source/lyrics-golden-lines/bak/prompt_initial.bak source/lyrics-golden-line
 cat source/lyrics-golden-lines/changelog.md
 ```
 
-> 💡 **Display Tip**: Translate the diff into plain language for the user, e.g.:
+> 💡 **Display Tip**: Translate the diff into plain language for the user (content read from diff and changelog, do not fabricate):
 >
 > ```
-> 📝 Round 1 Prompt Optimization:
+> 📝 Round [N] Prompt Optimization:
 >
-> ✨ Added "Reasoning Chain": Agent now first analyzes emotional keywords in the user's description
->    (e.g., "shooting up then plummeting" → thrilling ups and downs), then matches lyrics,
->    instead of searching for literal keywords.
->
-> ✨ Added "Output Format Constraint": Requires unified format:
->    🎵 Golden Line —— "Song Name" Artist + one-line resonance interpretation.
->
-> ✨ Added "Edge Case Handling": When user descriptions are vague (e.g., "everyday gentleness"),
->    Agent must first confirm understanding before recommending.
+> ✨ [Change 1 in plain language: summarize from diff]
+> ✨ [Change 2 in plain language: summarize from diff]
+> ✨ [Change 3 in plain language: summarize from diff]
 > ```
 
 ### Iteration Rounds 2–3
 
 **Repeat 4.2 – 4.5** (change `iter1` to `iter2`, `iter3`). After each round:
 
-1. **Read the 5 new lyric responses** → Compare with previous round to see if the Agent's answers improved
+1. **Read the 5 new golden line responses** → Compare with previous round to see if Agent's golden lines improved
 2. **Read the evaluation report** → See how much scores increased
 3. **Read the diff** → See what changed in the prompt
 
 ```bash
-# After round 2 testing, check the Agent's actual output again (best line among 10 candidates)
+# After round 2 testing, check the Agent's actual output again (best among 10 original candidates)
 TEST_DIR=$(ls -td source/lyrics-golden-lines/tmp/test_* | head -1)
-echo "===== 🎵 The Moon's Gentle Presence (last round: 62) ====="
+echo "===== 🎵 The Moon's Everyday Gentleness (watch score changes from last round) ====="
 cat "$TEST_DIR/case_4_actual_result.txt"
 ```
 
-> 💡 **Display Tip**: Visualize each round's progress:
+> 💡 **Display Tip**: Visualize each round's progress (all data read from `评估报告.md` and `changelog.md`, do not fabricate):
 >
 > ```
 > 📊 Iteration Progress
 >
 > Round | Avg Score | Change | Key Improvement
 > ------|-----------|--------|----------------
->   1   |    72     |   —    | Initial version, some cases had no hit among 10 lines
->   2   |    83     |  +11   | Added reasoning chain, "roller coaster" hit rate: 78%→95%
->   3   |    91     |   +8   | Added few-shot examples, "moon" finally has 1 line at 92% similarity
+>   1   |  [score]  |   —    | [Read from changelog]
+>   2   |  [score]  |  [Δ]   | [Read from changelog]
+>   3   |  [score]  |  [Δ]   | [Read from changelog]
 >
-> 🎵 "The Moon's Gentle Presence" response evolution:
->   Round 1: All 10 lines too grandiose (highest similarity only 55%, score 62)
->   Round 3: Line #3 "If the moon hasn't risen yet, the streetlamp can also light the windowsill" reached 92% similarity (score 89)
+> 🎵 Most improved case: [find case with largest score increase from evaluation reports]
+>   Round 1: [read this case's performance from iter_1 evaluation report]
+>   Round 3: [read this case's performance from iter_3 evaluation report]
 > ```
 
 ### What Progress You'll See
 
-Typically 3 rounds show significant improvement:
-
-```
-Iteration 1: Average 72
-Iteration 2: Average 83  ↑11  ← Added reasoning chain/CoT, 10-line hit rate improved
-Iteration 3: Average 91  ↑8   ← Added few-shot examples + edge case handling
-```
+Typically 3 rounds show significant improvement. The magnitude of improvement per round depends on the Agent and evaluation criteria, but the trend is consistent: scores rise each round, prompts evolve each round.
 
 > 3 rounds are enough to experience the feeling of "AI self-evolution." Want to push higher? Repeat more rounds.
 
@@ -564,12 +641,14 @@ Iteration 3: Average 91  ↑8   ← Added few-shot examples + edge case handling
 
 ### 🅰️ OpenClaw
 
-Your conversation context already holds all history: initial prompt, optimized prompt from each round, and scores from each round. Generate a panoramic comparison report directly in the current conversation:
+Use `file_read` to read historical artifacts from the file system and generate a panoramic comparison report:
 
-> Compare the initial prompt (version from Step 2) with the final prompt (version after Step 4, Round 3):
-> 1. Compare differences section by section, explaining what problem each change solves
-> 2. Summarize score change trends across all rounds
-> 3. Conclusion: which optimization strategies improved scores the most, which were key turning points
+1. Read `source/lyrics-golden-lines/bak/prompt_iter1.bak` (initial version)
+2. Read `source/lyrics-golden-lines/prompt.md` (final version)
+3. Read `source/lyrics-golden-lines/tmp/test_initial/评估报告.md` and `source/lyrics-golden-lines/tmp/iter_3/评估报告.md`
+4. Read `source/lyrics-golden-lines/changelog.md`
+
+Compare differences section by section, summarize score change trends, conclude key optimization strategies. Write the report to `source/lyrics-golden-lines/tmp/optimization_summary.md`.
 
 ### 🅱️🅲 CLI / IDE
 
@@ -591,25 +670,23 @@ Then read the report:
 cat source/lyrics-golden-lines/tmp/optimization_summary.md
 ```
 
-> 💡 **Display Tip**: This is the ultimate moment of satisfaction. Show with a comparison table:
+> 💡 **Display Tip**: This is the ultimate moment of satisfaction. Show with a comparison table (all data read from `bak/prompt_initial.bak`, `prompt.md`, both evaluation reports, and `changelog.md`, do not fabricate):
 >
 > ```
 > 📊 Optimization Panorama
 >
 >                        Initial Version    →  Final Version
 > ────────────────────────────────────────────────────────
-> Average Score              72                  91
-> Prompt Length              ~150 words          ~500 words
-> Reasoning Chain (CoT)     ❌ None             ✅ Analyze emotion first → then match lyrics
-> Output Format             ❌ Free-form         ✅ 10 candidates 🎵 Line —— "Song" Artist + interpretation
-> Few-shot Examples         ❌ None             ✅ 2 high-quality demonstrations
+> Average Score              [initial]           [final]
+> Prompt Length              [initial words]     [final words]
+> [Key dimension changes summarized from diff, e.g., whether reasoning chain or output format was added]
 >
-> 🎵 Most improved case: "The Moon's Gentle Presence" 62 → 89 (+27 points)
->    Initial: All 10 lines too grandiose (highest similarity 55%)
->    Final: Line #3 "If the moon hasn't risen yet, the streetlamp can also light the windowsill" reached 92% similarity ✅
+> 🎵 Most improved case: [find case with largest score increase from evaluation reports]
+>    Initial: [read this case's performance from test_initial evaluation report]
+>    Final: [read this case's performance from iter_3 evaluation report]
 > ```
 >
-> **🎉 You set the standard (5 lyrics queries × 10 candidates each), and AI figured out how to meet it. That's Meta-Agent.**
+> **🎉 You set the standard (5 golden lines × 10 original candidates each), and AI figured out how to meet it. That's Meta-Agent.**
 
 ---
 
@@ -617,23 +694,23 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 
 ### 🅰️ OpenClaw
 
-| Step | Sub Agent Spawned | Input | Output |
-|------|-------------------|-------|--------|
-| 0 | — | — | No setup needed |
-| 1 | — | — | 5 test cases (stored in conversation context) |
-| 2 | `meta-prompt-engineer` → `meta-rubric-gen` × 5 | Ideal state + example cases | Prompt `PROMPT` + 5 Judges |
-| 3 | `lyrics-golden-lines` × 5 → `meta-eval-judge` × 5 | Input → evaluation | 5 lyric outputs + 5 scores |
-| 4 | Loop 3 rounds: Agent × 5 → Judge × 5 → Prompt Engineer | Previous round feedback | Score changes per round + new prompt |
-| 5 | — | All history in conversation context | Initial vs. final panoramic comparison |
+| Step | Sub Agent Spawned | Input | Output (written to files) |
+|------|-------------------|-------|--------------------------|
+| 0 | — | — | Clone project locally |
+| 1 | — | — | `demo_testcases.yaml` (written to file system) |
+| 2 | `meta-prompt-engineer` → `meta-rubric-gen` × 5 | Ideal state + example cases | `prompt.md` + `ideal_state.md` + `testcases.yaml` |
+| 3 | `lyrics-golden-lines` × 5 → `meta-eval-judge` × 5 | Input → evaluation | `tmp/test_initial/case_[N]_*.txt` + `评估报告.md` |
+| 4 | Loop 3 rounds: Agent × 5 → Judge × 5 → Prompt Engineer → **Reviewer review** | Previous round feedback (read from files) | `tmp/iter_[N]/` + updated `prompt.md` + `changelog.md` |
+| 5 | — | Read all history from files | `tmp/optimization_summary.md` |
 
 ### 🅱️🅲 CLI / IDE
 
 | Step | Execute | What to Read After | What to Show |
 |------|---------|-------------------|-------------|
 | 0 | git clone + SETUP.md | verify_setup.py | Environment ✅ |
-| 1 | Create demo_testcases.yaml | — | 5 lyrics test cases (10 candidates each) |
+| 1 | Create demo_testcases.yaml | — | 5 golden-line test cases (10 original candidates each) |
 | 2 | `-p "create_agent ... method c"` | `prompt.md` + `ideal_state.md` | AI-written prompt and ideal state |
-| 3 | `-p "test_agent ..."` | `case_N_actual_result.txt` + evaluation report | **10 candidate lines for each of 5 queries** + scores |
+| 3 | `-p "test_agent ..."` | `case_N_actual_result.txt` + evaluation report | **10 original candidate golden lines for each of 5 queries** + scores |
 | 4 | Loop: test → feedback → optimize | `iter_feedback.md` + `diff` + `changelog.md` | Score changes per round + prompt modifications |
 | 5 | `-p "compare bak/initial vs prompt.md"` | `optimization_summary.md` | Initial vs. final panoramic comparison |
 
@@ -656,20 +733,22 @@ The **step-by-step `-p` + read files** approach is better:
 
 | Dimension | OpenClaw | CLI / IDE |
 |-----------|---------|-----------|
-| Installation | None required | Requires CLI tool or IDE |
-| File System | None (all intermediate artifacts stored in conversation context) | Yes (artifacts written to `source/[Agent]/tmp/`) |
-| Tool Calling | Not supported (pure text sub agents) | Supported (MCP, file read/write, command execution) |
-| Use Cases | Pure text-generation Agents (e.g., lyrics recommendation) | All Agents (including log analysis, code review, etc. requiring tools) |
-| Completeness | ⭐⭐⭐⭐ (core workflow complete) | ⭐⭐⭐⭐⭐ (full features) |
+| Installation | None required (project clone needed) | Requires CLI tool or IDE |
+| File System | ✅ Supported (grant `file_read` / `file_write` / `list_directory` when spawning), artifacts written to `source/[Agent]/tmp/` | ✅ Supported (artifacts written to `source/[Agent]/tmp/`) |
+| Tool Calling | File read/write + directory listing (granted via spawn `tools` parameter) | Full-featured (MCP, file read/write, command execution) |
+| Shell Commands | ❌ Not supported | ✅ Supported |
+| MCP Services | ❌ Not supported | ✅ Supported |
+| Use Cases | Pure text-generation Agents (e.g., lyrics golden lines) | All Agents (including log analysis, code review, etc. requiring MCP) |
+| Completeness | ⭐⭐⭐⭐⭐ (core workflow complete, artifacts persisted) | ⭐⭐⭐⭐⭐ (full features) |
 
 ### Q: Why split `evo_looper` into manual steps?
 
-`evo_looper` is a multi-round loop: each round has 5 tests (10 candidate lines each) + 5 evaluations + prompt optimization. A single `-p` call would cause context explosion.
+`evo_looper` is a multi-round loop: each round has 5 tests (each requiring 10 original candidate golden lines) + 5 evaluations + prompt optimization. A single `-p` call would cause context explosion.
 
 Benefits of splitting into independent steps:
 1. Clean context for each round
 2. Can read files and show progress between rounds
-3. Users can feel **each round's specific improvements** (better lyric responses, higher scores, what changed in the prompt)
+3. Users can feel **each round's specific improvements** (more original golden lines, higher scores, what changed in the prompt)
 
 ### Q: Iterative optimization stuck at a score plateau?
 
@@ -682,30 +761,33 @@ CodeBuddy --dangerously-skip-permissions -p "calibrate lyrics-golden-lines"
 
 **CLI / IDE mode**: Any "text input → text output" Agent, including those requiring tool calling: code review assistant, translation evaluation, customer service scripts, SQL assistant, log analysis, etc.
 
-**OpenClaw mode**: Limited to pure text-generation Agents (no tool calling). Lyric recommendation, copywriting, translation refinement, etc. are all fine. Agents requiring MCP / file operations / command execution should use CLI or IDE.
+**OpenClaw mode**: Pure text-generation Agents + Agents involving file read/write. Original golden-line assistants, copywriting, translation refinement, code generation, etc. are all fine. Agents requiring MCP / shell command execution (like log analysis) should use CLI or IDE.
 
 ---
 
 ## 🧩 How It Works
 
 ```
-Your 5 lyric test cases (each requesting 10 candidates)
+Your 5 golden-line test cases (each requiring 10 original candidates)
     │
     ▼
 meta-prompt-engineer ──→ Reverse-engineers a prompt from test cases
     │
     ▼
-meta-rubric-gen ──→ Generates scoring criteria for each case (core: at least 1 of 10 lines at 90% similarity)
+meta-rubric-gen ──→ Generates scoring criteria for each case (core: originality + imagery alignment + literary quality)
     │
     ▼
-[Run Agent] ──→ Actual output (5 queries × 10 candidate golden lines)
+[Run Agent] ──→ Actual output (5 queries × 10 original candidate golden lines)
     │
     ▼
 meta-eval-judge ──→ Scores each case + identifies shortcomings
     │
     ▼
-meta-prompt-engineer ──→ Optimizes prompt based on shortcomings (loops ↑)
+meta-prompt-engineer ──→ Optimizes prompt based on shortcomings
     │
+    ▼
+meta-reviewer ──→ Independent review: cheating/overfitting? (✅ PASS → write / ❌ REJECT → redo)
+    │                                              (loops ↑)
     ▼
 meta-retrospective ──→ Global review every 3 rounds, preventing optimization drift
 ```
@@ -717,7 +799,7 @@ Core idea: **Use AI to solve AI's problems.** You set the standard, AI evolves i
 ## 🎓 Next Steps After Completion
 
 1. **Create Your Own Agent** — Swap in different test cases, follow the same workflow
-2. **Upgrade to CLI / IDE** — If you used OpenClaw, installing CLI tools unlocks tool-calling capabilities for more complex Agents
+2. **Upgrade to CLI / IDE** — If you used OpenClaw, installing CLI tools unlocks MCP tool calling and shell command execution for more complex Agents (like log analysis)
 3. **Deep-Dive into Evaluation** — `calibrate` to diagnose triplet consistency (CLI / IDE)
 4. **Multi-Platform Testing** — `test_agent lyrics-golden-lines@codebuddycli` (CLI / IDE)
 5. **Read Full Documentation** — [README.md](README.md), [SETUP.md](SETUP.md)

@@ -6,6 +6,45 @@ AI defines the ideal state, generates test cases, creates scoring rubrics, then 
 
 > Open the project in an AI IDE (Cursor / CodeBuddy / Claude Code), say `create_agent` and go.
 
+### 🎬 Demo
+
+Watch the full create → test → iterative optimization workflow in action:
+
+https://github.com/slowman2084/meta-agent/raw/main/demo.mp4
+
+> 💡 This video demonstrates the complete Meta-Agent workflow using a lyrics golden-lines Agent. Want hands-on experience? Try the [5-Minute Quick Start Guide](README_FORCLAW_EN.md).
+
+---
+
+## Understand Meta-Agent in 30 Seconds
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│   What you give Meta-Agent     What Meta-Agent gives you│
+│   ─────────────────────        ─────────────────────    │
+│   ● An ideal state description ● Production-grade prompt│
+│   ● Or a draft prompt          ● Complete test suite    │
+│   ● Or a few test cases        ● Atomic scoring rubrics │
+│   ● Or an LLM chat log         ● A qualified Agent      │
+│                                                         │
+│            You set the standard, AI evolves itself       │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Simplest experience**: Open the project in IDE → type `create_agent` → AI guides you through everything.
+Up and running in 5 lines:
+
+```bash
+git clone <your-repo-url> && cd meta-agent
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+./venv/bin/python scripts/install.py          # Distribute rules and built-in Agents
+# Open IDE, type in chat: create_agent
+```
+
+> Want a hands-on walkthrough? Try the [5-Minute Quick Start Guide](README_FORCLAW_EN.md) — complete create → test → iterate using a lyrics golden-lines demo.
+
 ---
 
 ## Why Meta-Agent?
@@ -14,7 +53,7 @@ AI defines the ideal state, generates test cases, creates scoring rubrics, then 
 
 Building an Agent that "works" is easy. Building one that's "good" is extremely hard. The bottleneck is the **Ideal State** — a precise description of what perfect output looks like:
 
-- **Domain expertise required** — You can't define an ideal ops Agent without ops knowledge, or an ideal translation Agent without translation expertise. Even experts struggle to systematically articulate what they know.
+- **Domain expertise required** — You can't define an ideal ops Agent without ops knowledge, or an ideal translation Agent without translation expertise. Even experts struggle to systematically articulate what they know — like knowing a lot but being unable to teach your own child.
 - **Small teams lack resources** — Google and OpenAI have hundreds of specialists building evaluation systems. Small teams are stretched just getting the engineering to work.
 - **Execution is harder than definition** — Even with an ideal state defined, you still need to decompose it into prompts, test cases, and scoring rubrics, then iterate repeatedly. The human cost is enormous.
 
@@ -62,6 +101,20 @@ You only need to:
 
 ---
 
+## Ideal State: Why It's the Starting Point for Everything
+
+> **The ideal state is a choice, a responsibility, and a core competitive advantage.**
+
+The ideal state describes the expected optimal output from AI. But this isn't about "the best" — it's about "the right fit":
+
+- **Choice** — Should the Agent be interactive or silent? Tables or charts? Strict execution or going the extra mile? No right or wrong, only choices
+- **Responsibility** — Making choices for users means taking responsibility for them. Giving users too much freedom creates cognitive burden — this is the value of "product": converging these burdens through the ideal state
+- **Core competitiveness** — The ideal state IS product capability in the AI era. With an ideal state, you can define high-quality scoring rubrics and iterate toward high-quality prompts. Without it, everything is hollow
+
+Meta-Agent's entire design revolves around this idea: **Making the cost of defining and implementing the ideal state low enough that even small teams can do it.**
+
+---
+
 ## Core Capabilities
 
 | Trigger | Function | Description |
@@ -70,12 +123,14 @@ You only need to:
 | `create_testcases` | Generate Test Cases | Auto-generate YAML test cases and scoring rubrics for existing Agents |
 | `test_agent` | Test & Evaluate | Run test cases, score outputs (0-100) via eval-judge |
 | `evo_looper` | Iterative Optimization | Loop "test → evaluate → optimize prompts" until target score (default 98) |
+| `calibrate` | Calibration & Diagnosis | Diagnose consistency issues in the triplet (prompt / ideal state / rubrics) |
+| `create_platformskill` | Create Platform Skill | Create new Platform Skill execution environment wrappers |
 
 ---
 
-## The Seven Meta Agents
+## The Eight Meta Agents
 
-Meta-Agent consists of 7 specialized Sub Agents forming a complete pipeline:
+Meta-Agent consists of 8 specialized Sub Agents forming a complete pipeline:
 
 | Agent | Purpose | Role in Pipeline |
 |-------|---------|-----------------|
@@ -84,8 +139,9 @@ Meta-Agent consists of 7 specialized Sub Agents forming a complete pipeline:
 | `meta-testcase-gen` | Infers user personas, generates multi-scenario YAML test cases | Init |
 | `meta-rubric-gen` | Generates atomic, decidable scoring rubrics for each test case | Init |
 | `meta-eval-judge` | Strictly scores Agent output against rubrics (0-100) | Test + Iteration |
+| `meta-reviewer` | Independently reviews prompts for cheating (copying ExpectedOutput) or overfitting | Iteration (separating generation from review) |
 | `meta-retrospective` | Analyzes iteration history, identifies degradation patterns, suggests new directions | Iteration review |
-| `meta-log-converter` | Converts platform execution logs to unified ShareGPT format | Test support |
+| `meta-debug` | Diagnoses triplet consistency issues, outputs calibration_report.json | Calibration & debugging |
 
 ---
 
@@ -127,6 +183,8 @@ test_agent my-agent           # Test specified Agent
 evo_looper my-agent           # Iterate until target score
 ```
 
+> Chinese triggers are also supported: `创建 Agent`, `测试 Agent`, `迭代优化`
+
 ### Configure MCP Services (Optional)
 
 If your Agent needs external services (e.g., log queries):
@@ -148,23 +206,32 @@ cp .mcp.json.example .mcp.json && vim .mcp.json
 meta-agent/
 ├── source/                       # 🔑 Source of Truth
 │   ├── rules/                    #   Global orchestration rules (.mdc)
+│   ├── platform-skills/          #   Platform Skill source (execution env wrappers)
 │   └── [AgentName]/              #   Complete source files per Agent
 │       ├── prompt.md             #     Prompt
 │       ├── ideal_state.md        #     Ideal state description
 │       ├── testcases.yaml        #     Test cases (Input / ExpectedOutput / Judge)
 │       ├── agent.json            #     Metadata (description + tool semantics)
 │       ├── changelog.md          #     Full lifecycle change log
+│       ├── .mcp.json             #     MCP service configuration
+│       ├── references/           #     Domain reference resources
+│       ├── skills/               #     Agent-specific Skills
 │       └── bak/                  #     Historical backups
 │
 ├── scripts/                      # Automation scripts
-│   ├── install.py                #   Install Agent (source → 4 IDE directories)
+│   ├── install.py                #   Agent + Rules + Platform Skills installation
 │   ├── scaffold.py               #   Create Agent directory scaffold
+│   ├── yaml_tool.py              #   YAML test case read/write tool (on-demand, export Inputs)
 │   ├── setup_mcp.py              #   MCP quick config
 │   ├── verify_setup.py           #   Setup verification
-│   └── platform_test.py          #   Platform batch testing
+│   ├── batch_evaluate.py         #   Batch evaluation
+│   ├── batch_platform_test.py    #   Platform batch testing
+│   ├── validate_platform_outputs.py  #  Platform output validation
+│   └── check_secrets.sh          #   Secrets leak detection
 │
-├── tools/                        # Human-assisted tools
-│   └── testcase_viewer.html      #   Test case visual reviewer
+├── tools/                        # Human-assisted tools (browser-based)
+│   ├── testcase_viewer.html      #   Test case visual reviewer + annotation export
+│   └── calibration_viewer.html   #   Calibration report viewer + decision selection
 │
 ├── .cursor/                      # ┐
 ├── .codebuddy/                   # ├─ Auto-generated by install.py, do not edit
@@ -222,14 +289,25 @@ The same Agent prompt auto-adapts to four IDE header formats:
 # Install/sync Agent to all IDEs
 ./venv/bin/python scripts/install.py [AgentName]
 
+# Install all Platform Skills
+./venv/bin/python scripts/install.py --platform-skills
+
+# YAML test case read/write tool
+./venv/bin/python scripts/yaml_tool.py count source/[AgentName]/testcases.yaml   # Get total count
+./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0   # Read single case
+./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0 --fields Input,Judge  # Read specific fields
+
 # Platform batch testing (@ suffix for platform version)
-./venv/bin/python scripts/platform_test.py [AgentName]@[platform]
+./venv/bin/python scripts/batch_platform_test.py [AgentName]@[platform]
 
 # CLI self-test
 ./scripts/selftest.sh <agent_name> --cli claude --cases 3
 
 # Setup verification
 ./venv/bin/python scripts/verify_setup.py
+
+# Secrets leak detection
+./scripts/check_secrets.sh
 ```
 
 ---
