@@ -13,6 +13,7 @@ This `SETUP.md` focuses on **one-time initialization** of a freshly cloned repos
 | **SETUP.md** (this file) | Initial environment setup | First-time clone, new machine |
 | `source/rules/python-env.mdc` | Python command conventions | All Python operations |
 | `source/rules/agent-factory.mdc` | Agent create/test/iterate workflow | `#create_agent`, `#test_agent`, `#evo_looper` |
+| `source/rules/af-skill-harness.mdc` | Skill creation via Harness Agent (Plan D) | `#create_skill` |
 | `source/rules/header-format.mdc` | IDE file header formats | Creating/syncing Agent files |
 
 **Architecture Overview**:

@@ -308,6 +308,12 @@ meta-agent/
 
 # 敏感信息检查
 ./scripts/check_secrets.sh
+
+# Skill 管理（方案 D：Harness Agent）
+./venv/bin/python scripts/create_harness.py [SkillName]         # 从 Skill 生成 Harness Agent
+./venv/bin/python scripts/create_harness.py --list              # 列出所有已有 Skill 及其 Harness
+./venv/bin/python scripts/trigger_test.py [SkillName]           # 测试 Skill 触发准确性
+./venv/bin/python scripts/artifact_checker.py [output_dir] [manifest]  # 验证 Skill 产物
 ```
 
 ---

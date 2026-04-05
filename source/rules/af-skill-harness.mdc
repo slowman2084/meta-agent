@@ -1,0 +1,203 @@
+---
+description: "Agent Factory - create_skill 模式：通过 Skill Test Harness Agent（方案 D）创建和管理 Skill 的完整流程。触发词：create_skill、创建 Skill、新建 Skill"
+globs:
+alwaysApply: false
+---
+
+# create_skill 模式（方案 D：Skill Test Harness Agent）
+
+## 概述
+
+`create_skill` 通过 **Skill Test Harness Agent** 方案（方案 D）将 Skill 的生命周期管理融入现有 Agent Factory 管道。
+
+**核心思想**：不修改 Agent Factory 的任何现有管道，而是把"测试 Skill"转化为"测试一个加载了该 Skill 的特殊 Agent"。
+
+```
+                ┌─────────────────────────────────────────┐
+                │         Agent Factory（完全不变）          │
+                │  test_agent / evo_looper / calibrate     │
+                └──────────────────┬──────────────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                              │
+                    ▼                              ▼
+          ┌──────────────────┐          ┌──────────────────┐
+          │   普通 Agent      │          │  Harness Agent    │
+          │   prompt.md       │          │  prompt.md（只读）│
+          │                   │          │   ↓ use_skill →  │
+          │                   │          │   加载目标 Skill   │
+          └──────────────────┘          └────────┬─────────┘
+                                                  │
+                                                  ▼
+                                        ┌──────────────────┐
+                                        │  目标 Skill       │
+                                        │  SKILL.md（优化目标）│
+                                        │  scripts/         │
+                                        └──────────────────┘
+```
+
+---
+
+## 完整流程
+
+### 步骤 1：收集 Skill 基本信息
+
+```
+请提供以下信息：
+- Skill 名称（英文，如 pdf-markdown）：
+- Skill 简要描述（一句话说明用途）：
+- 触发关键词（逗号分隔，用户输入中含这些词时应触发此 Skill）：
+- Skill 所需工具语义（read / write / edit / search / bash）：
+- Skill 的设计模式（sequential_workflow / react_agent / tool_chain）：
+```
+
+### 步骤 2：创建 Skill 源文件
+
+在 `source/skills/[SkillName]/` 下创建：
+
+1. **`skill.json`** — Skill 元数据：
+   ```json
+   {
+     "type": "skill",
+     "name": "[SkillName]",
+     "description": "[用户提供的描述]",
+     "trigger_keywords": ["关键词1", "关键词2"],
+     "tools": ["read", "write", "bash"],
+     "design_pattern": "[设计模式]",
+     "evaluation": {
+       "trigger_test": true,
+       "baseline_comparison": true,
+       "artifact_check": true
+     }
+   }
+   ```
+
+2. **`SKILL.md`** — Skill 指令文档（遵循 Anthropic 最佳实践）：
+   - 若用户提供了 SKILL.md 草稿，直接使用或优化
+   - 若未提供，基于描述和触发关键词生成初始版本
+   - SKILL.md 应包含：
+     - Skill 名称和描述
+     - 触发条件说明
+     - 完整的执行步骤
+     - 错误处理指引
+     - 输出格式规范
+
+3. **`ideal_state.md`** — 基于 Skill 五维评估体系：
+   - 触发准确性（Trigger Accuracy）
+   - 工作流效率（Workflow Efficiency）
+   - 执行成功率（Execution Success）
+   - 产物质量（Artifact Quality）
+   - 跨会话一致性（Cross-session Consistency）
+
+4. 创建子目录：`scripts/`、`config/`、`references/`
+
+5. **可选**：`trigger_tests.yaml` — 触发测试用例：
+   ```yaml
+   positive:
+     - "正向触发查询1"
+     - "正向触发查询2"
+   negative:
+     - "不应触发的查询1"
+     - "不应触发的查询2"
+   expected_rate: 0.9
+   ```
+
+### 步骤 3：自动生成 Harness Agent
+
+运行：
+
+```bash
+./venv/bin/python scripts/create_harness.py [SkillName]
+```
+
+脚本自动创建 `source/skill-harness-[SkillName]/`，包含：
+- `agent.json`（含 `harness` 字段）
+- `prompt.md`（Harness 模板，只读）
+- `ideal_state.md`（从 Skill 复制或生成）
+- `changelog.md`
+- `.mcp.json`
+- `skills/[SkillName]/`（被测 Skill 的副本）
+
+### 步骤 4：生成测试用例
+
+调用 `meta-testcase-gen` 为 Harness Agent 生成测试用例：
+- Input 应覆盖 Skill 的各种使用场景
+- ExpectedOutput 应包含对 Skill 执行结果的描述
+- Judge 应包含 Skill 评估五维中的 workflow、artifact 等轴
+
+**额外**：若存在 `trigger_tests.yaml`，建议运行触发测试：
+```bash
+./venv/bin/python scripts/trigger_test.py [SkillName]
+```
+
+### 步骤 5：生成 Judge / Rubric
+
+调用 `meta-rubric-gen` 逐条生成 Judge，使用 Skill 评估五维标签：
+- `axis:trigger` — 触发准确性
+- `axis:workflow` — 工作流效率
+- `axis:execution` — 执行成功率
+- `axis:artifact` — 产物质量
+- `axis:consistency` — 跨会话一致性
+
+### 步骤 6：安装
+
+```bash
+./venv/bin/python scripts/install.py skill-harness-[SkillName]
+```
+
+### 步骤 7：完成输出
+
+```
+✅ Skill 创建完成！
+
+📦 Skill 源文件:
+  - source/skills/[SkillName]/skill.json
+  - source/skills/[SkillName]/SKILL.md
+  - source/skills/[SkillName]/ideal_state.md
+
+🤖 Harness Agent:
+  - source/skill-harness-[SkillName]/agent.json
+  - source/skill-harness-[SkillName]/prompt.md（只读）
+  - source/skill-harness-[SkillName]/testcases.yaml
+
+后续步骤:
+  1. test_agent skill-harness-[SkillName]    # 测试
+  2. evo_looper skill-harness-[SkillName]    # 迭代优化 SKILL.md
+  3. calibrate skill-harness-[SkillName]     # 评估体系诊断
+```
+
+---
+
+## evo_looper 的 Harness 适配
+
+当 `evo_looper` 检测到 `agent.json` 中存在 `harness` 字段且 `prompt_is_readonly` 为 `true` 时：
+
+### 优化目标重定向
+
+步骤 C（优化提示词）的行为变化：
+
+| 操作 | 普通 Agent | Harness Agent |
+|------|-----------|--------------|
+| 备份 | `prompt.md` → `bak/` | `source/skills/[SkillName]/SKILL.md` → `source/skills/[SkillName]/bak/` |
+| 优化 | `meta-prompt-engineer` 优化 `prompt.md` | `meta-prompt-engineer` 优化 `SKILL.md` |
+| 写入 | 写回 `prompt.md` | 写回 Skill 源的 `SKILL.md` + 同步到 Harness 的 `skills/` |
+| 安装 | `install.py [AgentName]` | `install.py skill-harness-[SkillName]` |
+
+### 脚本层问题处理
+
+若分数不提升且评估报告指出问题在 Skill 的 `scripts/` 脚本层面：
+- 暂停 evo_looper
+- 生成脚本修改建议（问题描述 + 建议修改方向）
+- 等待人工介入修复脚本后继续
+
+---
+
+## 与现有 Agent 流程的关系
+
+| 流程 | 普通 Agent | Harness Agent（Skill） |
+|------|-----------|----------------------|
+| `create_agent` | ✅ 正常 | 不使用（用 `create_skill` 代替） |
+| `test_agent` | ✅ 正常 | ✅ 完全复用（Harness 视为普通 Agent） |
+| `evo_looper` | ✅ 正常 | ✅ 复用 + 优化目标重定向 |
+| `calibrate` | ✅ 正常 | ✅ 完全复用 |
+| `create_testcases` | ✅ 正常 | ✅ 完全复用（为 Harness Agent 生成用例） |

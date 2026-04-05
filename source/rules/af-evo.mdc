@@ -277,6 +277,13 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 - 热身最多 5 轮；若第 5 轮后仍未达到上述门槛，或连续 2 轮超时 / 无结果，**不得进入阶段 2**，应暂停并优先修复 prompt、执行链路或先执行 `calibrate`
 
 **步骤 C**：优化提示词（单路模式）
+
+> **Harness Agent 优化重定向**：若 `agent.json` 含 `harness` 字段且 `harness.prompt_is_readonly` 为 `true`，步骤 C 中所有对 `prompt.md` 的操作需重定向到被测 Skill 的 `SKILL.md`：
+> - 备份目标：`source/skills/[SkillName]/SKILL.md` → `source/skills/[SkillName]/bak/SKILL_[ts].bak`（若 bak 目录不存在则自动创建）
+> - 优化目标：将 SKILL.md 作为"当前提示词"传给 `meta-prompt-engineer`
+> - 同步：优化后的 SKILL.md 写回 `source/skills/[SkillName]/SKILL.md`，并复制到 Harness Agent 的 `skills/[SkillName]/SKILL.md`
+> - 安装：仍运行 `install.py [HarnessAgentName]` 同步
+
 - 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
 - 构建**诊断摘要**（见下方「诊断摘要格式」），传给 `meta-prompt-engineer`
 - 调用 `meta-prompt-engineer`（模式 B），传入：
@@ -469,6 +476,8 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 #### C.1 单路模式（默认）
 
+> **Harness Agent**：若 `harness.prompt_is_readonly` 为 `true`，以下所有 `prompt.md` 替换为 `source/skills/[SkillName]/SKILL.md`（备份、优化、写入、安装全部重定向）。
+
 - 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
 - 调用 `meta-prompt-engineer`（**模式 B**），传入：
   - 当前提示词 + 理想态 + **诊断摘要 JSON** + changelog（必须）
@@ -493,6 +502,8 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 **触发后不可逆**：一旦在某轮触发多候选模式，后续轮次保持多候选直到阶段 3 结束。
 
 **执行流程**：
+
+> **Harness Agent**：若 `harness.prompt_is_readonly` 为 `true`，以下所有 `prompt.md` / 提示词 操作替换为 `source/skills/[SkillName]/SKILL.md`（备份、恢复、候选写入全部重定向）。
 
 1. 备份当前提示词（仅一次）
 2. 恢复上轮提示词（若因停滞触发）

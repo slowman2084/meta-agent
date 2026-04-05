@@ -6,19 +6,21 @@
 
 本项目是一个 **Agent 工厂**，用于创建、测试、迭代优化 Sub Agent。核心流程由触发词驱动，详见 `agent-factory.mdc` 规则。
 
-触发词速查：`create_agent` / `create_testcases` / `test_agent` / `evo_looper` / `calibrate` / `create_platformskill`
+触发词速查：`create_agent` / `create_testcases` / `test_agent` / `evo_looper` / `calibrate` / `create_skill` / `create_platformskill`
 
 ## 目录结构
 
 ```
-source/[AgentName]/          # Agent 源文件（prompt.md / agent.json / testcases.yaml / ...）
-source/platform-skills/      # 平台 Skill 源目录
-source/rules/                # IDE 规则文件源（.mdc）
-scripts/                     # 工具脚本（install.py / scaffold.py / yaml_tool.py）
-.<ide>/agents/               # 各 IDE 的 Agent 文件（由 install.py 自动生成）
-.<ide>/rules/                # 各 IDE 的规则文件
-.<ide>/skills/               # 各 IDE 的 Skills
-AGENTS.md                    # Codex Agent 配置文件
+source/[AgentName]/              # Agent 源文件（prompt.md / agent.json / testcases.yaml / ...）
+source/skills/[SkillName]/       # Skill 源文件（SKILL.md + skill.json + scripts/）
+source/skill-harness-[SkillName]/ # Skill Test Harness Agent（自动生成）
+source/platform-skills/          # 平台 Skill 源目录
+source/rules/                    # IDE 规则文件源（.mdc）
+scripts/                         # 工具脚本（install.py / scaffold.py / yaml_tool.py / create_harness.py）
+.<ide>/agents/                   # 各 IDE 的 Agent 文件（由 install.py 自动生成）
+.<ide>/rules/                    # 各 IDE 的规则文件
+.<ide>/skills/                   # 各 IDE 的 Skills
+AGENTS.md                        # Codex Agent 配置文件
 ```
 
 ## Python 运行环境

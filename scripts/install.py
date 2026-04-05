@@ -24,7 +24,7 @@ PLATFORM_SKILLS_DIR = os.path.join(SOURCE_DIR, "platform-skills")
 PLATFORMSKILL_CREATOR_DIR = os.path.join(SOURCE_DIR, "platformskill-creator")
 
 # source/ 下不作为 Agent 安装的目录名
-NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks"}
+NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks", "skills"}
 
 TOOL_MAP = {
     "cursor": {

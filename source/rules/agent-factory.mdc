@@ -27,6 +27,7 @@ alwaysApply: true
 | `test_agent` | "测试 Agent"、"跑测试" | 测试模式 | 加载 `af-test` |
 | `evo_looper` | "迭代优化"、"开始迭代" | 迭代优化模式（默认计划模式，支持通过 todo list / plan 文件续跑） | 加载 `af-test` + `af-evo` |
 | `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 调试模式 | 加载 `af-test` + `af-calibrate` |
+| `create_skill` | "创建 Skill"、"新建 Skill"、"测试 Skill" | Skill 创建模式（方案 D：通过 Harness Agent 复用管道） | 加载 `af-skill-harness` |
 | `create_platformskill` | "创建平台 Skill"、"create platform skill" | 平台 Skill 创建 | 加载 `af-platformskill` |
 
 > **触发识别规则**：用户消息中包含上述触发词或自然语言表达时，**先用 read_rules 工具加载对应规则文件**，再按规则执行。
@@ -92,6 +93,27 @@ alwaysApply: true
 - MCP 配置在 `source/[AgentName]/.mcp.json` 中维护
 - Skills 在 `source/[AgentName]/skills/` 中维护
 - **严禁**直接修改 IDE 目录中的 agent / skills / `.mcp.json` 文件
+
+### 4.4a Harness Agent 识别与行为约束（方案 D）
+
+当 `agent.json` 中存在 `harness` 字段时，该 Agent 是 **Skill Test Harness Agent**：
+
+- `harness.skill_name`：被测 Skill 名称
+- `harness.skill_source`：Skill 源文件路径（如 `source/skills/pdf-markdown`）
+- `harness.optimize_target`：优化目标文件名（默认 `SKILL.md`）
+- `harness.prompt_is_readonly`：若为 `true`，`evo_looper` 优化时**跳过 prompt.md**，转而优化 `SKILL.md`
+
+**行为差异**：
+- `test_agent`：无差异（Harness Agent 视为普通 Agent 执行和评估）
+- `evo_looper` 步骤 C（优化）：若 `harness.optimize_target` 存在：
+  1. 备份 `source/skills/[SkillName]/SKILL.md`（而非 prompt.md）
+  2. 调用 `meta-prompt-engineer` 优化 SKILL.md（而非 prompt.md）
+  3. 将优化后的 SKILL.md 同步回 Harness Agent 的 `skills/` 目录
+  4. 运行 `install.py` 同步
+- `create_skill` 流程（详见 `af-skill-harness` 规则）：
+  1. 创建 Skill 源文件（`source/skills/[SkillName]/`）
+  2. 自动调用 `create_harness.py` 生成 Harness Agent
+  3. 复用 `create_agent` 后续流程（生成用例、Judge、安装）
 
 ### 4.5 读取用例规范
 
@@ -182,9 +204,16 @@ cases:
 | `source/[AgentName]/tmp/` | 运行时产物 |
 | `source/[AgentName]/references/` | 领域参考资源 |
 | `source/[AgentName]/skills/` | 专属 skill |
+| `source/skills/[SkillName]/` | 🆕 Skill 源文件目录 |
+| `source/skills/[SkillName]/skill.json` | 🆕 Skill 元数据 |
+| `source/skills/[SkillName]/SKILL.md` | 🆕 Skill 指令文档 |
+| `source/skill-harness-[SkillName]/` | 🆕 Skill Test Harness Agent（自动生成） |
 | `source/platform-skills/` | 平台 Skill 源目录 |
 | `source/platform-skills/registry.json` | 平台 Skill 注册表 |
 | `source/platformskill-creator/` | 平台 Skill 创建工具（Skill） |
 | `scripts/yaml_tool.py` | YAML 用例读写工具 |
 | `scripts/install.py` | Agent + Rules + Platform Skills 安装脚本 |
 | `scripts/scaffold.py` | 目录脚手架创建 |
+| `scripts/create_harness.py` | 🆕 Skill → Harness Agent 自动生成 |
+| `scripts/trigger_test.py` | 🆕 Skill 触发准确性测试 |
+| `scripts/artifact_checker.py` | 🆕 Skill 产物检查 |

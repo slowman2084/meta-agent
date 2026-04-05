@@ -124,6 +124,7 @@ Meta-Agent's entire design revolves around this idea: **Making the cost of defin
 | `test_agent` | Test & Evaluate | Run test cases, score outputs (0-100) via eval-judge |
 | `evo_looper` | Iterative Optimization | Loop "test → evaluate → optimize prompts" until target score (default 98) |
 | `calibrate` | Calibration & Diagnosis | Diagnose consistency issues in the triplet (prompt / ideal state / rubrics) |
+| `create_skill` | Create Skill | Create, test, and iterate Skills via Harness Agent pattern (SKILL.md + scripts) |
 | `create_platformskill` | Create Platform Skill | Create new Platform Skill execution environment wrappers |
 
 ---

@@ -35,9 +35,14 @@ source/[AgentName]/.mcp.json       — MCP 服务配置
 source/[AgentName]/skills/         — 专属平台 skill 源文件
 source/[AgentName]/bak/            — 历史备份
 source/[AgentName]/tmp/            — 中间产物
+source/skills/[SkillName]/         — Skill 源文件（SKILL.md + skill.json + scripts/）
+source/skill-harness-[SkillName]/  — Skill Test Harness Agent（由 create_harness.py 生成）
 scripts/install.py                 — Agent 安装脚本（source → 所有 IDE 目录）
 scripts/scaffold.py                — Agent 目录脚手架创建（支持 @platform 命名）
 scripts/yaml_tool.py               — YAML 测试用例读写工具
+scripts/create_harness.py          — Skill → Harness Agent 自动生成
+scripts/trigger_test.py            — Skill 触发准确性测试
+scripts/artifact_checker.py        — Skill 产物验证检查
 ```
 
 ---
@@ -131,5 +136,55 @@ scripts/yaml_tool.py               — YAML 测试用例读写工具
 **提示词**：
 
 > 请参见 `source/meta-reviewer/prompt.md`
+
+---
+
+## Agent: cls-log-agent
+
+**描述**：腾讯云 CLS 日志检索分析专家，支持日志查询、错误分析及 APM 协同排障。
+
+**提示词**：
+
+> 请参见 `source/cls-log-agent/prompt.md`
+
+---
+
+## Agent: cls-log-agent@observable
+
+**描述**：腾讯云 CLS 日志检索分析专家（可观测平台版，Qwen3 模型）
+
+**提示词**：
+
+> 请参见 `source/cls-log-agent@observable/prompt.md`
+
+---
+
+## Agent: skill-harness-platform_react_runner
+
+**描述**：Skill Test Harness: platform_react_runner — 通过加载 platform_react_runner Skill 执行平台级 ReAct 智能体测试
+
+**提示词**：
+
+> 请参见 `source/skill-harness-platform_react_runner/prompt.md`
+
+---
+
+## Agent: 歌词生成系统
+
+**描述**：根据用户提供的歌词创作需求（主题、风格、场景、核心意象、剧情要求），生成符合要求的原创歌词
+
+**提示词**：
+
+> 请参见 `source/歌词生成系统/prompt.md`
+
+---
+
+## Agent: 说唱生成系统
+
+**描述**：中文说唱作词专家，根据主题和情感要求生成高质量原创说唱歌词
+
+**提示词**：
+
+> 请参见 `source/说唱生成系统/prompt.md`
 
 ---
