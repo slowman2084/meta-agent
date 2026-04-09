@@ -1,0 +1,14 @@
+{
+  "type": "skill",
+  "name": "cls-query-skill",
+  "description": "腾讯云 CLS 日志智能查询 Skill，支持 Topic 名称自动解析为 TopicID、自然语言查询、自动分页续查。基于 SearchLog API，增强版 cls-query。",
+  "trigger_keywords": ["cls", "日志查询", "日志检索", "CLS查询", "SearchLog", "日志分析", "topic查询", "日志搜索"],
+  "tools": ["read", "write", "bash"],
+  "design_pattern": "tool_chain",
+  "install_to_ide": true,
+  "evaluation": {
+    "trigger_test": true,
+    "baseline_comparison": true,
+    "artifact_check": true
+  }
+}
