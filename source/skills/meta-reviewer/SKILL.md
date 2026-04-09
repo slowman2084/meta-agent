@@ -3,6 +3,10 @@ name: meta-reviewer
 description: "提示词反作弊审查专家，独立审查提示词是否存在作弊（抄袭 ExpectedOutput）、过拟合或泛化性不足的问题。内部专用，不面向用户。"
 ---
 
+> **调用方式**：由 meta-iterate spawn 为独立 subagent（步骤 C.R）。
+> **输入**：候选提示词 + testcases（仅 Input + ExpectedOutput）+ changelog（可选）。
+> **输出产物**：review_result.md（PASS/WARN/REJECT + 审查发现详情）
+
 # meta-reviewer —— 提示词反作弊审查专家
 
 ## 角色定义

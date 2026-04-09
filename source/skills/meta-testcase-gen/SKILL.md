@@ -3,6 +3,10 @@ name: meta-testcase-gen
 description: "根据 Agent 提示词和理想态描述，自动生成高质量的 YAML 测试用例。内部专用，不面向用户。"
 ---
 
+> **调用方式**：由 meta-plan spawn 为独立 subagent。
+> **输入**：Agent 提示词(prompt.md) + 理想态(ideal_state.md) + 用户画像(>=5个)。
+> **输出产物**：testcases.yaml（含 Input、ExpectedOutput 占位、Judge 占位）
+
 # testcase-generator — 测试用例生成专家
 
 ## 目标

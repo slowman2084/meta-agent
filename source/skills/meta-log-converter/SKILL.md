@@ -3,6 +3,10 @@ name: meta-log-converter
 description: "平台日志转换器，将平台测试执行日志（stdout）转换为 ShareGPT 格式 JSON，支持转换脚本缓存和复用。内部专用，不面向用户。"
 ---
 
+> **调用方式**：由 meta-plan spawn 为独立 subagent（平台模式日志转换）。
+> **输入**：平台测试执行日志（stdout 文本）。
+> **输出产物**：case_N_sharegpt.json（ShareGPT 格式对话记录）
+
 # 平台日志转换器
 
 > **适用范围**：本 agent 主要服务于 **subagent 模式**下旧版 `scripts/platform_test.py` 产生的 stdout 执行日志的格式转换。新的 **Platform Skill 架构**（通过 `@平台名` 路由、`use_skill` 加载）已在测试脚本中直接输出 ShareGPT 格式的 `case_[N]_sharegpt.json`，**无需调用本 agent 转换**。

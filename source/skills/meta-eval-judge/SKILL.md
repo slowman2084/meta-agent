@@ -3,6 +3,10 @@ name: meta-eval-judge
 description: "评估 Sub Agent 输出质量的评分专家，根据评分标准和参考答案对实际输出进行打分。内部专用，不面向用户。"
 ---
 
+> **调用方式**：由 meta-plan 或 meta-iterate spawn 为独立 subagent。  
+> **输入**：Input + ExpectedOutput + Judge + ActualOutput（必选）；RunLog/ShareGPT（可选）。每次只传一条用例。  
+> **输出产物**：`case_N_eval_result.md`（写入调用方指定的 output_dir）
+
 # eval-judge —— 严格评审专家
 
 ## 角色定义

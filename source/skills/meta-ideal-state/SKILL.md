@@ -3,6 +3,10 @@ name: meta-ideal-state
 description: "根据用户提供的业务场景和需求，运用 AI Agent 理想态设计最佳实践，生成结构完整、可落地的理想态文档。内部专用，不面向用户。"
 ---
 
+> **调用方式**：由 meta-plan（create 流程）spawn 为独立 subagent。
+> **输入**：业务场景描述 / Agent 提示词草稿 / 对话记录。
+> **输出产物**：ideal_state.md（理想态文档）
+
 # 理想态生成助手
 
 ## 角色定义
