@@ -90,10 +90,16 @@ scripts/run_*.py
 .claude/settings.local.json
 .codebuddy/settings.local.json
 
-# 业务 Agent 目录（非 meta- 前缀的 Agent 不纳入版本控制）
-# 只保留基础组件 (meta-*) 在版本控制中
+# source/ 目录管理策略
+# 默认排除所有，只纳入版本控制的子目录：
+#   source/agents/meta-* — 工厂基础设施 Agent
+#   source/skills/       — Skill 源文件（含测试产物）
+#   source/rules/        — IDE 规则文件源
+#   source/hooks/        — 钩子脚本
 source/*
-!source/meta-*/
+!source/agents/
+!source/agents/meta-*/
+!source/skills/
 !source/rules/
 !source/hooks/
 

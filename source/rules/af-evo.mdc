@@ -1,10 +1,10 @@
 ---
-description: "Agent Factory - evo_looper 迭代优化模式的完整流程。触发词：evo_looper、迭代优化、开始迭代。需同时加载 af-test 规则。"
+description: "Agent Factory - iterate 迭代优化模式的完整流程。触发词：iterate、迭代优化、开始迭代。需同时加载 af-test 规则。"
 globs:
 alwaysApply: false
 ---
 
-# evo_looper 迭代优化模式
+# iterate 迭代优化模式
 
 ## 概览：根据用例规模自动选择策略
 
@@ -44,7 +44,7 @@ alwaysApply: false
 
 ## 0. 计划模式 / Todo List / 续跑机制（强制）
 
-> **evo_looper 默认进入"计划模式"执行。**
+> **iterate 默认进入"计划模式"执行。**
 >
 > 目标：把长流程的关键状态写入磁盘，避免上下文中断、会话超长、平台切换或中途暂停后丢失进度。
 
@@ -52,8 +52,8 @@ alwaysApply: false
 
 在进入任何测试、评估、优化动作之前，必须先确定计划文件：
 
-- **新开一轮 evo_looper**：
-  - 在 `source/[AgentName]/tmp/` 下创建：
+- **新开一轮 iterate**：
+  - 在 `source/agents/[AgentName]/tmp/` 下创建（Skill 为 `source/skills/[SkillName]/tmp/`）：
     - `plan_[YYYYMMDDHHmmss].md`
 - **从中断处恢复**：
   - 若用户显式指定了 todo list / plan 文件路径，则直接进入**续跑模式**
@@ -166,7 +166,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 ### 0.5 续跑规则（恢复模式）
 
-当用户通过 `evo_looper` 指定 todo list / plan 文件时：
+当用户通过 `iterate` 指定 todo list / plan 文件时：
 
 1. **先读计划文件，再继续执行**
 2. 以计划文件中的 `current_phase` / `current_step` / `current_iteration` 作为恢复入口
@@ -193,12 +193,14 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 ## 初始化
 
-1. 解析 Agent 名称中的 `@` 后缀确定执行模式（无 `@` = subagent 模式）
+1. 解析目标名称中的 `on` 关键词确定执行模式（无 `on` = subagent 模式）
+   - 目标类型识别：先查 `source/agents/`，再查 `source/skills/`
+   - 若目标在 `source/skills/` 下，自动套壳 `meta-skill-harness`
 2. 判断是否进入**新计划模式**还是**续跑模式**：
    - 若用户提供了 todo list / plan 文件路径 → 续跑模式
-   - 否则 → 新建 `source/[AgentName]/tmp/plan_[timestamp].md`
+   - 否则 → 新建 `source/agents/[AgentName]/tmp/plan_[timestamp].md`（Skill 为 `source/skills/[SkillName]/tmp/...`）
 3. 在计划文件中写入：
-   - Agent 名称
+   - 目标名称（Agent 或 Skill）
    - 平台模式
    - 模型
    - 目标分数（默认 98；若用户指定则以用户要求为准）
@@ -209,14 +211,14 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 4. subagent 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定了 `model: xxx`，加 `--model xxx`）
 5. **立即调用 `use_skill` 加载 Platform Skill**（与 `af-test` 步骤 0 一致）：
    ```
-   use_skill(command="subagent")       # 无 @ 或 @subagent
-   use_skill(command="codebuddycli")   # @codebuddycli
-   use_skill(command="claude")         # @claude
-   use_skill(command="tcop")           # @tcop
+   use_skill(command="subagent")       # 无 on 或 on subagent
+   use_skill(command="codebuddycli")   # on codebuddycli
+   use_skill(command="claude")         # on claude
+   use_skill(command="tcop")           # on tcop
    ```
    - 若 Skill 不在 available_skills 中，需先运行 `./venv/bin/python scripts/install.py --platform-skills`
    - 加载成功后，Skill 说明注入上下文，后续步骤 A 的测试执行按 Skill 说明操作
-6. 确定：目标 Agent、YAML 路径、目标分数、最大迭代次数、执行模式
+6. 确定：目标名称、YAML 路径、目标分数、最大迭代次数、执行模式
    - 若指定了 `model: xxx`，后续所有操作使用 `prompt_[model].md`（首次自动从 `prompt.md` 复制）
 7. **同步计划文件并输出计划摘要**：
    - 更新 `current_phase=init`
@@ -245,7 +247,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 2. 若无历史数据，根据 Input 复杂度人工判断（查询字段数、是否跨 topic、是否涉及统计函数等）
 3. 确保用例类型多样化（统计类、排障类、趋势类、对比类等）
 
-将选中的用例序号记录到 `source/[AgentName]/tmp/warmup_cases.json`：
+将选中的用例序号记录到 `source/agents/[AgentName]/tmp/warmup_cases.json`（Skill 为 `source/skills/[SkillName]/tmp/...`）：
 ```json
 { "cases": [0, 4, 7, 15, 27], "reason": "高:[4,27] 中:[7,15] 低:[0]" }
 ```
@@ -261,7 +263,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 每轮执行：
 
 **步骤 A**：按 `af-test` 共享流程，仅执行选中的 5 条用例
-- 输出目录：`source/[AgentName]/tmp/evalooper_warmup_[N]_[mode]/`
+- 输出目录：`source/agents/[AgentName]/tmp/evalooper_warmup_[N]_[mode]/`（Skill 同理）
 - 使用 `--cases` 参数限定执行范围
 - 汇总评估报告到目录下的 `评估报告.md`
 
@@ -278,13 +280,13 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 **步骤 C**：优化提示词（单路模式）
 
-> **Harness Agent 优化重定向**：若 `agent.json` 含 `harness` 字段且 `harness.prompt_is_readonly` 为 `true`，步骤 C 中所有对 `prompt.md` 的操作需重定向到被测 Skill 的 `SKILL.md`：
+> **Skill 优化重定向**：若目标在 `source/skills/` 下（Skill），步骤 C 中所有对提示词的操作需重定向到被测 Skill 的 `SKILL.md`：
 > - 备份目标：`source/skills/[SkillName]/SKILL.md` → `source/skills/[SkillName]/bak/SKILL_[ts].bak`（若 bak 目录不存在则自动创建）
 > - 优化目标：将 SKILL.md 作为"当前提示词"传给 `meta-prompt-engineer`
 > - 同步：优化后的 SKILL.md 写回 `source/skills/[SkillName]/SKILL.md`，并复制到 Harness Agent 的 `skills/[SkillName]/SKILL.md`
 > - 安装：仍运行 `install.py [HarnessAgentName]` 同步
 
-- 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
+- 备份当前提示词到 `source/agents/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`（Skill 不适用此行，见上方重定向规则）
 - 构建**诊断摘要**（见下方「诊断摘要格式」），传给 `meta-prompt-engineer`
 - 调用 `meta-prompt-engineer`（模式 B），传入：
   - 当前提示词 + 理想态 + 诊断摘要 + changelog（必须）
@@ -327,12 +329,12 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 - 阶段 2 属于自动执行阶段。即使预计耗时较长，也应在输出 plan/进度摘要后**直接执行**，不得停下来询问用户"是否继续执行全量基线测试"。
 - 按 `af-test` 共享流程，执行全部用例：
-- 输出目录：`source/[AgentName]/tmp/evalooper_baseline_[mode]/`
+- 输出目录：`source/agents/[AgentName]/tmp/evalooper_baseline_[mode]/`（Skill 同理）
 - 汇总评估报告到目录下的 `评估报告.md`
 
 ### 2.2 建立基线
 
-将本轮得分写入 `source/[AgentName]/tmp/baseline_scores.json`：
+将本轮得分写入 `source/agents/[AgentName]/tmp/baseline_scores.json`（Skill 同理）：
 ```json
 {
   "phase": "baseline",
@@ -383,7 +385,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 | 中分（60~84） | 2~3 条 | 稳定性验证，防止回退 |
 | 高分（≥ 85） | 2~3 条 | 成功模式复制，确保不破坏 |
 
-将选中的用例序号记录到 `source/[AgentName]/tmp/sample_cases.json`：
+将选中的用例序号记录到 `source/agents/[AgentName]/tmp/sample_cases.json`（Skill 同理）：
 ```json
 {
   "cases": [4, 15, 27, 0, 7, 21, 2, 8],
@@ -404,7 +406,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 每轮执行：
 
 **步骤 A**：按 `af-test` 共享流程，仅执行抽样的 8 条用例
-- 输出目录：`source/[AgentName]/tmp/evalooper_iter_[N]_[mode]/`
+- 输出目录：`source/agents/[AgentName]/tmp/evalooper_iter_[N]_[mode]/`（Skill 同理）
 - 使用 `--cases` 参数限定执行范围
 - 汇总评估报告到目录下的 `评估报告.md`
 - 读取 `baseline_scores.json`，在报告中增加 `Δ分` 列（与基线对比）
@@ -412,7 +414,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 **步骤 B**：判断是否停止
 
-> **evo_looper 是全自动循环，除非满足停止/暂停条件，否则不得暂停询问用户。**
+> **iterate 是全自动循环，除非满足停止/暂停条件，否则不得暂停询问用户。**
 
 **停止条件**：
 - 排除「难例」后，抽样 8 条平均分 >= 目标阈值 → 进入阶段 4
@@ -476,9 +478,9 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 #### C.1 单路模式（默认）
 
-> **Harness Agent**：若 `harness.prompt_is_readonly` 为 `true`，以下所有 `prompt.md` 替换为 `source/skills/[SkillName]/SKILL.md`（备份、优化、写入、安装全部重定向）。
+> **Skill 优化重定向**：若目标在 `source/skills/` 下，以下所有 `prompt.md` 替换为 `source/skills/[SkillName]/SKILL.md`（备份、优化、写入、安装全部重定向）。
 
-- 备份当前提示词到 `source/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
+- 备份当前提示词到 `source/agents/[AgentName]/bak/prompt[_model]_[YYYYMMDDHHmmss].bak`
 - 调用 `meta-prompt-engineer`（**模式 B**），传入：
   - 当前提示词 + 理想态 + **诊断摘要 JSON** + changelog（必须）
   - 低分用例的 Input（可选，**严禁传入 ExpectedOutput**）
@@ -488,7 +490,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
   - ✅ PASS / ⚠️ WARN → 将候选提示词写入 `prompt.md`，CHANGELOG 追加到 `changelog.md`
   - ❌ REJECT → 将审查发现反馈给 `meta-prompt-engineer` 重新优化（最多重试 2 次）
   - 连续 3 次 REJECT → 回退到备份提示词，在计划文件中记录审查阻塞，继续下一轮
-- 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步
+- 运行 `./venv/bin/python scripts/install.py [AgentName]` 同步（Skill 则为 `install.py [SkillName]`）
 
 #### C.2 多候选模式（数据驱动触发）
 
@@ -503,7 +505,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 **执行流程**：
 
-> **Harness Agent**：若 `harness.prompt_is_readonly` 为 `true`，以下所有 `prompt.md` / 提示词 操作替换为 `source/skills/[SkillName]/SKILL.md`（备份、恢复、候选写入全部重定向）。
+> **Skill 优化重定向**：若目标在 `source/skills/` 下，以下所有 `prompt.md` / 提示词 操作替换为 `source/skills/[SkillName]/SKILL.md`（备份、恢复、候选写入全部重定向）。
 
 1. 备份当前提示词（仅一次）
 2. 恢复上轮提示词（若因停滞触发）
@@ -564,7 +566,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
    - 多候选模式下**不做重试**（因为已有 3 个正交候选，重试收益低）
 
 5. **审查结果记录**：
-   - 所有审查结果（PASS/WARN/REJECT）保存到 `source/[AgentName]/tmp/[当前输出目录]/review_result.md`
+   - 所有审查结果（PASS/WARN/REJECT）保存到 `source/agents/[AgentName]/tmp/[当前输出目录]/review_result.md`（Skill 同理）
    - REJECT 时的审查发现同时追加到 `changelog.md`（标签 `[审查]`）
 
 **传参规范**（传给 `meta-reviewer` 的 prompt）：
@@ -593,9 +595,9 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 迭代次数能被 3 整除时，调用 `meta-retrospective` 进行全局复盘。
 
 **传入参数**：
-- `current_prompt_path`：`source/[AgentName]/prompt.md`
-- `bak_dir`：`source/[AgentName]/bak/`
-- `eval_dir`：`source/[AgentName]/tmp/evalooper/`
+- `current_prompt_path`：`source/agents/[AgentName]/prompt.md`（Skill 为 `source/skills/[SkillName]/SKILL.md`）
+- `bak_dir`：`source/agents/[AgentName]/bak/`（Skill 为 `source/skills/[SkillName]/bak/`）
+- `eval_dir`：`source/agents/[AgentName]/tmp/evalooper/`
 - `eval_results_dir`：本轮 `iter_[N]/` 目录
 - `baseline_scores_path`：`baseline_scores.json`（若存在）
 
@@ -604,7 +606,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 - `suggested_directions` → 下一轮诊断摘要的 `suggested_directions` 字段
 - `forced_new_directions` → 触发多候选模式（若当前为单路）
 
-> 若发现评估体系本身存在严重问题，应暂停 evo_looper，先执行 `calibrate` 修复后再恢复。
+> 若发现评估体系本身存在严重问题，应暂停 iterate，先执行 `calibrate` 修复后再恢复。
 
 **每轮结束后同步计划文件（强制）**：
 - 记录本轮输出目录
@@ -643,7 +645,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 ### 4.1 执行全量测试
 
 按 `af-test` 共享流程，执行全部用例：
-- 输出目录：`source/[AgentName]/tmp/evalooper_verify_[mode]/`
+- 输出目录：`source/agents/[AgentName]/tmp/evalooper_verify_[mode]/`（Skill 同理）
 - 汇总评估报告到目录下的 `评估报告.md`
 
 ### 4.2 与基线对比
@@ -703,7 +705,7 @@ last_updated_at: 2026-03-21T10:00:00+08:00
 
 ## 中断 / 暂停 / 会话结束前的最低要求
 
-若由于任意原因需要结束当前响应，但 evo_looper 尚未完成，必须先做以下动作：
+若由于任意原因需要结束当前响应，但 iterate 尚未完成，必须先做以下动作：
 
 1. 同步计划文件
 2. 写清：

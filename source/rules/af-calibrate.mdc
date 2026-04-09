@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## 概述
 
-调试模式用于**初始化阶段**（`create_agent` 完成后、进入 `evo_looper` 之前），对三元组（提示词 / 理想态 / rubrics）进行一致性诊断，排除评估体系自身的设计缺陷。
+调试模式用于**初始化阶段**（`create agent` 完成后、进入 `iterate` 之前），对三元组（提示词 / 理想态 / rubrics）进行一致性诊断，排除评估体系自身的设计缺陷。
 
 诊断的四类问题：
 
@@ -25,32 +25,32 @@ alwaysApply: false
 
 | 触发词 | 自然语言触发 | 前置条件 |
 |--------|-------------|---------|
-| `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 已执行过至少一次 `test_agent` |
+| `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 已执行过至少一次 `test` |
 
-**建议时机**：首次 `test_agent` 完成后、进入 `evo_looper` 之前。
+**建议时机**：首次 `test` 完成后、进入 `iterate` 之前。
 
 ## 执行流程
 
 ### 步骤 1：确定输入
 
-扫描 `source/[AgentName]/tmp/` 下所有 `test_*` 目录（包含各模式后缀如 `test_[ts]_subagent`、`test_[ts]_codebuddycli` 等），按时间戳排序取最新。确认以下文件路径：
+扫描 `source/agents/[AgentName]/tmp/` 下所有 `test_*` 目录（包含各模式后缀如 `test_[ts]_subagent`、`test_[ts]_codebuddycli` 等），按时间戳排序取最新。确认以下文件路径：
 
-- `source/[AgentName]/prompt.md`
-- `source/[AgentName]/testcases.yaml`
-- `source/[AgentName]/ideal_state.md`
-- `source/[AgentName]/tmp/test_[session]/`（含 `case_[N]_eval_result.md`）
+- `source/agents/[AgentName]/prompt.md`
+- `source/agents/[AgentName]/testcases.yaml`
+- `source/agents/[AgentName]/ideal_state.md`
+- `source/agents/[AgentName]/tmp/test_[session]/`（含 `case_[N]_eval_result.md`）
 
-确定输出目录：`source/[AgentName]/tmp/calibration_[timestamp]/`
+确定输出目录：`source/agents/[AgentName]/tmp/calibration_[timestamp]/`
 
 ### 步骤 2：调用 `meta-debug`
 
 传入参数：
 - `agent_name`：`[AgentName]`
-- `prompt_path`：`source/[AgentName]/prompt.md`
-- `ideal_state_path`：`source/[AgentName]/ideal_state.md`
-- `testcases_yaml_path`：`source/[AgentName]/testcases.yaml`
-- `eval_results_dir`：`source/[AgentName]/tmp/test_[session]/`
-- `output_dir`：`source/[AgentName]/tmp/calibration_[timestamp]/`
+- `prompt_path`：`source/agents/[AgentName]/prompt.md`
+- `ideal_state_path`：`source/agents/[AgentName]/ideal_state.md`
+- `testcases_yaml_path`：`source/agents/[AgentName]/testcases.yaml`
+- `eval_results_dir`：`source/agents/[AgentName]/tmp/test_[session]/`
+- `output_dir`：`source/agents/[AgentName]/tmp/calibration_[timestamp]/`
 
 `meta-debug` 将自行完成诊断分析，并直接写入 `calibration_report.json`。
 
@@ -62,7 +62,7 @@ alwaysApply: false
 
 读取 `decisions.json`，按 `action_type` 分发执行：
 
-**备份约束**：执行任何修改前，必须先备份到 `source/[AgentName]/bak/`。
+**备份约束**：执行任何修改前，必须先备份到 `source/agents/[AgentName]/bak/`。
 
 | `action_type` | 执行方式 |
 |---------------|---------|
@@ -78,7 +78,7 @@ alwaysApply: false
 
 ## 与其他模式的关系
 
-- **与 `test_agent`**：在 test_agent 之后执行，消费其评估结果
-- **与 `evo_looper`**：建议在首次 test_agent 后、进入 evo_looper 前执行
-- **与 `create_agent`**：创建完成后建议执行一次 test_agent + calibrate
+- **与 `test`**：在 test 之后执行，消费其评估结果
+- **与 `iterate`**：建议在首次 test 后、进入 iterate 前执行
+- **与 `create agent`**：创建完成后建议执行一次 test + calibrate
 - **多轮调试**：允许多次执行。连续两轮诊断 rubric 问题数 < 2 时，评估体系已基本稳定

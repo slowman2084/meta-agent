@@ -19,12 +19,14 @@ import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
+AGENTS_DIR = os.path.join(PROJECT_ROOT, "source/agents")
+SKILLS_DIR = os.path.join(PROJECT_ROOT, "source/skills")
 RULES_SOURCE_DIR = os.path.join(SOURCE_DIR, "rules")
 PLATFORM_SKILLS_DIR = os.path.join(SOURCE_DIR, "platform-skills")
 PLATFORMSKILL_CREATOR_DIR = os.path.join(SOURCE_DIR, "platformskill-creator")
 
-# source/ 下不作为 Agent 安装的目录名
-NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks", "skills"}
+# source/ 下不作为 Agent 安装的目录名（旧模式回退用）
+NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks", "skills", "agents"}
 
 TOOL_MAP = {
     "cursor": {
@@ -166,7 +168,7 @@ def update_agents_md(agent_name, description):
         f"\n"
         f"**提示词**：\n"
         f"\n"
-        f"> 请参见 `source/{agent_name}/prompt.md`\n"
+        f"> 请参见 `source/agents/{agent_name}/prompt.md`\n"
         f"\n"
         f"---"
     )
@@ -592,8 +594,22 @@ def resolve_prompt(agent_dir, model=None):
         return path, read_text(path)
 
 
+def _resolve_agent_dir(agent_name):
+    """优先从 source/agents/ 查找，回退到 source/（向后兼容）。"""
+    new_path = os.path.join(AGENTS_DIR, agent_name)
+    if os.path.isdir(new_path):
+        return new_path
+    old_path = os.path.join(SOURCE_DIR, agent_name)
+    if os.path.isdir(old_path):
+        return old_path
+    return None
+
+
 def install_agent(agent_name, model=None):
-    agent_dir = os.path.join(SOURCE_DIR, agent_name)
+    agent_dir = _resolve_agent_dir(agent_name)
+    if agent_dir is None:
+        print(f"  ⚠️  跳过：找不到 {agent_name}（source/agents/ 或 source/ 下均不存在）")
+        return False
 
     meta = read_json(os.path.join(agent_dir, "agent.json"))
     if meta is None:
@@ -637,6 +653,41 @@ def install_agent(agent_name, model=None):
     return True
 
 
+# ── Install one Skill ─────────────────────────────────────────────────
+
+# 安装 Skill 时排除的文件/目录（测试产物和临时文件）
+_SKIP_INSTALL = {"bak", "tmp", "testcases.yaml", "ideal_state.md", "changelog.md", ".DS_Store"}
+
+
+def install_skill(skill_name):
+    """将 source/skills/[name]/ 分发到所有 IDE 的 skills/ 目录。
+    
+    若 skill.json 中 install_to_ide 为 false，则跳过安装到 IDE 目录。
+    这些 Skill 仅作为内部专用（由其他 Skill spawn subagent 时读取）。
+    """
+    skill_dir = os.path.join(SKILLS_DIR, skill_name)
+    if not os.path.isdir(skill_dir):
+        print(f"  ❌ {skill_name}：source/skills/ 下不存在")
+        return False
+
+    # 检查 install_to_ide 标志
+    skill_json = read_json(os.path.join(skill_dir, "skill.json"))
+    if skill_json and skill_json.get("install_to_ide") is False:
+        print(f"  ⏭️  {skill_name}：install_to_ide=false，跳过 IDE 安装（内部专用）")
+        return True  # 不算失败，只是跳过
+
+    for ide_skills in [".cursor/skills", ".codebuddy/skills", ".claude/skills"]:
+        target_root = os.path.join(PROJECT_ROOT, ide_skills)
+        target = os.path.join(target_root, skill_name)
+        if os.path.exists(target):
+            shutil.rmtree(target)
+        # 复制时跳过测试产物
+        shutil.copytree(skill_dir, target, ignore=shutil.ignore_patterns(*_SKIP_INSTALL))
+        print(f"  ✅ {ide_skills}/{skill_name}/")
+
+    return True
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -673,43 +724,78 @@ def main():
     if args.rules_only:
         return 0
 
-    # ── Agent 安装 ──
+    # ── Agent / Skill 安装 ──
     if args.agents:
-        agents = args.agents
+        # 指定了名称：按名称查找，先查 agents，再查 skills
+        input_names = args.agents
+        agent_names, skill_names = [], []
+        for name in input_names:
+            if os.path.isdir(os.path.join(SKILLS_DIR, name)):
+                skill_names.append(name)
+            elif _resolve_agent_dir(name):
+                agent_names.append(name)
+            else:
+                print(f"❌ {name}：source/agents/ 和 source/skills/ 下均不存在")
     else:
-        agents = sorted(
-            d for d in os.listdir(SOURCE_DIR)
-            if os.path.isdir(os.path.join(SOURCE_DIR, d))
-            and not d.startswith(".")
-            and d not in NON_AGENT_DIRS  # 排除非 Agent 目录
-        )
+        # 全量安装：分别扫描 source/agents/ 和 source/skills/
+        agent_names = []
+        if os.path.isdir(AGENTS_DIR):
+            agent_names = sorted(
+                d for d in os.listdir(AGENTS_DIR)
+                if os.path.isdir(os.path.join(AGENTS_DIR, d))
+                and not d.startswith(".")
+            )
 
+        skill_names = []
+        if os.path.isdir(SKILLS_DIR):
+            skill_names = sorted(
+                d for d in os.listdir(SKILLS_DIR)
+                if os.path.isdir(os.path.join(SKILLS_DIR, d))
+                and not d.startswith(".")
+            )
+
+    # ── Agent 安装 ──
     model_info = f"（model: {args.model}）" if args.model else ""
-    print(f"🔧 安装 Agent → 所有 IDE 目录{model_info}\n")
-
     ok, fail = 0, 0
-    for name in agents:
-        if not os.path.isdir(os.path.join(SOURCE_DIR, name)):
-            print(f"❌ {name}：source 目录不存在")
-            fail += 1
-            continue
+    if agent_names:
+        print(f"🔧 安装 Agent → 所有 IDE 目录{model_info}\n")
+        for name in agent_names:
+            agent_dir = _resolve_agent_dir(name)
+            if agent_dir is None:
+                print(f"❌ {name}：source/agents/ 或 source/ 下均不存在")
+                fail += 1
+                continue
 
-        print(f"📦 {name}")
-        if install_agent(name, model=args.model):
-            ok += 1
-        else:
-            fail += 1
-        print()
+            print(f"📦 {name}")
+            if install_agent(name, model=args.model):
+                ok += 1
+            else:
+                fail += 1
+            print()
 
-    print(f"{'='*40}")
-    print(f"✅ Agent 安装完成：{ok} 成功, {fail} 失败")
+        print(f"{'='*40}")
+        print(f"✅ Agent 安装完成：{ok} 成功, {fail} 失败")
+
+    # ── Skill 安装 ──
+    sok, sfail = 0, 0
+    if skill_names:
+        print(f"\n🔧 安装 Skill → 所有 IDE skills 目录\n")
+        for name in skill_names:
+            print(f"📦 {name}")
+            if install_skill(name):
+                sok += 1
+            else:
+                sfail += 1
+            print()
+        print(f"{'='*40}")
+        print(f"✅ Skill 安装完成：{sok} 成功, {sfail} 失败")
 
     # ── 全量安装时同时安装 Platform Skills ──
     if not args.agents:
         print()
         install_platform_skills()
 
-    return 0 if fail == 0 else 1
+    return 0 if (fail == 0 and sfail == 0) else 1
 
 
 if __name__ == "__main__":

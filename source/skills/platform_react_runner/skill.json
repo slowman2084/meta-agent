@@ -1,0 +1,13 @@
+{
+  "type": "skill",
+  "name": "platform_react_runner",
+  "description": "基于 LangGraph 的平台级 ReAct 智能体运行时，用于通过外部平台（而非 IDE Sub Agent）执行 Agent 提示词测试。配置文件中使用 {{AgentName}} 占位符，运行前由编排器自动替换为 source/AgentName/prompt.md 的内容。",
+  "trigger_keywords": ["平台测试", "platform test", "react runner", "外部平台执行", "线上测试"],
+  "tools": ["read", "write", "bash"],
+  "design_pattern": "react_agent",
+  "evaluation": {
+    "trigger_test": true,
+    "baseline_comparison": true,
+    "artifact_check": true
+  }
+}

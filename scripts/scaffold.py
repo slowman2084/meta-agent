@@ -14,24 +14,17 @@ import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
-
-
-def is_platform_agent(agent_name):
-    return "@" in agent_name
+AGENTS_DIR = os.path.join(PROJECT_ROOT, "source/agents")
 
 
 def scaffold(agent_name, description="", tools=None):
-    agent_dir = os.path.join(SOURCE_DIR, agent_name)
-    platform_mode = is_platform_agent(agent_name)
+    agent_dir = os.path.join(AGENTS_DIR, agent_name)
 
     if os.path.exists(agent_dir):
-        print(f"⚠️  目录已存在：source/{agent_name}/")
+        print(f"⚠️  目录已存在：source/agents/{agent_name}/")
         print(f"   仅创建缺失项\n")
 
-    subdirs = ["tmp", "bak"]
-    if not platform_mode:
-        subdirs.append("skills")
-        subdirs.append("references")
+    subdirs = ["tmp", "bak", "skills", "references"]
     for subdir in subdirs:
         os.makedirs(os.path.join(agent_dir, subdir), exist_ok=True)
 
@@ -43,13 +36,11 @@ def scaffold(agent_name, description="", tools=None):
             f.write(f"# {agent_name} Changelog\n")
         created.append("changelog.md")
 
-    if not platform_mode:
-        mcp = os.path.join(agent_dir, ".mcp.json")
-        if not os.path.exists(mcp):
-            with open(mcp, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-                f.write("\n")
-            created.append(".mcp.json")
+    if not os.path.exists(mcp):
+        with open(mcp, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+            f.write("\n")
+        created.append(".mcp.json")
 
     agent_json = os.path.join(agent_dir, "agent.json")
     if not os.path.exists(agent_json):
@@ -57,19 +48,10 @@ def scaffold(agent_name, description="", tools=None):
             "description": description or f"{agent_name} 的简要描述（请修改）",
             "tools": tools or ["read"],
         }
-        if platform_mode:
-            meta["platform"] = agent_name.split("@", 1)[1]
         with open(agent_json, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
             f.write("\n")
         created.append("agent.json")
-
-    if platform_mode:
-        platform_yaml = os.path.join(agent_dir, "platform.yaml")
-        if not os.path.exists(platform_yaml):
-            with open(platform_yaml, "w", encoding="utf-8") as f:
-                f.write(PLATFORM_YAML_TEMPLATE)
-            created.append("platform.yaml")
 
     for name in created:
         print(f"  ✅ {name}")
@@ -77,12 +59,8 @@ def scaffold(agent_name, description="", tools=None):
     if not created:
         print("  （所有文件已存在，无需创建）")
 
-    print(f"\n📂 source/{agent_name}/ 脚手架完成")
-    if platform_mode:
-        print(f"   待手动创建：prompt.md, testcases.csv, ideal_state.md")
-        print(f"   待手动编辑：platform.yaml（填写 LLM 和 MCP 配置）")
-    else:
-        print(f"   待手动创建：prompt.md, ideal_state.md, testcases.csv")
+    print(f"\n📂 source/agents/{agent_name}/ 脚手架完成")
+    print(f"   待手动创建：prompt.md, ideal_state.md, testcases.csv")
 
 
 PLATFORM_YAML_TEMPLATE = """\

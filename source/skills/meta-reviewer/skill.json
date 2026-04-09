@@ -1,0 +1,10 @@
+{
+  "type": "skill",
+  "name": "meta-reviewer",
+  "description": "提示词反作弊审查专家，独立审查提示词是否存在作弊（抄袭 ExpectedOutput）、过拟合或泛化性不足的问题。内部专用，不面向用户。",
+  "tools": [
+    "read"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

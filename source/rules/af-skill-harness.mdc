@@ -1,40 +1,46 @@
 ---
-description: "Agent Factory - create_skill 模式：通过 Skill Test Harness Agent（方案 D）创建和管理 Skill 的完整流程。触发词：create_skill、创建 Skill、新建 Skill"
+description: "Agent Factory - create skill 模式：创建和管理 Skill 的完整流程。触发词：create skill、创建 Skill、新建 Skill。Skill 测试通过 meta-skill-harness 动态套壳实现。"
 globs:
 alwaysApply: false
 ---
 
-# create_skill 模式（方案 D：Skill Test Harness Agent）
+# create skill 模式
 
 ## 概述
 
-`create_skill` 通过 **Skill Test Harness Agent** 方案（方案 D）将 Skill 的生命周期管理融入现有 Agent Factory 管道。
+`create skill` 将 Skill 的生命周期管理融入现有 Agent Factory 管道。
 
-**核心思想**：不修改 Agent Factory 的任何现有管道，而是把"测试 Skill"转化为"测试一个加载了该 Skill 的特殊 Agent"。
+**核心思想**：不修改 Agent Factory 的任何现有管道，而是把"测试 Skill"转化为"测试一个加载了该 Skill 的动态壳 Agent"。
 
 ```
                 ┌─────────────────────────────────────────┐
                 │         Agent Factory（完全不变）          │
-                │  test_agent / evo_looper / calibrate     │
+                │  test / iterate / calibrate              │
                 └──────────────────┬──────────────────────┘
                                    │
                     ┌──────────────┴──────────────┐
                     │                              │
                     ▼                              ▼
           ┌──────────────────┐          ┌──────────────────┐
-          │   普通 Agent      │          │  Harness Agent    │
+          │   普通 Agent      │          │ meta-skill-harness│
+          │   source/agents/  │          │ （动态壳，运行时   │
+          │   [AgentName]/    │          │  注入 Skill 名称） │
           │   prompt.md       │          │  prompt.md（只读）│
-          │                   │          │   ↓ use_skill →  │
-          │                   │          │   加载目标 Skill   │
-          └──────────────────┘          └────────┬─────────┘
+          └──────────────────┘          │   ↓ use_skill →  │
+                                        │   加载目标 Skill   │
+                                        └────────┬─────────┘
                                                   │
                                                   ▼
                                         ┌──────────────────┐
                                         │  目标 Skill       │
-                                        │  SKILL.md（优化目标）│
+                                        │  source/skills/   │
+                                        │  [SkillName]/     │
+                                        │  SKILL.md（优化）  │
                                         │  scripts/         │
                                         └──────────────────┘
 ```
+
+**V2 架构变化**：不再为每个 Skill 生成独立的 `skill-harness-[SkillName]` 目录。取而代之的是一个通用的 `meta-skill-harness` 壳 Agent（位于 `source/agents/meta-skill-harness/`），规则层在运行时通过目录位置（`source/skills/` vs `source/agents/`）自动识别目标为 Skill 并套壳。
 
 ---
 
@@ -89,7 +95,7 @@ alwaysApply: false
    - 产物质量（Artifact Quality）
    - 跨会话一致性（Cross-session Consistency）
 
-4. 创建子目录：`scripts/`、`config/`、`references/`
+4. 创建子目录：`scripts/`、`references/`、`tmp/`、`bak/`
 
 5. **可选**：`trigger_tests.yaml` — 触发测试用例：
    ```yaml
@@ -102,28 +108,21 @@ alwaysApply: false
    expected_rate: 0.9
    ```
 
-### 步骤 3：自动生成 Harness Agent
-
-运行：
+### 步骤 3：安装 Skill
 
 ```bash
-./venv/bin/python scripts/create_harness.py [SkillName]
+./venv/bin/python scripts/install.py [SkillName]
 ```
 
-脚本自动创建 `source/skill-harness-[SkillName]/`，包含：
-- `agent.json`（含 `harness` 字段）
-- `prompt.md`（Harness 模板，只读）
-- `ideal_state.md`（从 Skill 复制或生成）
-- `changelog.md`
-- `.mcp.json`
-- `skills/[SkillName]/`（被测 Skill 的副本）
+`install.py` 自动识别 `source/skills/[SkillName]/` 为 Skill，将其分发到各 IDE 的 `skills/` 目录（排除测试产物）。
 
 ### 步骤 4：生成测试用例
 
-调用 `meta-testcase-gen` 为 Harness Agent 生成测试用例：
+调用 `meta-testcase-gen` 为 Skill 生成测试用例：
 - Input 应覆盖 Skill 的各种使用场景
 - ExpectedOutput 应包含对 Skill 执行结果的描述
 - Judge 应包含 Skill 评估五维中的 workflow、artifact 等轴
+- 测试产物写入 `source/skills/[SkillName]/testcases.yaml`
 
 **额外**：若存在 `trigger_tests.yaml`，建议运行触发测试：
 ```bash
@@ -139,13 +138,7 @@ alwaysApply: false
 - `axis:artifact` — 产物质量
 - `axis:consistency` — 跨会话一致性
 
-### 步骤 6：安装
-
-```bash
-./venv/bin/python scripts/install.py skill-harness-[SkillName]
-```
-
-### 步骤 7：完成输出
+### 步骤 6：完成输出
 
 ```
 ✅ Skill 创建完成！
@@ -154,39 +147,59 @@ alwaysApply: false
   - source/skills/[SkillName]/skill.json
   - source/skills/[SkillName]/SKILL.md
   - source/skills/[SkillName]/ideal_state.md
+  - source/skills/[SkillName]/testcases.yaml
 
-🤖 Harness Agent:
-  - source/skill-harness-[SkillName]/agent.json
-  - source/skill-harness-[SkillName]/prompt.md（只读）
-  - source/skill-harness-[SkillName]/testcases.yaml
+🤖 动态壳 Agent（无需手动创建，规则层自动套壳）:
+  - source/agents/meta-skill-harness/
 
 后续步骤:
-  1. test_agent skill-harness-[SkillName]    # 测试
-  2. evo_looper skill-harness-[SkillName]    # 迭代优化 SKILL.md
-  3. calibrate skill-harness-[SkillName]     # 评估体系诊断
+  1. test [SkillName]        # 测试（自动套壳 meta-skill-harness）
+  2. iterate [SkillName]     # 迭代优化 SKILL.md
+  3. calibrate [SkillName]   # 评估体系诊断
 ```
 
 ---
 
-## evo_looper 的 Harness 适配
+## 动态套壳机制
 
-当 `evo_looper` 检测到 `agent.json` 中存在 `harness` 字段且 `prompt_is_readonly` 为 `true` 时：
+### 识别规则（由规则层判断，不依赖 agent.json 标记）
+
+1. `test` / `iterate` / `calibrate` 的目标名 → 先查 `source/agents/` → 再查 `source/skills/`
+2. 目标在 `source/skills/` 下 → 自动套壳 `meta-skill-harness`
+3. `meta-skill-harness` 的 `prompt.md` 中 `{{SKILL_NAME}}` 由规则层替换为实际 Skill 名
+
+### meta-skill-harness 壳 Agent
+
+位于 `source/agents/meta-skill-harness/`，是唯一的通用壳 Agent：
+- `prompt.md`：只读模板，包含 `{{SKILL_NAME}}` 占位符
+- `agent.json`：元数据（tools: `[read, write, bash]`）
+- 壳 Agent 的作用：通过 `use_skill(command="{{SKILL_NAME}}")` 加载目标 Skill，然后按 SKILL.md 指令执行
+
+### Skill 测试前的确认
+
+确认 Skill 已分发安装（检查 `.<ide>/skills/[SkillName]/` 是否存在）。若未安装，运行 `install.py [SkillName]`。
+
+---
+
+## iterate 对 Skill 的适配
+
+当 `iterate` 的目标在 `source/skills/` 下时：
 
 ### 优化目标重定向
 
 步骤 C（优化提示词）的行为变化：
 
-| 操作 | 普通 Agent | Harness Agent |
-|------|-----------|--------------|
-| 备份 | `prompt.md` → `bak/` | `source/skills/[SkillName]/SKILL.md` → `source/skills/[SkillName]/bak/` |
+| 操作 | 普通 Agent | Skill（动态套壳） |
+|------|-----------|------------------|
+| 备份 | `source/agents/[AgentName]/bak/prompt_*.bak` | `source/skills/[SkillName]/bak/SKILL_*.bak` |
 | 优化 | `meta-prompt-engineer` 优化 `prompt.md` | `meta-prompt-engineer` 优化 `SKILL.md` |
-| 写入 | 写回 `prompt.md` | 写回 Skill 源的 `SKILL.md` + 同步到 Harness 的 `skills/` |
-| 安装 | `install.py [AgentName]` | `install.py skill-harness-[SkillName]` |
+| 写入 | 写回 `source/agents/[AgentName]/prompt.md` | 写回 `source/skills/[SkillName]/SKILL.md` |
+| 安装 | `install.py [AgentName]` | `install.py [SkillName]` |
 
 ### 脚本层问题处理
 
 若分数不提升且评估报告指出问题在 Skill 的 `scripts/` 脚本层面：
-- 暂停 evo_looper
+- 暂停 iterate
 - 生成脚本修改建议（问题描述 + 建议修改方向）
 - 等待人工介入修复脚本后继续
 
@@ -194,10 +207,10 @@ alwaysApply: false
 
 ## 与现有 Agent 流程的关系
 
-| 流程 | 普通 Agent | Harness Agent（Skill） |
-|------|-----------|----------------------|
-| `create_agent` | ✅ 正常 | 不使用（用 `create_skill` 代替） |
-| `test_agent` | ✅ 正常 | ✅ 完全复用（Harness 视为普通 Agent） |
-| `evo_looper` | ✅ 正常 | ✅ 复用 + 优化目标重定向 |
+| 流程 | 普通 Agent | Skill（动态套壳） |
+|------|-----------|------------------|
+| `create agent` | ✅ 正常 | 不使用（用 `create skill` 代替） |
+| `test` | ✅ 正常 | ✅ 完全复用（规则层自动套壳） |
+| `iterate` | ✅ 正常 | ✅ 复用 + 优化目标重定向到 SKILL.md |
 | `calibrate` | ✅ 正常 | ✅ 完全复用 |
-| `create_testcases` | ✅ 正常 | ✅ 完全复用（为 Harness Agent 生成用例） |
+| `create testcases` | ✅ 正常 | ✅ 完全复用（测试产物存于 `source/skills/[SkillName]/`） |

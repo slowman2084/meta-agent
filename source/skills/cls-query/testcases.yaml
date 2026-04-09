@@ -1,0 +1,4259 @@
+meta:
+  count: 40
+  notice: ''
+cases:
+- Input: 帮我看下omp-trace-log最近1天有哪些接口报错了,按错误数排个序
+  ExpectedOutput: "---\n\n## 📋 摘要\n\n**时间范围**: 2026-03-14 17:48:25 ~ 2026-03-15 17:48:25 (最近1天)  \n**Topic**: omp-trace-log (310ded45-de57-4284-9290-24b49e2708d0)  \n**关键发现**: 整体错误率约 **1.36%**，主要为 401 未授权错误，500 服务端错误极少（仅 3 条）  \n**⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n---\n\n## 🔍 核心结论\n\n1. **系统整体健康**: 200 成功响应占比 **98.5%**（176,845 次），错误率处于正常水平\n2. **主要错误类型**: **401 未授权错误**（2,429 次，占错误总数的 **99.8%**），疑似认证/鉴权问题或扫描探测行为\n3. **500 服务端错误极少**: 仅 3 条，分布在 3 个不同接口，无集中爆发点\n4. **高频错误接口**: `/api/system-manager/feedback/score` 以 1,163 次 401 错误位居榜首\n\n---\n\n## 📊 关键数据\n\n### 状态码分布\n\n| 状态码 | 次数 | 占比 | 说明 |\n|--------|------|------|------|\n| 200 | 176,845 | 98.5% | 正常响应 |\n| 401 | 2,429 | 1.35% | 未授权（主要错误） |\n| null | 154 | 0.09% | 无状态码（可能连接失败） |\n| 302 | 139 | 0.08% | 重定向 |\n| 404 | 2 | <0.01% | 资源不存在 |\n| 500 | 2 | <0.01% | 服务端错误 |\n\n### Top 10 错误接口（按错误数排序）\n\n| 排名 | 接口 URL | 状态码 | 错误次数 | 错误类型 |\n|------|----------|--------|----------|----------|\n| 1 | `/api/system-manager/feedback/score` | 401 | 1,163 | 未授权 |\n| 2 | `/api/index/checkActivityTime?activityKey=LUCKY_CHARM` | 401 | 475 | 未授权 |\n| 3 | `/panshi/readSavePageRoutesDate` | 401 | 420 | 未授权 |\n| 4 | `/panshi/savePageRoutes` | 401 | 273 | 未授权 |\n| 5 | `/panshi/readReferrer` | 401 | 6 | 未授权 |\n| 6 | `/api/.env` | 401 | 3 | 未授权（疑似扫描） |\n| 7 | `/api/actuator/health` | 401 | 3 | 未授权 |\n| 8 | `/api/v1/status/flags` | 401 | 3 | 未授权 |\n| 9 | `/api/dashboard/866620/query` | 404 | 2 | 资源不存在 |\n| 10 | `/api/v1/database/2` | 401 | 2 | 未授权 |\n\n### 500 错误详情（需重点关注）\n\n| 接口 URL | 状态码 | 错误次数 |\n|----------|--------|----------|\n| `/api?legacy_billing-cpq-cbm-backend/cbm.CpqConfigMgtAdmin.batchGetSpuByCategory` | 500 | 1 |\n| `/api?tpms/post.api.hrManage.hrPlan.finishedList` | 500 | 1 |\n| `/api?jf-quotation/qcloud.effect.mistakeProductValidate` | 500 | 1 |\n\n---\n\n## 📝 详细分析\n\n### 401 错误分析\n- **特征**: 大量 401 错误集中在 `/api/system-manager/feedback/score` 等系统管理类接口\n- **可能原因**:\n  1. Token 过期或失效导致用户会话中断\n  2. 部分接口未正确传递认证信息\n  3. 存在自动化扫描/探测行为（如 `/api/.env`、`/api/actuator/health` 等敏感路径访问）\n  4. 权限配置变更导致部分用户失去访问权限\n\n### 500 错误分析\n- **特征**: 仅 3 条，分散在不同业务模块（billing、hrManage、quotation）\n- **评估**: 属于偶发性错误，无系统性故障迹象\n- **建议**: 可进一步查看具体错误堆栈定位根因\n\n---\n\n## 🛠️ 建议\n\n### 立即行动\n- [ ] **排查 401 错误根因**: 针对 `/api/system-manager/feedback/score` 接口，检查认证中间件配置和 Token 验证逻辑\n- [ ] **安全扫描防护**: 对 `/api/.env`、`/api/actuator/*` 等敏感路径访问进行监控，确认是否为恶意扫描\n\n### 下一步洞察\n1. **下钻 Top 1 错误**: 查询 `/api/system-manager/feedback/score` 401 错误的用户分布和时间分布，确认是特定用户问题还是普遍现象\n2. **对比历史基线**: 对比昨日/上周同期 401 错误量，判断是否为新增问题\n3. **500 错误详情**: 查看 3 条 500 错误的具体堆栈信息，定位代码问题\n\n如需进一步分析，请告知具体方向（如查看某个接口的详细日志、按用户维度分析等）。"
+  Judge:
+  - criterion: 首句直接点明最近 1 天报错最多的接口，并给出错误数；如头部不够集中，也要顺带说明整体分布是集中还是分散，不以“根据查询结果显示”等铺垫开场。
+    points: 10
+    tags:
+    - axis:expression
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 回答正文按“核心结论 → 数据/证据 → 🛠️ 下一步”顺序组织：P0 结论置顶，P1 统计证据居中，P2 补充说明放后，不把补充明细或过程说明挤到开头。
+    points: 10
+    tags:
+    - axis:structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 数据/证据层使用结构化表格展示按错误数降序的接口 TopN（默认收敛到约 Top5），表格至少包含接口标识、错误数，以及 1 个辅助判断列（如主状态码、主 retcode、最近报错时间或主要错误类型）。
+    points: 10
+    tags:
+    - axis:structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 只有当“报错”统计明确覆盖所有非 2xx HTTP 状态码时，该核心项才给分：1. HTTP 4xx（400, 401, 403, 404, 429 等）属于客户端错误；2. HTTP 5xx（500, 502, 503, 504 等）属于服务端错误；3. null/空状态码表示连接失败或无响应；4. “哪些接口报错了”的查询应包含所有非 2xx 状态码，而非仅查询 status:500。若最终交付的是错误日志量、error/fail 关键词命中量或其他降级口径，即使有说明，也一律不给该核心项分。
+    points: 5
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 文本表达做到“说人话”：对统计结果给出用户可直接理解的解释，例如“错误主要集中在 1~2 个接口”，而不是只贴 SQL、字段名、count 值或 status/retcode 原始列名。
+    points: 8
+    tags:
+    - axis:expression
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 作为 Quantify / 类型 B 输出，若存在明显头部异常，会在表格后单独用“⚠️ 异常项”或等价小节点点出头部接口与异常集中点；若分布均匀，则会明确说明“未见突出的头部异常”。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在存在明确头部接口时，给出排行后会自动向前推进一步到模式观察：以“同时，我已经帮你看了…”或等价承接，补充至少 1 条关于 Top1/TopN 的规律判断，优先落到状态码、retcode、时间段、host/实例等可继续排查的维度。
+    points: 10
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 自动衔接一步后能够及时收束，并以“🛠️ 下一步”或等价收尾，明确给出具体的再下一步建议或询问是否继续下钻，且点明要继续看的对象（如某个接口、错误码、异常时段或实例），而不是停在泛泛的“建议进一步排查”。
+    points: 8
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若查询过程中出现空结果、超时后改为采样/缩窗、字段缺失、时间戳偏移等数据问题，会主动提醒“发现了什么 → 对结果有什么影响 → 可采用什么替代方案”；其中空结果场景不能只说“没有数据”，而要交代已核查的 Topic/时间/Query 线索。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当用户画像未明时，默认采用一线排障视角的信息粒度：至少下沉到接口路径级，并尽量补充状态码/retcode、最近报错时间、集中时段或实例线索，而不是只停留在“某服务错误较多”的管理层摘要。
+    points: 8
+    tags:
+    - axis:persona
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当首次 SearchLog 返回空结果时，不会直接以“最近 1 天没有报错接口”结束；工具轨迹中会继续围绕 Topic、时间范围、Query/错误条件至少调整 1 轮，并在最终答复里给出可执行的排查建议。
+    points: 10
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 若复杂 SQL 执行报错，会立即停止在同一条 SQL 上反复硬改硬试，优先降级为 TextToSearchLogQuery 生成 SQL；若仍不稳，再回退到基础检索或分步聚合，而不是卡死在单条复杂 SQL 上。
+    points: 10
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:tool_trace
+  - criterion: 若 TextToSearchLogQuery 生成的 SQL 执行报错，会先检查字段名是否匹配当前 Topic Schema，并通过小样本嗅探字段或重述分析意图后再试；若仍失败，再回退基础检索，而不是直接把工具报错原样甩给用户。
+    points: 10
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 若 GetTopicInfo / GetTopicInfoByName 无结果，不会把“找不到 Topic”当终点；会转为模糊搜索并列出候选 Topic，帮助用户确认是否是 Topic 名拼写、环境或命名差异。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 当工具调用次数已经偏多（尤其接近或超过 10 次）时，会主动收束：停止盲目追加调用，汇报已确认的 Topic、时间范围、已试查询与当前卡点，并询问用户是否继续或改换方向。
+    points: 8
+    tags:
+    - axis:efficiency
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 输出只有裸表格、裸数字、原始日志或 SQL 结果，没有一句话结论，或没有“自动衔接一步/下一步”收束。
+    points: -10
+    tags:
+    - axis:structure
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 遇到工具异常后，要么直接以“没查到/工具报错”结束，要么把回答主体写成冗长的重试过程、采样参数和工具名堆砌，没有形成排查结论、候选项或下一步建议。
+    points: -10
+    tags:
+    - axis:robustness
+    - type:negative
+    - eval_source:tool_trace_and_actual_result
+- Input: d036bd9c-6a9d-4567-8d3b-a1d93a452dc9的日志里最近3天有多少个不同的instance_id在上报数据
+  ExpectedOutput: "## 📊 **统计结果报告**\n\n### 📋 摘要\n- **Topic ID**: `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9`\n- **时间范围**: 2026-03-12 17:54:02 至 2026-03-15 17:54:02（最近3天）\n- **查询类型**: 不同 instance_id 数量统计\n\n### 📈 关键数据\n\n| 指标 | 数值 |\n|------|------|\n| **不同 instance_id 数量** | **88,576** |\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n### 📝 查询语句\n```sql\n* | select approx_distinct(instance_id)\n```\n\n### 💡 业务解读\n\n在最近3天（2026-03-12 至 2026-03-15）内，Topic `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 共有约 **8.86万个不同的 instance_id** 在上报数据。\n\n这是一个相当大的实例规模，表明该 Topic 可能服务于一个大规模的分布式系统或微服务集群。\n\n### 🔍 下一步洞察建议\n\n1. **实例健康度分析**: 可进一步分析这些 instance_id 的上报频率分布，识别是否存在僵尸实例或热点实例\n   ```sql\n   * | select instance_id, count(*) as log_count group by instance_id order by log_count desc limit 20\n   ```\n\n2. **时间维度分析**: 查看 instance_id 的活跃趋势，了解是否有实例频繁上下线\n   ```sql\n   * | select histogram(__TIMESTAMP__, interval 1 hour) as time, approx_distinct(instance_id) group by time order by time\n   ```\n\n3. **地域分布分析**: 如果日志中包含地域信息，可分析实例的地域分布情况"
+  Judge:
+  - criterion: 直接将输入中的 UUID `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 作为 `TopicId` 使用，输出中体现该 TopicId，未进行不必要的名称查找。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "时间处理（互斥评分）：输出中的时间范围与'最近3天'一致（如起止时间合理、日期有效），判为正确(+10)；若出现无效日期（如'04-00'）、错误年份或明显手算痕迹，判为错误(-12)。两者互斥，只取一个。"
+    points: 10
+    negative_points: -12
+    tags:
+    - axis:reliability
+    - type:mutual_exclusive
+    - eval_source:actual_result
+  - criterion: 将本题识别为基础 Quantify 去重统计，输出为简洁统计结果；未误升级为复杂排障或紧急模式。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "去重函数选择（互斥评分）：输出的元信息中体现使用了近似去重（如 APPROX_DISTINCT / HyperLogLog），或误差声明存在，判为正确(+10)；若元信息显示'全量无采样'且无误差声明，暗示使用了精确计数（COUNT DISTINCT），判为错误(-10)。两者互斥。"
+    points: 10
+    negative_points: -10
+    tags:
+    - axis:accuracy
+    - type:mutual_exclusive
+    - eval_source:actual_result
+  - criterion: "采样策略（加分项）：输出的元信息中声明启用了采样（如 SamplingRate=0.1）。此项为 bonus，不计入 total_positive 分母。"
+    points: 8
+    tags:
+    - axis:efficiency
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: 回答首句直接给出"最近3天约有 N 个不同的 instance_id 在上报数据"这一数量结论，不以"经过分析""查询结果如下"等铺垫性废话开头。
+    points: 10
+    tags:
+    - axis:communication
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出中包含关于近似去重的误差声明（如"估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）"）。仅当使用了近似函数时适用；若使用精确计数则此项不参与计分。
+    points: 8
+    tags:
+    - axis:safety
+    - type:conditional
+    - condition: actual_result中体现使用了近似去重函数
+    - eval_source:actual_result
+  - criterion: 在给出去重数量后，补充必要的业务解释，并自动衔接至少一个下一步洞察方向（分布、趋势、健康度、历史对比四选一即可），而不是只报一个裸数字后结束。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "异常处理能力（条件触发）：若查询结果为空、`instance_id` 字段缺失或工具调用异常，输出中提供了至少一条继续排查或降级动作。仅当实际遇到异常场景时评估此项；正常返回数据时不参与计分。"
+    points: 8
+    tags:
+    - axis:robustness
+    - type:conditional
+    - condition: 查询结果为空或遇到异常
+    - eval_source:actual_result
+  - criterion: 遇到空结果、字段缺失或工具报错时，只回复"没有数据/查询失败"即结束，没有任何兜底核查、降级查询或下一步建议。
+    points: -8
+    tags:
+    - axis:robustness
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-clb-prod这周的数据,帮我统计下每个status码的请求数量和平均响应时间
+  ExpectedOutput: "---\n\n## 📊 **d.qq.com-clb-prod 本周 HTTP 状态码分析报告**\n\n📋 **摘要**：2026-03-09 至 2026-03-15 | Topic: d.qq.com-clb-prod | 总请求量约 **400,535** 条（估算值，误差 ≤5%）\n\n---\n\n### 📈 **Status 码分布统计**\n\n| Status 码 | 请求数量 | 占比 | 平均响应时间 | 业务含义 |\n|-----------|---------|------|-------------|----------|\n| **200** | 232,814 | 58.12% | 72.9 ms | ✅ 正常响应 |\n| **404** | 47,832 | 11.94% | 27.1 ms | ⚠️ 资源未找到 |\n| **206** | 36,278 | 9.06% | 601.9 ms | ✅ 部分内容（断点续传）|\n| **401** | 18,487 | 4.62% | 5.7 ms | ⚠️ 未授权 |\n| **101** | 15,254 | 3.81% | **1345.8 ms** | 🔶 WebSocket 协议切换 |\n| **308** | 14,912 | 3.72% | 6.5 ms | ✅ 永久重定向 |\n| **304** | 11,688 | 2.92% | 33.4 ms | ✅ 缓存未修改 |\n| **302** | 6,491 | 1.62% | 25.3 ms | ✅ 临时重定向 |\n| **400** | 6,432 | 1.61% | 201.9 ms | ⚠️ 请求参数错误 |\n| **307** | 4,352 | 1.09% | 39.3 ms | ✅ 临时重定向 |\n| **501** | 2,060 | 0.51% | 28.7 ms | ❌ 服务器不支持 |\n| **499** | 1,053 | 0.26% | 664.6 ms | ⚠️ 客户端主动断开 |\n| **0** | 1,047 | 0.26% | 0.4 ms | 🔶 连接未建立/超时 |\n| **403** | 626 | 0.16% | 51.3 ms | ⚠️ 禁止访问 |\n| **204** | 604 | 0.15% | 33.1 ms | ✅ 无内容 |\n| **301** | 429 | 0.11% | 2.8 ms | ✅ 永久重定向 |\n| **201** | 136 | 0.03% | 420.8 ms | ✅ 创建成功 |\n| **405** | 17 | <0.01% | 4.9 ms | ⚠️ 方法不允许 |\n| **500** | 10 | <0.01% | 55.4 ms | ❌ 服务器内部错误 |\n| **504** | 5 | <0.01% | **60007.4 ms** | ❌ 网关超时 |\n| **502** | 4 | <0.01% | 24.5 ms | ❌ 网关错误 |\n| **其他** | 8 | <0.01% | - | 422, 409, 416, 503 |\n\n---\n\n### 🔍 **核心洞察**\n\n1. **整体健康度良好**：200 响应占比 **58.12%**，加上 30x 重定向和 304 缓存命中，正常流量占比约 **70%**\n\n2. **需关注异常**：\n   - **404 占比 11.94%**：比例偏高，可能存在无效链接或爬虫访问\n   - **101 WebSocket 切换**：平均响应时间 **1345.8 ms**，需要关注长连接性能\n   - **504 网关超时**：虽仅 5 条，但平均耗时 **60 秒**，严重影响用户体验\n\n3. **客户端问题**：\n   - **499 客户端断开**：1053 条，平均响应时间 664.6 ms，可能因后端响应慢导致用户放弃等待\n\n4. **错误码分布**：\n   - 4xx 错误总计约 **75,000** 条（18.7%），以 404 和 401 为主\n   - 5xx 错误极少（约 19 条），后端服务稳定性较好\n\n---\n\n### 🛠️ **建议**\n\n1. **排查 404 来源**：分析 404 请求的 URI 分布，识别是正常业务缺失还是恶意扫描\n   ```\n   * | SELECT uri, COUNT(*) as count WHERE status=404 GROUP BY uri ORDER BY count DESC LIMIT 20\n   ```\n\n2. **优化 WebSocket 连接**：101 状态码响应时间较长，建议检查握手过程\n   ```\n   * | SELECT AVG(request_time), MAX(request_time) WHERE status=101\n   ```\n\n3. **关注 504 超时**：排查后端服务在特定时段是否存在性能瓶颈\n   ```\n   * | SELECT time_local, uri, upstream_response_time WHERE status=504\n   ```\n\n4. **减少 499 断连**：分析 499 请求的 upstream_response_time，判断是后端慢还是网络问题"
+  Judge:
+  - criterion: 将 `d.qq.com-clb-prod` 识别为 TopicName，并先完成 Topic 定位拿到唯一 TopicId 后再发起统计查询。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 使用时间工具处理“这周”窗口：先获取当前时间，再将周级起点与结束时间转换为时间戳，且最终查询的 From/To 与用户的本周诉求一致。
+    points: 10
+    tags:
+    - axis:time_handling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若周级查询触发超时或数据量压力，采用采样、分段或缩窄时间范围的降级策略继续完成统计，而不是原样反复重试。
+    points: 6
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终有效聚合查询以用户指定的 `status` 为分组键，并同时产出每个状态码的请求数量与平均响应时间（真实耗时字段可为 `request_time` 或 `upstream_response_time` 之一）。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 当平均响应时间字段首次报错或不确定时，通过样本日志或 Schema 嗅探修正到真实字段后继续完成统计，而不是停在 `Column cannot be resolved`。
+    points: 10
+    tags:
+    - axis:recovery
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回复以核心统计结论或主导分布开头，不以“查询结果如下”“经过分析”等空泛过渡语开头。
+    points: 8
+    tags:
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回复明确写出本周统计的可读时间范围与 Topic 标识，且不向用户直接暴露裸毫秒时间戳。
+    points: 6
+    tags:
+    - axis:readability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结果主体提供一个结构化数据块（Markdown 表格或等价结构化列表），逐项列出各 `status` 码的请求数量与平均响应时间，并按请求量或关注度排序以便快速识别头部状态码。
+    points: 10
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在结论或结构化数据中明确给出至少一个占比信息（如 200 占比、4xx/5xx 占比或 TopN 占比），帮助用户理解分布结构，而不只是堆叠绝对数量。
+    points: 6
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在统计结果之后，至少点出一个异常对象（异常状态码、高延迟状态码或非标准状态码），并明确下一步应按接口字段（如 `request`/`uri`）或按时段继续下钻。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对异常原因采用“可能 / 建议排查”这类审慎表述，并将结论与假设区分开；说明应人话化，不仅仅罗列状态码含义。
+    points: 6
+    tags:
+    - axis:safety
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未调用时间转换工具而直接手写/硬编码 Unix 毫秒时间戳，或把“这周”处理成与用户请求不一致的任意短时段。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 字段缺失、空结果或查询报错后直接停在错误信息，未尝试样本/Schema 嗅探、替代字段、采样/缩窄范围，且未给出可执行的兜底路径。
+    points: -10
+    tags:
+    - axis:robustness
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 平均响应时间的单位在摘要、元信息、表格中必须保持一致；若做单位换算必须显式标注。对常见状态码的语义解释不得明显错置，尤其 499 应解释为客户端主动断开而非服务器端错误。
+    points: 6
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+- Input: d.qq.com-clb-prod过去3天的upstream_response_time数据波动大不大
+  ExpectedOutput: '**输出：**:
+
+    ## 结论
+
+    **波动非常大。** 但本质是"双峰分布"——绝大多数请求极快（P50 ≈ 0.02~0.09ms），少量请求严重卡顿（P99 可达数秒~数十秒），均值和标准差被长尾极度拉高。
+
+    波动严重程度的量化指标：**变异系数（CV = stddev / avg）**
+
+    - 正常时段：CV ≈ 5~15
+
+    - 异常时段：CV 达到 **33~53**，即标准差是均值的数十倍
+
+    ---
+
+
+    ## 各时段波动情况（正常 → 最严重）
+
+
+    | 时段 | P50 | avg | stddev | CV | P99 | 类型 |
+
+    |------|-----|-----|--------|----|-----|------|
+
+    | 03-01 18:00 | 0.02ms | 4.6ms | 99ms | 21 | 94ms | 正常基线 |
+
+    | 02-28 17:00 | 0.09ms | 23ms | 197ms | 9 | 241ms | 轻度 |
+
+    | 02-28 11:00 | 0.05ms | 230ms | 2,263ms | 10 | 5,095ms | 中度 |
+
+    | 03-01 09:00 | 0.02ms | 95ms | 3,128ms | 33 | 177ms | 中度（偶发长尾）|
+
+    | 02-28 04:00 | 0.05ms | 231ms | 3,399ms | 15 | 3,628ms | 严重 |
+
+    | 02-28 10:00 | 0.06ms | 372ms | 4,194ms | 11 | 10,735ms | 严重 |
+
+    | 02-27 22:00 | 0.04ms | 733ms | 7,511ms | 10 | 34,490ms | 最严重 |'
+  Judge:
+  - criterion: 以 `d.qq.com-clb-prod` 作为 TopicName 调用了 `GetTopicInfoByName`，并在后续查询中使用返回的 TopicId；未把该名称误判为 UUID。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 时间处理严格走工具链：先无参调用 `ConvertTimestampToTimeString()` 获取当前时间，再分别将“当前时间”和“当前时间往前 3 天”的时间字符串送入 `ConvertTimeStringToTimestamp()` 生成 `To`/`From`。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对“过去 3 天”这一 ≥48h 窗口，`SearchLog` 查询启用了采样（如 `SamplingRate=0.1`）；若未启用采样，工具轨迹中明确出现了用户要求精确值或等效的充分理由。
+    points: 8
+    tags:
+    - axis:efficiency
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在执行波动分析前或字段报错后，对 `upstream_response_time` 做了字段存在性校验，并在查询/结论中始终使用该字段；未混用 `request_time`、`stgw_engine_response_time` 等相近字段。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 查询或结果将过去 3 天按固定时间粒度分桶（如 1 小时），并明确标出波动最严重的时段或说明“未见异常时段”；不是只给 3 天整体聚合。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 波动判断包含 `stddev(upstream_response_time)` 或 `variance(upstream_response_time)` 之一，作为回答“波动大不大”的直接依据。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 除 `avg` 外，还给出了至少一类基线/长尾证据来支撑结论：`p50/p95/p99`、昨日/上周同期 `compare`、`avg±3σ`、或等价的同环比/分位数基线之一。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答首句直接回答“波动大不大”，结论为“波动大 / 波动不大 / 暂无法判断”之一，而不是以“经过分析”“查询结果如下”等铺垫开头。
+    points: 10
+    tags:
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论后用结构化方式呈现波动依据（表格、分时段列表或等价结构），并至少给出 1 条口语化解释，如“标准差是均值的 X 倍”或“P99 明显高于 P50”。
+    points: 8
+    tags:
+    - axis:readability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 完成 Discover 判断后，自动向前衔接一步：要么量化异常时段的影响面（如异常桶数、请求量、占比），要么继续按 `server_addr`、`upstream_addr`、`upstream_status` 等维度下钻来源集中度。
+    points: 10
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出整体呈现为类型 B 的“发现异常/统计巡检”场景：先结论，再波动依据，最后给一步自动衔接的观察或建议；未把重点放在根因修复或止损模板。
+    points: 8
+    tags:
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现字段缺失、空结果或查询报错，最终答复明确交代已核查的 Topic / 时间范围 / Query（至少其一），并给出可执行兜底路径（扩大或缩窄时间范围、放宽条件、改用候选字段或继续验证）。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若 3 天窗口查询触发 `FailedOperation.SearchTimeout` 或明显数据量压力，工具链中执行了“采样重试”或“缩窄时间范围重试”，而不是原样反复重试或直接中断。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 跳过 `GetTopicInfoByName` 或时间转换工具，直接硬编码/臆造 TopicId、起止时间戳，或通过 `From + 3天 = To` 反推 `To` 后执行查询。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 仅凭 `avg(upstream_response_time)` 就下“波动大/不大”结论，或把本题误写成类型 A 排障输出并直接给根因/止损，未提供离散度/基线依据与自动衔接。
+    points: -12
+    tags:
+    - axis:logic
+    - type:negative
+    - eval_source:actual_result
+- Input: omp-trace-log过去一周的数据,帮我做个异常检测,看看哪些时段的请求量超出正常范围了
+  ExpectedOutput: "现在我已经获取了完整的一周数据。让我分析这些数据并生成异常检测报告。\n\n---\n\n## 📊 **omp-trace-log 过去一周请求量异常检测报告**\n\n**⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n### 📋 摘要\n| 项目 | 内容 |\n|------|------|\n| **时间范围** | 2026-03-08 18:00 ~ 2026-03-15 18:00（7天） |\n| **Topic** | omp-trace-log (310ded45-de57-4284-9290-24b49e2708d0) |\n| **数据采样** | 10% 采样率 |\n| **总时段数** | 168 小时 |\n\n---\n\n### 🔍 核心结论\n\n**发现 2 个明显异常模式：**\n\n1. **🔴 请求量骤降异常（3月14-15日周末）**：周末请求量较工作日下降约 **85-90%**，属于预期内的业务周期性波动\n2. **🟡 工作日高峰时段规律**：每日 10:00-11:00、14:00-17:00 为请求高峰，符合正常业务流量模式\n\n**未发现明显的非预期流量异常（如突发流量激增或异常下跌）**\n\n---\n\n### 📊 关键数据统计\n\n#### 1. 请求量分布概况\n\n| 指标 | 数值（估算） | 说明 |\n|------|-------------|------|\n| **周总请求量** | ~1,680 万 | 基于采样数据推算 |\n| **日均请求量** | ~240 万 | 工作日平均 |\n| **峰值时段** | 3月9日 11:00 | 225,767 请求/小时 |\n| **谷值时段** | 3月9日 04:00 | 266 请求/小时 |\n| **峰谷比** | 849:1 | 正常业务波动范围 |\n\n#### 2. 异常时段识别\n\n**🔴 高流量异常时段（超出均值+2σ）**\n\n| 时间 | 请求量 | 较均值倍数 | 状态 |\n|------|--------|-----------|------|\n| 03-09 11:00 | 225,767 | 3.8x | ✅ 工作日高峰（正常） |\n| 03-09 19:00 | 185,413 | 3.1x | ✅ 工作日高峰（正常） |\n| 03-09 10:00 | 154,491 | 2.6x | ✅ 工作日高峰（正常） |\n| 03-09 14:00 | 133,783 | 2.3x | ✅ 工作日高峰（正常） |\n| 03-09 15:00 | 144,276 | 2.4x | ✅ 工作日高峰（正常） |\n| 03-09 16:00 | 138,709 | 2.3x | ✅ 工作日高峰（正常） |\n\n**🔴 低流量异常时段（低于均值-2σ）**\n\n| 时间 | 请求量 | 较均值比例 | 状态 |\n|------|--------|-----------|------|\n| 03-09 04:00 | 266 | 0.004x | ✅ 凌晨低谷（正常） |\n| 03-09 03:00 | 484 | 0.008x | ✅ 凌晨低谷（正常） |\n| 03-09 02:00 | 1,332 | 0.022x | ✅ 凌晨低谷（正常） |\n| 03-10 04:00 | 2,135 | 0.036x | ✅ 凌晨低谷（正常） |\n| 03-14 06:00 | 1,042 | 0.017x | ⚠️ 周末低谷（偏低） |\n| 03-15 06:00 | 437 | 0.007x | ⚠️ 周末低谷（偏低） |\n\n---\n\n### 📈 流量趋势分析\n\n#### 工作日 vs 周末对比\n\n| 日期类型 | 平均请求量/小时 | 峰值时段 | 特征 |\n|----------|----------------|----------|------|\n| **工作日**（3/9-3/13） | ~60,000 | 10-11点、14-17点 | 双峰模式，正常业务流量 |\n| **周末**（3/14-3/15） | ~8,000 | 无明显高峰 | 流量下降约 **87%** |\n\n#### 每日流量热力图（简化）\n\n```\n时间    03/09  03/10  03/11  03/12  03/13  03/14  03/15\n─────────────────────────────────────────────────────────\n00:00   ████   ███    ████   ████   ███    ██     █\n06:00   █      █      █      █      █      █      █\n09:00   ████████████  ████████████  ████████████  █████\n11:00   █████████████ ████████████  ████████████  █████\n14:00   ████████████  ████████████  ████████████  ████\n17:00   ████████████  ████████████  ████████████  ████\n20:00   ████████      ██████        ████████      ███\n```\n\n**图例**：█ = 10,000 请求/小时\n\n---\n\n### 🛠️ 建议\n\n#### 下一步洞察\n\n1. **📌 周末流量异常偏低需关注**\n   - 3月14-15日周末流量较上周同期下降明显，建议对比历史同期数据确认是否为正常季节性波动\n   - **查询建议**：`SELECT COUNT(*) FROM omp-trace-log WHERE __TIMESTAMP__ BETWEEN '2026-03-01' AND '2026-03-07' GROUP BY histogram(__TIMESTAMP__, INTERVAL 1 DAY)`\n\n2. **📌 延迟异常时段排查**\n   - 3月15日 08:00 平均延迟达 **604ms**，显著高于平均水平（~300ms）\n   - **查询建议**：`SELECT apiPath, AVG(duration) FROM omp-trace-log WHERE __TIMESTAMP__ BETWEEN '2026-03-15 07:00' AND '2026-03-15 09:00' AND duration > 500 GROUP BY apiPath`\n\n3. **📌 建立流量基线告警**\n   - 建议设置动态阈值：工作日低于 30,000/小时 或高于 200,000/小时 触发告警\n   - 周末基线单独设置：低于 2,000/小时 或高于 20,000/小时 触发告警\n\n---\n\n### 📉 使用的 CQL 查询\n\n```sql\n-- 小时级流量统计\n* | SELECT histogram(__TIMESTAMP__, INTERVAL 1 HOUR) AS time_bucket, \n    COUNT(*) AS request_count, \n    AVG(duration) AS avg_latency, \n    APPROX_DISTINCT(trace) AS unique_traces \n  GROUP BY time_bucket \n  ORDER BY time_bucket\n```\n\n---\n\n**报告生成时间**：2026-03-15 18:29  \n**数据置信度**：基于 10% 采样，误差 ≤5%"
+  Judge:
+  - criterion: 对于输入中的 TopicName `omp-trace-log`，调用 `GetTopicInfoByName` 完成 Topic 定位，并使用命中的 `TopicId` 继续后续查询；未将 TopicName 误当作 UUID 直接检索。
+    points: 8
+    tags:
+    - axis:accuracy
+    - angle:意图体系
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“过去一周”先获取当前时间，再通过 `ConvertTimeStringToTimestamp` 生成 From/To；To 对应当前时间，From 对应向前 7 天，未手算 Unix 毫秒时间戳。
+    points: 10
+    tags:
+    - axis:reliability
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对超过 24 小时的查询窗口，调用链中显式体现了采样、分段查询或超时兜底策略之一（如设置 SamplingRate、按天拆分、超时后缩小范围重试）。
+    points: 8
+    tags:
+    - axis:efficiency
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 异常检测基于固定时间桶的请求量时序统计（如 `histogram(__TIMESTAMP__, INTERVAL 1 HOUR)` + `count(*)` 或等价方案），而非仅展示零散原始日志或单点极值。
+    points: 8
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回答开头先明确回答“是否存在异常时段”；若无异常，直接写明“未发现异常时段/仅为正常波动”，若有异常，再进入明细。
+    points: 10
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 明确给出了“正常范围”的可计算基线定义，且在答案中显式披露基线来源、计算对象与所用时间序列/对照窗口；若检测的是请求量，则必须说明基线来自请求量时间序列而非其他字段。若只能给出代理口径，必须改名并说明未直接完成原问题。
+    points: 10
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在每个被判定为异常、预警高峰或最接近阈值的时段，给出了至少一组可计算的量化对比：实际请求量、基线或阈值、以及倍数/差值/σ偏离量中的至少两项。
+    points: 10
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 标出了异常或高峰时段的具体时间区间，并使用用户可读的时间边界；若结论为“无异常”，也至少给出了最接近阈值的头部时段区间。
+    points: 8
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在 Discover 结论后自动衔接了一步 Quantify：若有异常，给出异常影响量（如异常时段请求量、超阈值量、占全周比例）；若无异常，给出最接近异常阈值的高峰量化结果。
+    points: 10
+    tags:
+    - axis:value
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答保持类型 B / 巡检或异常检测骨架：先结论，再基线与关键数据，随后给结构化表格或等价结构；未误用类型 A 的根因排障骨架作为主体。
+    points: 8
+    tags:
+    - axis:style
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当出现 QueryError、空结果或字段缺失时，调用链中执行了兜底动作并继续完成分析（如改写为支持的 CQL、改用 `__TIMESTAMP__`、分段查询、采样或调整阈值），而不是停在报错。
+    points: 8
+    tags:
+    - axis:reliability
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若提供下一步建议，优先延续 Quantify 或基线优化（如查看异常时段占比、按工作日/小时细分基线）；根因定位或止损建议只能置于量化完成之后，不能喧宾夺主。
+    points: 8
+    tags:
+    - axis:logic
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在未给出任何可计算的基线依据或量化对比值的情况下，直接断言“异常/无异常/正常波动/超出正常范围”。
+    points: -15
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 输出中泄露了 API Key、Token、Secret、账号凭证、完整内部配置值或其他敏感信息。
+    points: -8
+    tags:
+    - axis:safety
+    - angle:安全底线
+    - type:negative
+    - eval_source:actual_result
+- Input: tcs-ckafka-broker最近两天每小时的日志量,把明显偏高的时段标出来,我要排查是不是有异常
+  ExpectedOutput: "📋 **摘要**：2026-03-09 ~ 2026-03-16（近7天）| Topic: `omp-trace-log` | Duration 快中慢三档分布统计\n\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），采样率 10%\n\n---\n\n## 🔍 核心结论\n\n**90.4% 的请求在 500ms 内完成（快速档），整体表现健康**。但仍有约 **14.6 万条慢请求（>2s）** 值得关注，其中 Top 1 慢接口 `QueryChartData` 贡献了近 **47% 的慢请求量**，报表查询类接口是主要瓶颈。\n\n---\n\n## 📊 三档统计结果\n\n| 档位 | 条件 | 数量（估算） | 占比 | 平均耗时 | P95 耗时 | 最大耗时 |\n|------|------|------------|------|---------|---------|---------| \n| 🟢 **快** | < 500ms | **6,550,964** | **90.4%** | 87ms | 296ms | 499ms |\n| 🟡 **中** | 500ms ~ 2000ms | **550,167** | **7.6%** | 965ms | 1,756ms | 2,000ms |\n| 🔴 **慢** | > 2000ms | **145,866** | **2.0%** | 5,946ms | 17,503ms | 298,134ms (~5min) |\n| | **合计** | **7,246,997** | **100%** | | | |\n\n\n## 🔎 慢请求归因（>2000ms Top 10 接口）\n\n| 排名 | 接口 (apiPath) | 慢请求数 | 占慢请求% | 平均耗时 |\n|------|---------------|---------|----------|---------| \n| 1 | *(apiPath 为空)* | 72,187 | 49.5% | 5,883ms |\n| 2 | `cdata-worksheet-http/QueryChartData` | 34,571 | 23.7% | 5,983ms |\n| 3 | `cdata-worksheet-http/DescribeFieldValues` | 5,056 | 3.5% | **11,338ms** |\n| 4 | `cdata-worksheet-http/PreviewChartData` | 3,615 | 2.5% | **10,192ms** |\n| 5 | `cdata-worksheet-http/QueryWorksheetData` | 2,331 | 1.6% | 7,654ms |\n| 6 | `cdata-worksheet-http/QueryWorksheetDataCount` | 1,878 | 1.3% | 7,667ms |\n| 7 | `cdata-worksheet-http/QueryWorksheetDataSum` | 1,366 | 0.9% | 7,506ms |\n| 8 | `opportunity_node/get_list` | 979 | 0.7% | 2,677ms |\n| 9 | `opportunity_node/get_operator_lead_total` | 848 | 0.6% | 3,049ms |\n| 10 | `csm/GetCustomerTdwCalculateData` | 817 | 0.6% | 2,577ms |\n\n---\n\n## 💡 洞察与分析\n\n1. **`cdata-worksheet-http` 系列接口是慢请求重灾区**：Top 2~7 全部来自该服务（报表/数据查询场景），合计占慢请求的 **33.5%**，平均耗时高达 **5.9s ~ 11.3s**，其中 `DescribeFieldValues` 和 `PreviewChartData` 平均耗时超 10 秒，P95 约 17.5 秒，**远超通用经验基线（API 响应应 <2s）**。\n\n2. **apiPath 为空的慢请求占比最高（49.5%）**：这些是后端调用（`event=api-request`，非前端入口请求），缺少 apiPath 标识。建议确认是否为内部 RPC 调用或日志采集缺字段。\n\n3. **整体 2% 的慢请求率在可接受范围内**（基于通用经验，P99 通常允许 <5% 慢请求），但极端值达 **298 秒**，存在个别超时未熔断的情况。"
+  Judge:
+  - criterion: 对输入中的 TopicName `tcs-ckafka-broker`，调用 `GetTopicInfoByName` 完成 Topic 定位，并在后续查询中使用返回的 `TopicId`；未把 TopicName 当作 TopicId/UUID 直接检索。
+    points: 8
+    tags:
+    - axis:accuracy
+    - angle:意图体系
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“最近两天”先获取当前时间字符串，再分别调用 `ConvertTimeStringToTimestamp` 生成 From/To；To 对应当前时间，From 对应向前约 48 小时，未手算 Unix 毫秒时间戳。
+    points: 10
+    tags:
+    - axis:reliability
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对约 48 小时查询窗口，调用链体现了 `SamplingRate=0.1`、分段查询，或超时后采样/缩窗重试之一，满足边界场景的性能降级要求。
+    points: 8
+    tags:
+    - axis:robustness
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若最终查询使用了采样，最终答复显式标注了“估算值 / 采样率 / 数据代表性说明”之一，而不是把采样结果当精确值直接陈述。
+    points: 6
+    tags:
+    - axis:reliability
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 统计目标确实是“每小时日志量”，查询采用 `histogram(__TIMESTAMP__, INTERVAL 1 HOUR) + count(*)` 或等价的小时级分桶聚合；未转成错误数、耗时、原始日志列表等其他指标。
+    points: 10
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回答开头先直接回答“最近两天是否存在明显偏高时段”，且结论对象明确为 `tcs-ckafka-broker`；未以“查询结果如下”“经过分析”等空话开头。
+    points: 8
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出中明确给出本次分析的具体时间窗口（起止时间或等价的 48h 边界），便于核对“最近两天”是否被正确执行。
+    points: 6
+    tags:
+    - axis:reliability
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 明确标出异常高峰的具体小时区间，并使用用户可读时间；若窗口内没有明显偏高时段，也明确写出“未见明显偏高时段”并给出最接近阈值的高峰小时，而不是把偏低时段当作主结论。
+    points: 10
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对“明显偏高”给出了可计算的判定依据，且至少包含一种基线：昨日同期、滑动基线、均值±Nσ、P95/P99 阈值或等价方法。
+    points: 10
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对每个被标为明显偏高的时段，都量化给出了“该小时实际日志量 + 基线/阈值 + 倍数/差值/σ偏离量”中的至少三项，不只说“偏高”。
+    points: 12
+    tags:
+    - axis:value
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在 Discover 结论后自动衔接了一步 Quantify：给出异常小时数、异常小时总日志量、占最近两天比例，或等价的影响面量化结果。
+    points: 10
+    tags:
+    - axis:logic
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在量化之后给出 1 条紧贴异常时段的后续观察或排查方向，优先延续 `code`、`msg`、`requestId`、`traceId`、`appId` 等字段的集中度分析或异常时段对比，而不是泛泛而谈。
+    points: 8
+    tags:
+    - axis:value
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答整体使用类型 B / 异常检测骨架：先结论，再基线与关键数据，再结构化异常清单或表格，最后给下一步观察；未套用类型0纯检索骨架。
+    points: 8
+    tags:
+    - axis:style
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段问题或 `FailedOperation.SearchTimeout`，调用链或最终答复中执行了兜底动作，并交代已核查的 Topic / 时间范围 / Query 或失败原因，同时给出继续验证路径（如改用 `__TIMESTAMP__`、采样、缩窗、分段或放宽条件之一）。
+    points: 8
+    tags:
+    - axis:robustness
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在没有任何可计算基线或量化对比的情况下，直接断言“明显偏高 / 无异常 / 正常波动”。
+    points: -15
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 在未拿到实际检索结果的情况下，编造具体的每小时日志量、异常时间段或偏高倍数。
+    points: -12
+    tags:
+    - axis:safety
+    - angle:安全底线
+    - type:negative
+    - eval_source:actual_result
+- Input: omp-trace-log这周的数据,帮我把duration分成快中慢三档统计下各档数量
+  ExpectedOutput: "📋 **摘要**：2026-03-09 ~ 2026-03-16（近7天）| Topic: `omp-trace-log` | Duration 快中慢三档分布统计\n\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），采样率 10%\n\n---\n\n## 🔍 核心结论\n\n**90.4% 的请求在 500ms 内完成（快速档），整体表现健康**。但仍有约 **14.6 万条慢请求（>2s）** 值得关注，其中 Top 1 慢接口 `QueryChartData` 贡献了近 **47% 的慢请求量**，报表查询类接口是主要瓶颈。\n\n---\n\n## 📊 三档统计结果\n\n| 档位 | 条件 | 数量（估算） | 占比 | 平均耗时 | P95 耗时 | 最大耗时 |\n|------|------|------------|------|---------|---------|---------| \n| 🟢 **快** | < 500ms | **6,550,964** | **90.4%** | 87ms | 296ms | 499ms |\n| 🟡 **中** | 500ms ~ 2000ms | **550,167** | **7.6%** | 965ms | 1,756ms | 2,000ms |\n| 🔴 **慢** | > 2000ms | **145,866** | **2.0%** | 5,946ms | 17,503ms | 298,134ms (~5min) |\n| | **合计** | **7,246,997** | **100%** | | | |\n\n### 速率分布可视化\n\n```\n快 (<500ms)     ████████████████████████████████████████████████░░ 90.4%\n中 (500-2000ms) ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  7.6%\n慢 (>2000ms)    █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  2.0%\n```\n\n---\n\n## 🔎 慢请求归因（>2000ms Top 10 接口）\n\n| 排名 | 接口 (apiPath) | 慢请求数 | 占慢请求% | 平均耗时 |\n|------|---------------|---------|----------|---------| \n| 1 | *(apiPath 为空)* | 72,187 | 49.5% | 5,883ms |\n| 2 | `cdata-worksheet-http/QueryChartData` | 34,571 | 23.7% | 5,983ms |\n| 3 | `cdata-worksheet-http/DescribeFieldValues` | 5,056 | 3.5% | **11,338ms** |\n| 4 | `cdata-worksheet-http/PreviewChartData` | 3,615 | 2.5% | **10,192ms** |\n| 5 | `cdata-worksheet-http/QueryWorksheetData` | 2,331 | 1.6% | 7,654ms |\n| 6 | `cdata-worksheet-http/QueryWorksheetDataCount` | 1,878 | 1.3% | 7,667ms |\n| 7 | `cdata-worksheet-http/QueryWorksheetDataSum` | 1,366 | 0.9% | 7,506ms |\n| 8 | `opportunity_node/get_list` | 979 | 0.7% | 2,677ms |\n| 9 | `opportunity_node/get_operator_lead_total` | 848 | 0.6% | 3,049ms |\n| 10 | `csm/GetCustomerTdwCalculateData` | 817 | 0.6% | 2,577ms |\n\n---\n\n## 💡 洞察与分析\n\n1. **`cdata-worksheet-http` 系列接口是慢请求重灾区**：Top 2~7 全部来自该服务（报表/数据查询场景），合计占慢请求的 **33.5%**，平均耗时高达 **5.9s ~ 11.3s**，其中 `DescribeFieldValues` 和 `PreviewChartData` 平均耗时超 10 秒，P95 约 17.5 秒，**远超通用经验基线（API 响应应 <2s）**。\n\n2. **apiPath 为空的慢请求占比最高（49.5%）**：这些是后端调用（`event=api-request`，非前端入口请求），缺少 apiPath 标识。建议确认是否为内部 RPC 调用或日志采集缺字段。\n\n3. **整体 2% 的慢请求率在可接受范围内**（基于通用经验，P99 通常允许 <5% 慢请求），但极端值达 **298 秒**，存在个别超时未熔断的情况。\n\n---\n\n## 🛠️ 建议\n\n- [ ] **优先优化 `cdata-worksheet-http/QueryChartData`**：该接口慢请求量最大（3.5 万条），可检查是否存在大数据量查询无分页、缺少索引等问题。具体可执行：\n  ```\n  apiPath:\"cdata-worksheet-http/QueryChartData\" AND duration:>10000\n  ```\n  拉取 P99 级别的极端慢查询样本，分析具体参数特征。\n\n- [ ] **排查 apiPath 为空的慢请求来源**：执行 `duration:>2000 AND NOT apiPath:* | SELECT trace, host, COUNT(*) AS cnt GROUP BY trace, host ORDER BY cnt DESC LIMIT 10`，确认这些请求的调用链路和目标服务。\n\n- [ ] **对 `DescribeFieldValues` / `PreviewChartData` 设置超时熔断**：平均耗时已超 10s，最大值接近 5 分钟，建议在网关层增加 30s 超时保护，避免长尾请求拖垮连接池。\n"
+  Judge:
+  - criterion: 对输入中的 TopicName `omp-trace-log`，调用 `GetTopicInfoByName` 完成 Topic 定位，并在后续查询中使用返回的 TopicId；未把 TopicName 当作 TopicId/UUID 直接检索。
+    points: 8
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“这周”先调用 `ConvertTimestampToTimeString` 获取当前时间，再通过 `ConvertTimeStringToTimestamp` 生成明确的周级 From/To（近7天或本周起点至今口径二选一且前后一致）；最终输出展示用户可读的起止时间，To 对应当前时间。
+    points: 10
+    tags:
+    - axis:reliability
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 针对本题周级窗口（≥48h），调用链体现了 `SamplingRate=0.1`、分段查询，或在 `FailedOperation.SearchTimeout` 后采样/缩窗重试之一，而不是整周全量硬查后直接停在超时/报错。
+    points: 8
+    tags:
+    - axis:robustness
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若最终结果基于采样或近似统计，摘要或结论处明确标注“估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）”以及采样率/估算口径之一，不把估算值当精确值直接陈述。
+    points: 6
+    tags:
+    - axis:safety
+    - angle:安全底线
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 三档分桶明确基于 `duration` 字段完成，并给出快/中/慢的具体阈值边界或阈值依据（如业务经验、分位数参考）；未把 `length`、`status`、`date` 等其他字段误当耗时。
+    points: 10
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终结果同时给出快/中/慢三档各自的数量与占比，且三档口径互斥、合计能回到总量（或明确说明估算口径导致的近似合计）。
+    points: 10
+    tags:
+    - axis:completeness
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 首句直接给出本周 `duration` 三档分布的核心判断（如快档占主导/慢档需关注），并整体保持 Quantify / 类型 B 骨架；未误判为类型0纯检索或类型A排障主体。
+    points: 8
+    tags:
+    - axis:logic
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结构化统计结果至少以表格或等价结构展示 `档位 / 条件(阈值) / 数量 / 占比` 四项，不只散文式罗列数字。
+    points: 8
+    tags:
+    - axis:structure
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之外补充一句人话解读，明确解释慢档占比/规模是否值得关注，以及为何（例如“占比不高但绝对量大，值得继续看慢接口”），而不是只贴数字。
+    points: 6
+    tags:
+    - axis:usability
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 完成三档统计后，自动向前衔接一步到慢请求档观察：至少按 `apiPath`、`host` 或具体时段之一做集中度分析，并指出慢请求是否集中在某接口、服务前缀或时段；若 `apiPath` 大量为空，也会明确点出并改用 `host`/时段继续观察。
+    points: 10
+    tags:
+    - axis:value
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若 `duration` 字段缺失、查询结果为空、或查询报 `FailedOperation.SearchTimeout` / QueryError，最终答复中交代已核查的 Topic / 时间范围 / Query 或失败原因，并给出可继续执行的兜底路径（如采样、缩窗、先取样确认字段、改按 `apiPath`/`host`/时段下钻）。
+    points: 8
+    tags:
+    - axis:robustness
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在未拿到实际检索结果的情况下，编造具体的三档数量、占比、慢接口、慢时段或阈值依据。
+    points: -15
+    tags:
+    - axis:safety
+    - angle:安全底线
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 把本题写成类型0纯检索（以原始日志或 `📝 日志` 列表为主体），或只给三档计数就结束，完全没有对慢请求档的自动观察/下一步衔接。
+    points: -10
+    tags:
+    - axis:logic
+    - angle:意图体系
+    - type:negative
+    - eval_source:actual_result
+- Input: cfw_ids_event_white_common最近一天的数据,帮我看下被拦截和放行的事件各有多少,占比分别是多少
+  ExpectedOutput: '📋 **摘要**：2026-03-15 00:24 ~ 2026-03-16 00:24（最近 1 天）| Topic: `cfw_ids_event_white_common` | 总事件 **32,313** 条，拦截占绝对主体（91.96%），放行仅占 8.04%
+
+
+    ---
+
+
+    ## 🔍 核心结论
+
+
+    最近一天内云防火墙 IDS 共捕获 **32,313** 条安全事件，**绝大多数事件被拦截（action=1）**，放行事件（action=0）仅为少量，拦截与放行比约 **11.4 : 1**。所有事件的威胁等级均为 **Level 3（高危）**。
+
+
+    ---
+
+
+    ## 📊 关键数据
+
+
+    | 动作 | 含义 | 事件数 | 占比 | 独立源 IP 数 | 独立目标 IP 数 |
+
+    |------|------|--------|------|-------------|---------------|
+
+    | `action=1` | **拦截** 🚫 | **29,714** | **91.96%** | 203 | 163 |
+
+    | `action=0` | **放行/观察** ✅ | **2,599** | **8.04%** | 6 | 8 |
+
+    | **合计** | — | **32,313** | 100% | — | — |
+
+
+    > ⚠️ 独立 IP 数使用 `APPROX_DISTINCT` 估算，误差 ≤5%（腾讯云CLS HyperLogLog实现）
+
+
+    ---
+
+
+    ## 📝 详细证据
+
+
+    ```sql
+
+    -- 拦截/放行事件统计
+
+    * | SELECT action, COUNT(*) as cnt FROM log GROUP BY action ORDER BY cnt DESC
+
+
+    -- 影响面分析
+
+    * | SELECT action, APPROX_DISTINCT(srcIP) as unique_src_ips, APPROX_DISTINCT(dstIP) as unique_dst_ips, COUNT(*) as cnt FROM log GROUP BY action ORDER BY cnt DESC
+
+    ```
+
+
+    **关键发现**：
+
+    - **拦截事件**：涉及 **203 个不同攻击源 IP** 攻击 **163 个目标 IP**，攻击面较广
+
+    - **放行事件**：仅涉及 **6 个源 IP** 访问 **8 个目标 IP**，来源相对集中
+
+    - 所有事件威胁等级均为 **Level 3（高危）**，说明防火墙规则配置较为严格，低威胁事件可能已在前置层过滤
+
+
+    ---
+
+
+    ## 💡 洞察与归因
+
+
+    1. **放行事件虽少但值得关注**：2,599 条放行事件均为高危（Level 3），但仅来自 6 个源 IP，可能是**白名单规则**导致的放行。建议核查这些放行是否属于预期的业务白名单行为
+
+    2. **拦截效率良好**：91.96% 的拦截率表明防火墙规则覆盖面较好，日均拦截约 **29,714 次攻击**（约每秒 0.34 次）
+
+
+    ---
+
+
+    ## 🛠️ 建议（下一步）
+
+
+    - [ ] **核查放行事件的 6 个源 IP**：建议执行 `* AND action:0 | SELECT srcIP, COUNT(*) as cnt FROM log GROUP BY srcIP ORDER BY cnt DESC` 查看具体是哪些 IP 被放行，确认是否为合法业务白名单
+
+    - [ ] **下钻拦截事件的攻击类型 Top 10**：执行 `* AND action:1 | SELECT attack_vector, COUNT(*) as cnt FROM log GROUP BY attack_vector ORDER BY cnt DESC LIMIT 10`，识别最主要的攻击手法，评估是否需要针对性加固'
+  Judge:
+  - criterion: 按 Quantify 统计任务作答，核心围绕"拦截/放行两类事件的数量 + 占比"，而不是返回原始日志样本或纯检索摘要。
+    points: 12
+    tags:
+    - angle:意图体系
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出中体现正确的 Topic 定位（名称和 TopicId），Topic 名称与用户请求一致。
+    points: 8
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "时间窗口处理：输出的时间范围为连续 24 小时滚动窗口，且与当前日期一致。"
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "字段语义验证（互斥评分）：输出中对 action 字段的拦截/放行映射与数据实际语义一致（如与 ExpectedOutput 中的映射方向一致），判为正确(+10)；若映射错误（如把放行映射为错误的 action 值导致放行数为 0），判为错误(-10)。两者互斥。若无法从 actual_result 判断映射是否正确（如确实无放行数据），按正向给分。"
+    points: 10
+    negative_points: -10
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:mutual_exclusive
+    - eval_source:actual_result
+  - criterion: 分别给出被拦截事件数和放行事件数，两类均为明确具体数值，不以"多数/少量"替代。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 同时给出被拦截与放行的占比，且占比与数量/总量相互一致，两项合计约为 100%（允许四舍五入误差）。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 答案首句直接给出核心统计结论，不以"经过分析""查询结果如下"等铺垫性废话开头，也不以调试变量或原始字段名开头。
+    points: 8
+    tags:
+    - angle:内容组织与输出规范
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 统计结果以结构化形式展示，至少包含"状态/含义、数量、占比"三个字段，便于直接比对拦截与放行。
+    points: 6
+    tags:
+    - angle:内容组织与输出规范
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在结构化统计之外，补充安全运维场景的人话解读，明确说明哪一类占主体，以及这对当前防护态势意味着什么。
+    points: 8
+    tags:
+    - angle:内容组织与输出规范
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 完成当前 Quantify 后，自动衔接一步到基线对照或变化观察：至少给出"与昨日同期/近 7 天常态/经验基线"的一种对照，或明确说明下一步应如何做该对照才能判断是否异常。
+    points: 10
+    tags:
+    - angle:意图体系
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "异常处理（条件触发）：若出现字段缺失、状态值语义不明、空结果、Topic 定位失败或工具异常，输出中给出明确兜底路径。仅当实际遇到异常时评估；正常运行时不参与计分。"
+    points: 8
+    tags:
+    - angle:工具调用异常处理
+    - axis:reliability
+    - type:conditional
+    - condition: 遇到字段缺失、空结果或工具异常
+    - eval_source:actual_result
+  - criterion: 将本题误判为类型 0 纯检索，输出原始日志、"📝 日志"骨架，或主要内容是样本日志而非拦截/放行聚合统计。
+    points: -12
+    tags:
+    - angle:意图体系
+    - axis:intent
+    - type:negative
+    - eval_source:actual_result
+  - criterion: "时间处理错误：输出中的时间范围与'最近一天'（连续24小时）明显不符，如使用了错误的日期或非连续窗口。"
+    points: -12
+    tags:
+    - angle:核心能力要求
+    - axis:reliability
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 最终答案只给数量不给占比、只给占比不给数量，或占比与数量明显对不上。
+    points: -8
+    tags:
+    - angle:核心能力要求
+    - axis:completeness
+    - type:negative
+    - eval_source:actual_result
+  - criterion: "Schema 嗅探（加分项）：在正式统计前通过样本确认了 action 字段的枚举值语义。此项为 bonus，不计入 total_positive 分母。从 actual_result 中若能看到嗅探证据（如提到'确认了字段含义'）则给分。"
+    points: 8
+    tags:
+    - axis:reliability
+    - angle:核心能力要求
+    - type:bonus
+    - eval_source:actual_result
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去6小时,状态码4xx和5xx的请求分别占总请求的百分之几
+  ExpectedOutput: "📋 **摘要**：2026-03-09 ~ 2026-03-16（过去 7 天）| Topic: `cdn-console-server-v3-redblue` | ERROR 和 WARN 级别日志统计\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**：本次查询因时间跨度 ≥2 天，启用了 10% 采样率（`SamplingRate=0.1`），以下数据为估算值。\n\n---\n\n## 📊 统计结果\n\n```sql\n-- 执行的 CQL 语句\n\"\\\"Level\\\":\\\"ERROR\\\"\" OR \"\\\"Level\\\":\\\"WARN\\\"\"\n| SELECT CASE \n    WHEN __CONTENT__ LIKE '%\"Level\":\"ERROR\"%' THEN 'ERROR' \n    WHEN __CONTENT__ LIKE '%\"Level\":\"WARN\"%' THEN 'WARN' \n    ELSE 'OTHER' \n  END as log_level, count(*) as cnt \nGROUP BY log_level \nORDER BY cnt DESC\n```\n\n| 日志级别 | 采样命中数 | **估算总量**（×10） | 占全部日志比例 |\n|---------|-----------|-------------------|--------------| \n| 🔴 ERROR | 865 | **~8,650 条** | **0.041%** |\n| 🟡 WARN | 19 | **~190 条** | **0.0009%** |\n| **合计** | **884** | **~8,840 条** | **0.042%** |\n\n**全量日志参考**：过去一周总日志量约 **20,848,830 条**（采样估算），ERROR + WARN 合计占比约 **0.042%**。\n\n---\n\n## 💡 洞察\n\n- **整体健康**：ERROR + WARN 日志合计占总量约 **0.042%**，远低于通用经验警戒线 1%，服务整体运行状态良好。\n- **ERROR 为主**：异常日志中 ERROR 占比 **97.8%**（~8,650 / ~8,840），WARN 仅占 2.2%，说明告警级别的\"预警\"极少，一旦出问题多直接表现为 ERROR。\n- **日均 ERROR 约 1,236 条**：按 7 天平均，每天约产生 ~1,236 条 ERROR，需关注是否集中在特定时间段或特定子模块（如 `config_service_api`、`config_service_update_status`）。"
+  Judge:
+  - criterion: 将本题按 Quantify / 类型B 的统计问答处理，核心回答围绕"4xx、5xx 相对总请求量的占比"，而不是逐条检索或罗列原始日志。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出中体现使用了用户给出的 TopicId `e0260d49-d2ca-42cc-ae9a-1a99f15204bb`，未混用其他 Topic。
+    points: 8
+    tags:
+    - axis:efficiency
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "Schema 感知（加分项）：输出中有证据表明在聚合前确认了状态码字段的存在或名称。此项为 bonus，不计入 total_positive 分母。"
+    points: 8
+    tags:
+    - axis:reliability
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: "时间窗口（互斥评分）：输出中的时间范围与'过去6小时'一致且日期正确，判为正确(+10)；若时间明显错误（如错误年份、错误日期），判为错误(-12)。两者互斥。"
+    points: 10
+    negative_points: -12
+    tags:
+    - axis:reliability
+    - type:mutual_exclusive
+    - eval_source:actual_result
+  - criterion: 输出中体现基于同一时间窗口得到了总请求数，并将其作为 4xx/5xx 占比计算的分母。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答分别给出 4xx 请求数量和 5xx 请求数量两个绝对值（非合并为单一区间）。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答分别给出 4xx 占总请求量百分比和 5xx 占总请求量百分比，且计算口径正确为"各类请求数 / 总请求数 × 100%"。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答显式标注本次查询的具体起止时间，便于读者确认"过去6小时"的窗口口径。
+    points: 6
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出第一段直接给出统计结论，不以"经过分析""查询结果如下"等流程性铺垫开头。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在结论之后提供结构化表格，表格至少包含"状态码类别、请求数量、占总请求比例"三列。
+    points: 6
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 完成 4xx/5xx 汇总后，自动衔接一步到更细观察：要么补充具体状态码分布（如 403/404/499/500/502/503），要么指出异常时段集中度；不能停在总占比。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 给出 WAF / 安全运维口径的人话解读，至少区分 4xx 更偏访问被拒/客户端侧信号，5xx 更偏上游或服务端异常信号，并说明当前结果的风险含义。
+    points: 8
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "异常处理（条件触发）：若出现空结果、字段缺失或查询报错，提供至少一条排查或降级路径。仅当实际遇到异常时评估；正常运行时不参与计分。"
+    points: 8
+    tags:
+    - axis:resilience
+    - type:conditional
+    - condition: 查询结果为空或遇到异常
+    - eval_source:actual_result
+  - criterion: "采样声明（条件触发）：若使用了采样、approx 或其他近似统计，输出中明确声明为估算结果。若未使用近似则不参与计分。"
+    points: 6
+    tags:
+    - axis:safety
+    - type:conditional
+    - condition: 使用了采样或近似统计
+    - eval_source:actual_result
+  - criterion: 在未获得实际检索/聚合结果的情况下，直接编造 4xx/5xx 请求数量、总请求量或百分比，或把无法验证的值写成确定事实。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+- Input: cdn-console-server-v3-redblue过去一周,ERROR和WARN级别的日志分别有多少,合在一起统计
+  ExpectedOutput: "📋 **摘要**：2026-03-09 ~ 2026-03-16（过去 7 天）| Topic: `cdn-console-server-v3-redblue` | ERROR 和 WARN 级别日志统计\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**：本次查询因时间跨度 ≥2 天，启用了 10% 采样率（`SamplingRate=0.1`），以下数据为估算值。\n\n---\n\n## 📊 统计结果\n\n```sql\n-- 执行的 CQL 语句\n\"\\\"Level\\\":\\\"ERROR\\\"\" OR \"\\\"Level\\\":\\\"WARN\\\"\"\n| SELECT CASE \n    WHEN __CONTENT__ LIKE '%\"Level\":\"ERROR\"%' THEN 'ERROR' \n    WHEN __CONTENT__ LIKE '%\"Level\":\"WARN\"%' THEN 'WARN' \n    ELSE 'OTHER' \n  END as log_level, count(*) as cnt \nGROUP BY log_level \nORDER BY cnt DESC\n```\n\n| 日志级别 | 采样命中数 | **估算总量**（×10） | 占全部日志比例 |\n|---------|-----------|-------------------|--------------| \n| 🔴 ERROR | 865 | **~8,650 条** | **0.041%** |\n| 🟡 WARN | 19 | **~190 条** | **0.0009%** |\n| **合计** | **884** | **~8,840 条** | **0.042%** |\n\n**全量日志参考**：过去一周总日志量约 **20,848,830 条**（采样估算），ERROR + WARN 合计占比约 **0.042%**。\n\n---\n\n## 💡 洞察\n\n- **整体健康**：ERROR + WARN 日志合计占总量约 **0.042%**，远低于通用经验警戒线 1%，服务整体运行状态良好。\n- **ERROR 为主**：异常日志中 ERROR 占比 **97.8%**（~8,650 / ~8,840），WARN 仅占 2.2%，说明告警级别的\"预警\"极少，一旦出问题多直接表现为 ERROR。\n- **日均 ERROR 约 1,236 条**：按 7 天平均，每天约产生 ~1,236 条 ERROR，需关注是否集中在特定时间段或特定子模块（如 `config_service_api`、`config_service_update_status`）。\n\n---\n\n## 🛠️ 建议下一步\n\n1. **下钻 ERROR 分布**：建议按天统计 ERROR 数量趋势，确认是均匀分布还是集中在某天爆发（可能关联发版/变更）：\n   - 查询条件：`\"\\\"Level\\\":\\\"ERROR\\\"\" | SELECT histogram(__TIMESTAMP__, interval 1 day) as day, count(*) as cnt GROUP BY day ORDER BY day`\n2. **归因 Top 错误**：建议对 ERROR 日志按 `Message` 聚合 Top 10，定位最频繁的错误类型：\n   - 查询条件：`\"\\\"Level\\\":\\\"ERROR\\\"\" | SELECT substr(__CONTENT__, 1, 200) as msg_sample, count(*) as cnt GROUP BY msg_sample ORDER BY cnt DESC LIMIT 10`"
+  Judge:
+  - criterion: 对 `cdn-console-server-v3-redblue` 先按 TopicName 做定位（如 `GetTopicInfoByName` 或等价解析拿到唯一 TopicId），而不是把该名称当成 UUID 或跳过 Topic 解析直接硬查。
+    points: 8
+    tags:
+    - axis:workflow
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 时间处理链路中先获取当前时间字符串，再分别把“当前时间”和“7 天前同一时刻”交给时间转换工具生成毫秒时间戳，`SearchLog` 的 `From/To` 直接使用工具返回值。
+    points: 10
+    tags:
+    - axis:workflow
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在聚合统计前，先通过 Schema、`GetTopicInfo` 或小样本查询确认真实日志级别字段及取值语义（如 `Level`/`L` 是否表示级别，`ERROR`/`WARN` 是否为有效枚举），再据此统计。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对过去一周窗口（≥48h），查询链路体现了性能保护：启用采样、按天/按段拆分查询，或在超时后走采样/缩窗降级，而不是只做一次全量硬查。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回复首句直接给出该 Topic 过去一周的统计结论，并明确交代时间窗口（过去一周或精确起止）与 Topic `cdn-console-server-v3-redblue`。
+    points: 10
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回复明确给出 `ERROR` 级别日志的独立统计数量，且该数字来自实际检索/聚合结果而非推测。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回复明确给出 `WARN` 级别日志的独立统计数量，且该数字来自实际检索/聚合结果而非推测。
+    points: 8
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回复明确给出 `ERROR + WARN` 的合计数量，并能从展示结果中验证该值由前两项相加得到。
+    points: 8
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在统计结论之后给出结构化表格，表格中至少包含 `ERROR`、`WARN`、`合计` 三行以及对应数量列。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之后自动补充至少一条趋势/基线/集中度观察，而不是停在三个数字上；例如说明 `ERROR` 是否占异常日志绝大头、是否存在按天集中、或与经验/历史基线相比是否异常。
+    points: 10
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若过去一周统计采用采样或近似函数，输出中明确标注结果为估算值并说明误差/代表性风险；若通过分段精确汇总得到结果，则不把结果误说成估算。
+    points: 6
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 【加分项】若已拿到总日志量或等价分母，输出补充 `ERROR`、`WARN` 各自占比，或至少给出 `ERROR+WARN` 占全部日志的比例，并把分母口径说清楚。
+    points: 4
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若中间过程出现空结果、字段缺失、`FailedOperation.SearchTimeout` 或查询执行报错，后续链路继续给出排查/降级动作（如改查 `Level`/`L`、放宽过滤、扩大或分段时间范围、启用采样），而不是直接结束。
+    points: 8
+    tags:
+    - axis:resilience
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 把本题误判为类型 0 纯检索或紧急排障模式：主体输出变成日志原文罗列、`📝 日志` 模板或止损方案，而没有以数量统计结论 + 结构化表格为主体。
+    points: -8
+    tags:
+    - axis:intent
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 工具调用链中缺失时间转换工具，或对过去一周的 `From/To` 进行手算、相减推导、直接臆造毫秒时间戳，而不是使用时间工具返回值。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 在未获得实际统计结果的情况下，直接编造 `ERROR` 数、`WARN` 数、合计数、占比或趋势判断。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 统计口径严重错误：未按给定 Topic 和过去一周窗口统计，或把 `status`/`retcode`/业务错误码当成日志级别，或未确认级别字段语义就直接按错误码统计 `ERROR/WARN`。
+    points: -10
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+- Input: tdsql-c-for-mysql-bypass-sycft这周的日志,reqHeader里面的content-type都有哪些值,各出现了多少次
+  ExpectedOutput: "📋 **摘要**：2026-03-09 ~ 2026-03-16 | Topic: `tdsql-c-for-mysql-bypass-sycft` | Content-Type 分布统计 | ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**，基于 10% 采样还原\n\n## 📊 Content-Type 各值统计\n\n> 注意：该 Topic 的日志为非结构化日志，没有独立的 `reqHeader.content-type` 字段。以下结果是从 `__CONTENT__` 日志正文中通过正则 `Content-Type[...][value]` 提取统计的。\n\n```sql\n-- 使用的 CQL\ncontent-type \n| SELECT regexp_extract(\"__CONTENT__\", 'Content-Type[^\\]]*\\[([^\\]]+)\\]', 1) AS content_type, \n         COUNT(*) AS cnt \n  FROM log \n  WHERE \"__CONTENT__\" LIKE '%Content-Type%' \n    AND regexp_extract(\"__CONTENT__\", 'Content-Type[^\\]]*\\[([^\\]]+)\\]', 1) IS NOT NULL \n  GROUP BY content_type \n  ORDER BY cnt DESC\n```\n\n| Content-Type 值 | 采样命中数 | 估算总量（×10） | 占比 |\n|---|---|---|---|\n| `text/html;charset=utf-8` | 38,598 | **~385,980** | **69.0%** |\n| `application/x-www-form-urlencoded` | 17,349 | **~173,490** | **31.0%** |\n| **合计** | 55,947 | **~559,470** | 100% |\n\n## 🔍 核心结论\n\n本周日志中涉及 HTTP Content-Type 的请求共约 **55.9 万条**，仅存在 **2 种** Content-Type 值：\n\n1. **`text/html;charset=utf-8`**（约 38.6 万条，69%）—— 主要为 HTTP 响应中带回的 Content-Type，出现在 `[result]` 日志中\n2. **`application/x-www-form-urlencoded`**（约 17.3 万条，31%）—— 为请求发送时的 header，出现在 `[header]` 和 `the header is:` 日志中\n\n> 💡 两者约 2:1 的比例符合预期：每次 HTTP 请求会产生 1 条请求 header 日志 + 1 条响应结果日志（含响应 Content-Type），`text/html` 出现次数约为 `x-www-form-urlencoded` 的 2 倍，说明部分请求的响应日志中也被正则匹配到了 Content-Type。\n\n## 🛠️ 建议\n\n- **如需精确区分请求 header 和响应 header 的 Content-Type**，可进一步按日志关键词 `[header]`（请求）和 `[result]`（响应）分别筛选统计\n- **如需结构化 `reqHeader` 字段**，建议在 CLS 配置提取规则，将 `Content-Type` 从 `__CONTENT__` 中提取为独立索引字段，后续查询效率更高\n"
+  Judge:
+  - criterion: 工具链先准确锁定 TopicName `tdsql-c-for-mysql-bypass-sycft`，后续查询与结论未跑到其它相似 Topic。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在构造聚合查询前，先通过 GetTopicInfo、SearchLog(limit 1) 或等效步骤确认 `reqHeader` 的真实字段结构，而不是默认把 `content-type` 当作独立列。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若 `content-type` 不是独立字段，最终答复明确说明从 `reqHeader` 内提取 `content-type` 的策略（如 JSON 路径、键值解析或正则），且未把 `rspHeader` 或响应侧字段当成统计对象。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 工具链中实际调用了时间工具，将“这周/过去一周”换算为最近 7 天的具体起止时间后再发起查询，并保证结束时间对齐当前时刻或等价表达。
+    points: 10
+    tags:
+    - axis:time
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对过去一周窗口，默认考虑了采样、分段查询或超时降级路径；若首次查询触发 `FailedOperation.SearchTimeout` 或等价超时，后续有收敛窗口、采样或重试动作而非停止。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回复以统计型核心结论开头，先直接说明过去一周 `reqHeader.content-type` 的分布结论或头部类型，而不是先写过程性废话。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终结果包含结构化表格，逐项列出过去一周内出现过的每个 `content-type` 值及其对应次数，至少包含 `content-type`、`次数` 两列。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 表格或结论补充了总样本量与各 `content-type` 占比，并按次数降序展示，便于直接判断头部集中度。
+    points: 6
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之后，自动衔接了一步分布特征或异常值观察，例如头部 `content-type` 是否高度集中、是否存在长尾类型、异常 MIME、空值或缺失。
+    points: 6
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若查询为空、字段缺失、提取失败或报错，答复未直接结束，而是给出明确排查与降级路径，例如先看原始 `reqHeader` 样本、核对键名大小写/提取路径、缩短时间范围、采样或分段重查。
+    points: 8
+    tags:
+    - axis:resilience
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 工具链中未调用时间工具处理“这周/过去一周”，仍直接给出统计结论。
+    points: -12
+    tags:
+    - axis:time
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把本题按类型 0 纯检索作答（如罗列日志样本、输出“📋结果摘要/📝日志”骨架），或在未确认 `reqHeader` 结构、未拿到成功统计结果时臆造 `content-type` 值、次数或占比。
+    points: -15
+    tags:
+    - axis:fidelity
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-gateway-apisix最近一天请求里,reqPath的前两级路径分别有哪些,各自的请求量是多少
+  ExpectedOutput: "📋 **摘要**：2026-03-15 00:30 ~ 2026-03-16 00:30（最近 24 小时） | Topic: `d.qq.com-gateway-apisix` | 总请求量约 **180,270**（估算值，采样率 10%，误差 ≤5%，腾讯云CLS HyperLogLog实现）\n\n> ⚠️ 以下所有计数均为采样后 ×10 的估算值。原始字段为 `uri`（日志中无 `reqPath` 字段，已用 `uri` 替代）。\n\n---\n\n## 📊 第一级路径（`/level1/...`）分布\n\n| 排名 | 第一级路径 | 估算请求量 | 占比 | 说明 |\n|------|-----------|-----------|------|------|\n| 1 | **`/api`** | ~144,590 | **80.2%** | 核心 API 请求，绝对主力 |\n| 2 | _(根路径/无一级)_ | ~11,650 | 6.5% | 如 `/robots.txt`、`/favicon.ico` 等无子路径 |\n| 3 | `/video` | ~3,800 | 2.1% | 视频资源请求 |\n| 4 | `/file` | ~2,740 | 1.5% | 文件资源请求 |\n| 5 | `/cp` | ~2,410 | 1.3% | CP 相关页面 |\n| 6 | `/act` | ~2,280 | 1.3% | 活动页面 |\n| 7 | `/favicon.ico` | ~2,040 | 1.1% | 网站图标 |\n| 8 | `/drive` | ~940 | 0.5% | 云盘功能 |\n| 9 | `/miora` | ~580 | 0.3% | miora 服务 |\n| 10 | `/site.webmanifest` | ~380 | 0.2% | PWA 配置 |\n| 其他 | `/@fs`, `/config`, `/admin`, `/v2` 等 | ~4,860 | 2.7% | 含大量扫描/探测流量 |\n\n> **核心发现**：`/api` 路径占比超过 **80%**，是绝对流量入口。其余路径均为长尾，`/video` 和 `/file` 属于资源类请求。\n\n---\n\n## 📊 第二级路径（`/level1/level2/...`）分布\n\n| 排名 | 第二级路径 | 估算请求量 | 占比 | 说明 |\n|------|-----------|-----------|------|------|\n| 1 | **`files`** | ~63,170 | **35.0%** | 文件操作 API（`/api/files/...`） |\n| 2 | **`notifications`** | ~56,480 | **31.3%** | 通知接口（`/api/notifications/...`） |\n| 3 | _(无二级路径)_ | ~19,420 | 10.8% | 单级路径如 `/robots.txt` |\n| 4 | **`ws`** | ~13,010 | 7.2% | WebSocket 连接（`/api/ws/...`） |\n| 5 | **`v2`** | ~10,120 | 5.6% | V2 版本 API（`/api/v2/...`） |\n| 6 | `4710` | ~2,440 | 1.4% | CP 内容 ID |\n| 7 | `a20201010index` | ~2,160 | 1.2% | 活动页面 |\n| 8 | `*.mp4`（多个视频） | ~3,010 | 1.7% | 视频文件下载 |\n| 9 | `fonts:search` | ~700 | 0.4% | 字体搜索 |\n| 10 | `ac0df7f5` | ~500 | 0.3% | 特定资源标识 |\n| 其他 | `user`, `ai`, `login`, `projects`, `teams` 等 | ~5,260 | 2.9% | 其他功能接口 + 扫描探测流量 |\n\n---\n\n## 🎯 核心洞察\n\n1. **流量高度集中**：`/api/files` 和 `/api/notifications` 两个路径合计占总流量 **66.3%**（约 12 万次/天），是最核心的业务接口。其中：\n   - `/api/files`：文件操作（上传/下载/列表），作为设计工具核心功能符合预期\n   - `/api/notifications`：通知轮询，请求量偏高（约 5.6 万次/天），**建议确认是否存在过于频繁的轮询**（如每秒轮询 → 建议改 WebSocket 推送或降低频率）\n\n2. **WebSocket 连接**：`/api/ws` 约 1.3 万次，`/api/v2`（含 socket.io）约 1 万次，长连接请求量合理。\n\n3. **安全风险信号** ⚠️：在长尾路径中发现明显的**扫描/攻击探测特征**：\n   - `/.svn`、`/.env.staging`、`/.env.local` — 配置文件探测\n   - `/..;`、`/.;` — 路径穿越攻击尝试\n   - `/cgi-bin`、`/solr`、`/phpinfo`、`/wp-content` — 通用漏洞扫描\n   - `/@fs/C:/Windows/system.ini` — 文件系统读取攻击\n   - `/uc_server`、`/actuator` — 中间件探测\n\n---\n\n## 🛠️ 建议\n\n- [ ] **通知接口优化**：`/api/notifications` 日均约 5.6 万次请求，建议检查前端轮询间隔，若 ≤5s 可考虑合并为 WebSocket 推送或增大轮询间隔至 30s+，预计可减少 **30%+** 总请求量\n- [ ] **安全加固**：对上述扫描类路径（`/.svn`、`/.env.*`、`/actuator`、`/cgi-bin` 等），建议在 APISIX 网关层配置 WAF 规则直接返回 403 并封禁高频扫描来源 IP\n- [ ] **资源文件 CDN 卸载**：`/video/*.mp4`、`/favicon.ico`、`/site.webmanifest` 等静态资源共约 6,500 次/天，建议通过 CDN 回源或预缓存卸载网关压力"
+  Judge:
+  - criterion: 将本题识别为 Quantify / 类型 B：主体围绕“`reqPath` 前两级路径的请求量统计 + 头部热点观察”作答，而非日志样本检索、上下文追溯或根因排障主线。
+    points: 10
+    tags:
+    - angle:意图体系
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对输入中的 TopicName `d.qq.com-gateway-apisix` 先执行 `GetTopicInfoByName` 或等价定位拿到唯一 TopicId，并在后续 `SearchLog` 中使用该 TopicId；未把 TopicName 当成 UUID 直接查询。
+    points: 8
+    tags:
+    - angle:核心能力要求
+    - axis:topic_resolution
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 将“最近一天”处理为以当前时间为 To 的连续 24 小时窗口，先调用 `ConvertTimestampToTimeString()` 获取当前时间，再分别用 `ConvertTimeStringToTimestamp()` 生成 From/To，且 `SearchLog` 的 From/To 直接使用工具返回值。
+    points: 10
+    tags:
+    - angle:安全底线
+    - axis:time
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 先通过 Topic schema、GetTopicInfo 或小样本确认 `reqPath` 是否存在；确认存在时优先基于 `reqPath` 统计，仅在确认缺失时才降级为 `requestUri` / `uri` / `path`，并在最终答复中明确说明替代关系。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:field_handling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终统计对象是“前两级路径前缀”本身，例如 `/api/files/upload` 归并为 `/api/files`；不是一级路径 `/api`、单独第二段标签 `files`，也不是完整原始路径。
+    points: 12
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 查询逻辑对提取出的前两级路径执行 `COUNT(*)` 聚合，并按请求量 `ORDER BY ... DESC` 排序后输出；不能只做去重、样本展示或无序罗列。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:aggregation
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终答复开头直接给出核心结论，明确这是 `d.qq.com-gateway-apisix` 最近 24 小时的前两级路径请求量分布/集中情况，并带出时间范围；不以“经过分析”“查询结果如下”等铺垫开头。
+    points: 8
+    tags:
+    - angle:内容组织与输出规范
+    - axis:conclusion_first
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论之后给出结构化表格，至少包含“前两级路径”“请求量”两列，行内为明确数值，且按请求量降序排列；不能只给占比、只给 Top1，或把路径和值散文式写在段落里。
+    points: 8
+    tags:
+    - angle:内容组织与输出规范
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 表格之后自动衔接一步头部路径集中度/热点观察，例如指出 Top1/Top3 是否高度集中、哪些前两级路径是核心热点或异常长尾，且观察与表格中的数值一致。
+    points: 8
+    tags:
+    - angle:意图体系
+    - axis:follow_up
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失、路径解析失败或查询报错，答复未直接结束，而是给出具体排查/降级路径，例如核对字段名、改用 `requestUri` / `uri` / `path`、缩短时间范围、分段重查或在超时后再考虑采样。
+    points: 8
+    tags:
+    - angle:工具调用异常处理
+    - axis:resilience
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未调用时间工具却直接手算、硬编码“最近一天”的毫秒时间戳，或通过 `From + 24h` 反推 `To` 后执行查询。
+    points: -12
+    tags:
+    - angle:安全底线
+    - axis:time
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把统计对象做成一级路径、单独第二段标签、完整原始路径，或拆成“一级表 + 二级表”两套口径，未直接回答“前两级路径前缀”的请求量。
+    points: -10
+    tags:
+    - angle:核心能力要求
+    - axis:accuracy
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 把本题误判为类型 0 纯检索：主体输出为日志原文、`📝 日志` 模板、样本记录或简单查询回显，而不是数量统计表加一步热点观察。
+    points: -12
+    tags:
+    - angle:意图体系
+    - axis:fidelity
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 遇到空结果、字段缺失、路径解析失败或查询报错后，直接以“无数据”“查不到”“查询失败”结束，未提供任何排查或降级路径。
+    points: -10
+    tags:
+    - angle:工具调用异常处理
+    - axis:resilience
+    - type:negative
+    - eval_source:actual_result
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去12小时,把url里的域名部分提取出来看看都访问了哪些站点
+  ExpectedOutput: '---
+
+
+    ## 📊 WAF日志域名访问分析报告
+
+
+    ### 📋 摘要
+
+    | 项目 | 值 |
+
+    |------|-----|
+
+    | **时间范围** | 2026-03-15 07:02:01 ~ 2026-03-15 19:02:01 (12小时) |
+
+    | **Topic** | e0260d49-d2ca-42cc-ae9a-1a99f15204bb (WAF日志) |
+
+    | **总请求数** | 4,435 (估算值，误差 ≤5%) |
+
+    | **独立域名数** | 38 个 |
+
+    | **采样声明** | 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现） |
+
+
+    ---
+
+
+    ### 🔍 核心结论
+
+
+    过去12小时内，WAF共防护了 **38个域名**，总请求量约 **4,435次**。访问主要集中在 **一汽-大众(FAW-VW)** 相关的业务域名，占总流量的 **95%以上**。
+
+
+    ---
+
+
+    ### 📊 域名访问排行（Top 20）
+
+
+    | 排名 | 域名 | 访问次数 | 占比 |
+
+    |:----:|------|:--------:|:----:|
+
+    | 1 | oneapp-api.faw-vw.com | 1,043 | 23.5% |
+
+    | 2 | rtm.faw-vw.com | 727 | 16.4% |
+
+    | 3 | bmp.faw-vw.com | 573 | 12.9% |
+
+    | 4 | vwmep.faw-vw.com | 445 | 10.0% |
+
+    | 5 | audiep.faw-vw.com | 419 | 9.4% |
+
+    | 6 | shop.faw-vw.com | 314 | 7.1% |
+
+    | 7 | audi2c.faw-vw.com | 262 | 5.9% |
+
+    | 8 | ep.faw-vw.com | 200 | 4.5% |
+
+    | 9 | most.faw-vw.com | 70 | 1.6% |
+
+    | 10 | salesapp-vwmep.faw-vw.com | 64 | 1.4% |
+
+    | 11 | trade-api.seasunwbl.com | 58 | 1.3% |
+
+    | 12 | m.pvp.xoyo.com | 44 | 1.0% |
+
+    | 13 | muse.xoyo.com | 34 | 0.8% |
+
+    | 14 | m.pvp.xoyo.com:443 | 27 | 0.6% |
+
+    | 15 | audiwecom.faw-vw.com | 19 | 0.4% |
+
+    | 16 | salesapp-audiep.faw-vw.com | 18 | 0.4% |
+
+    | 17 | ws.xoyo.com | 17 | 0.4% |
+
+    | 18 | e-otd.faw-vw.com | 15 | 0.3% |
+
+    | 19 | cdpprod.faw-vw.com | 10 | 0.2% |
+
+    | 20 | chatrobot2.xoyo.com | 9 | 0.2% |
+
+
+    ---
+
+
+    ### 💡 洞察分析
+
+
+    1. **业务集中度极高**：前5个域名贡献了 **72.2%** 的流量，均为 **一汽-大众** 核心业务系统
+
+    2. **存在非FAW-VW域名**：发现少量其他域名流量（约5%）
+
+    3. **域名分类统计**：FAW-VW 主域名占95%，游戏/娱乐类占4%，其他第三方占1%
+
+
+    ---
+
+
+    ### 🛠️ 建议
+
+
+    1. **流量监控**：`oneapp-api.faw-vw.com` 作为核心业务入口，建议设置独立的流量阈值告警
+
+    2. **安全审计**：关注非FAW-VW域名的访问来源，确认是否为合法业务流量
+
+    3. **下一步洞察**：如需深入分析，可执行查询查看特定域名的攻击拦截情况
+
+
+    ---
+
+
+    **查询语句**：
+
+    ```sql
+
+    http_domain:* | SELECT http_domain, count(*) AS "访问次数" GROUP BY http_domain ORDER BY "访问次数" DESC LIMIT 100
+
+    ```'
+  Judge:
+  - criterion: 工具调用链中直接以 TopicId `e0260d49-d2ca-42cc-ae9a-1a99f15204bb` 作为目标 Topic 发起 Schema 获取或日志查询，未把该 UUID 当作 TopicName 做额外搜索、模糊匹配或名称解析。
+    points: 10
+    tags:
+    - axis:intent_following
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 过去12小时的起止时间通过时间工具或系统当前时间能力计算，并据此设置查询窗口为 now-12h 到 now；不是手写固定日期、口算时间戳或凭记忆填写时间范围。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式聚合前，先确认本 Topic 至少存在 `url`、`domain`、`host` 中的相关字段；若未直接使用独立 `domain/host` 字段，则明确说明从 URL 提取 host 的策略或函数（如 `url_extract_host(url)`、`split`、正则等）。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 查询与回答采用 Quantify / 类型 B 的聚合逻辑：按站点/域名维度 GROUP BY 统计请求量，并按请求量 DESC 排序收敛到头部结果；不是只回显原始日志，也不是套用类型0纯检索骨架。
+    points: 12
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终答案明确列出访问到的域名/站点及各自请求量；若额外给出占比、排名或 TopN 集中度，可判定为该项的增强满足。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终答案的组织顺序满足‘先给一句核心结论或头部站点概览，再给结构化表格或列表，随后自动衔接至少1条头部站点或异常域名观察’，且开头不是‘经过分析’‘查询结果如下’等空话。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若结果中出现内网域名、IP 形式 host、空 host、NULL、解析失败或非标准 host，答案如实保留并解释其含义或成因，不将其臆造改写为规范公网域名。
+    points: 6
+    tags:
+    - axis:safety
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若查询为空、字段缺失、host 提取失败或出现 `FailedOperation.SearchTimeout` 等报错，答案没有直接结束，而是给出至少1条明确可执行的排查或降级路径；若采用采样或缩小范围，也同步说明对统计代表性的影响。
+    points: 8
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 把 TopicId `e0260d49-d2ca-42cc-ae9a-1a99f15204bb` 当作 TopicName 去调用名称查询、Topic 搜索或名称匹配流程，导致查询链路冗余或跑偏。
+    points: -12
+    tags:
+    - axis:tool_use
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 工具调用链中完全没有任何时间工具或当前时间能力参与‘过去12小时’换算，而是直接手算、写死或猜测时间范围。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+- Input: bcs-http-server-idc最近两天,帮我把module和service拼接在一起作为服务标识,统计各服务的调用量
+  ExpectedOutput: "## 📊 **bcs-http-server-idc 服务调用量分析报告**\n\n📋 **摘要** | 2026-03-13 19:04:11 ~ 2026-03-15 19:04:11 (近2天) | Topic: bcs-http-server-idc | **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n---\n\n### 📈 **核心结论**\n\n在 `bcs-http-server-idc` 日志主题中，**仅发现一个服务实例**：\n- **服务标识**: `1007877-bcs-http-server-prod`\n- **总调用量**: **约 549 万条** (5,493,979 条，采样估算值)\n\n---\n\n### 📊 **关键数据**\n\n| 服务标识 (module-service) | 调用量 (条) | 占比 |\n|--------------------------|------------|------|\n| 1007877-bcs-http-server-prod | 5,493,979 | 100% |\n\n---\n\n### 📝 **查询语句**\n\n```sql\n* | SELECT concat(cast(\"__TAG__.pod_label_moduleFourId\" AS varchar), '-', \"__TAG__.pod_label_tkex-workload-name\") AS service_id, count(*) AS call_count GROUP BY service_id ORDER BY call_count DESC\n```\n\n---\n\n### 💡 **洞察与说明**\n\n1. **单一服务架构**: 该日志主题目前只记录了一个服务 `bcs-http-server-prod` (moduleFourId: 1007877) 的日志\n2. **日志量级**: 两天内产生约 549 万条日志，日均约 274 万条，属于**高频服务**\n3. **字段映射**: \n   - `module` → `__TAG__.pod_label_moduleFourId` (值为 `1007877`)\n   - `service` → `__TAG__.pod_label_tkex-workload-name` (值为 `bcs-http-server-prod`)\n\n---\n\n### 🛠️ **下一步洞察与建议**\n\n1. **扩展查询范围**: 如需查看其他模块/服务，建议检查是否有其他相关的日志主题\n2. **下钻分析建议**: 按小时统计流量趋势、按日志级别统计\n3. **性能关注**: 该服务日志量较大，建议关注日志存储成本和采样策略"
+  Judge:
+  - criterion: 对输入中的 `bcs-http-server-idc` 按 TopicName 路径完成定位：工具轨迹中先执行名称定位（如 `GetTopicInfoByName` 或等效名称查询），而不是把它误当成 UUID 型 TopicId 直接套用。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:tool_trace
+  - criterion: “最近两天”时间范围处理严格走时间工具链：先获取当前时间字符串，再分别把“当前时间”和“当前时间往前 2 天”的时间字符串送入时间转换工具生成 `From`/`To`；`To` 必须等于当前时间，且最终输出中的时间范围与近 48 小时一致。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在执行聚合前，先通过小样本嗅探、Schema 感知或等效方式确认当前 Topic 中承载 `module` 与 `service` 语义的字段真实存在，而不是未经验证就直接假定字段名可用。
+    points: 10
+    tags:
+    - axis:schema
+    - type:positive
+    - eval_source:tool_trace
+  - criterion: 若最终使用的不是字面字段 `module` / `service`，答案会明确说明映射依据与语义对应关系（例如哪个字段等价于 module、哪个字段等价于 service），避免把无关 tag 字段臆断成服务标识组成部分。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 服务标识的构造使用了稳定且可读的拼接方式（如 `CONCAT` / 等效表达式），并显式加入分隔符（如 `-`、`/`、`::`）；若 `module` 为数值等非字符串类型，会先做 `CAST` 或等效转换，避免直接字符串粘连造成歧义。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对 `module` 或 `service` 的空值、缺失值或拼接失败有显式处理（如 `COALESCE` / `CASE` 归入 `unknown_*` 桶，或在结果中单独说明未纳入统计的部分），不会静默丢弃或生成不可解释的空服务标识。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终结果确实是“按拼接后的服务标识统计调用量”：输出中包含结构化表格，至少展示“服务标识 + 调用量”，并按调用量降序排列，而不是按原始 `module`、原始 `service` 或其他维度分别统计。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出组织符合类型 B：第一句话直接给出核心结论；随后给出服务调用量表；表格后自动衔接一步到“头部服务集中度 / 是否单一服务占优 / 是否存在异常集中”的观察，而不是停在数字表格或空泛总结。
+    points: 10
+    tags:
+    - axis:structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 针对“最近两天”这一 48h 边界，工具链或结果中显式体现了大范围查询策略：要么采用采样并说明估算属性/代表性影响，要么采用分段查询；若首查超时，能继续降级为采样或缩小时间范围，而不是把大范围风险完全忽略。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 当出现空结果、字段缺失、字段语义不明、拼接失败、`SearchLog` 报错或超时等异常时，答案不会直接结束，而是给出至少 1 条明确可执行的排查/降级路径（如检查 Topic、回看样本字段、缩短时间、启用采样、分段查询、改用 `TextToSearchLogQuery` 或回退基础检索）。
+    points: 10
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 工具轨迹中完全没有使用时间工具处理“最近两天”，而是手算、写死时间戳，或把 `To` 由 `From + 48h` 直接推算出来。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:tool_trace
+  - criterion: 把本题误套成类型 0 纯检索：主体输出以“📋 检索结果摘要 / 📝 日志”或原始日志罗列为主，没有形成按拼接服务标识聚合的类型 B 统计结果。
+    points: -10
+    tags:
+    - axis:format
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-clb-prod今天的日志,uri字段太长了,帮我只取前50个字符看看都是访问什么路径
+  ExpectedOutput: "## 📋 摘要 | 2026-03-15 全天 | d.qq.com-clb-prod | 共检索 100 类 URI 路径前缀\n\n---\n\n### 📊 URI 路径分布统计（前50字符）\n\n| 排名 | URI 路径前缀 | 请求次数 | 占比 |\n|:---:|---|---:|---:|\n| 1 | `/api/notifications/stats` | 44,737 | 34.8% |\n| 2 | `/api/ws/app/files` | 10,646 | 8.3% |\n| 3 | `/api/files/broadcasting/auth` | 10,503 | 8.2% |\n| 4 | `/api/v2/socket.io/` | 8,077 | 6.3% |\n| 5 | `/` | 3,103 | 2.4% |\n| 6 | `/act/4710/a20201228dreamland/index.html` | 2,310 | 1.8% |\n| 7 | `/cp/a20201010index/main.html` | 2,288 | 1.8% |\n| 8 | `/favicon.ico` | 1,806 | 1.4% |\n| 9 | `/api/files/660316509065840/participants` | 1,722 | 1.3% |\n| 10 | `/api/files/659881800323797/participants` | 1,446 | 1.1% |\n| 11-20 | `/api/files/{fileId}/participants` (多个文件) | ~8,500 | 6.6% |\n| 其他 | 视频文件、静态资源、其他 API 等 | ~30,000 | 23.3% |\n\n---\n\n### 🔍 核心发现\n\n**1. 高频接口集中**\n- **通知统计接口** (`/api/notifications/stats`) 独占 34.8% 的流量，是最主要的访问端点\n- **WebSocket 连接** (`/api/v2/socket.io/`) 占 6.3%，说明有实时通信需求\n\n**2. 文件协作场景活跃**\n- `/api/files/{fileId}/participants` 类接口累计请求量超过 10,000 次\n- 表明用户频繁进行文件共享和协作者管理操作\n\n**3. 静态资源与活动页面**\n- 运营活动页面 (`/act/...`、`/cp/...`) 仍有稳定流量\n- 视频文件访问 (`/video/...`) 占一定比例\n\n---\n\n### 📝 查询语句\n\n```sql\n* | select substr(uri, 1, 50) as uri_prefix, count(*) as count \n  group by uri_prefix \n  order by count desc \n  limit 100\n```\n\n---\n\n### 💡 下一步洞察\n\n1. **关注高频接口性能**：`/api/notifications/stats` 请求量极高，建议检查其响应时间和错误率\n2. **分析文件访问模式**：可按 `fileId` 进一步聚合，识别热门文件\n3. **监控 WebSocket 稳定性**：socket.io 连接数较多，关注连接异常断开情况\n\n如需进一步分析某个具体路径的详细日志、错误分布或响应时间，请告知！"
+  Judge:
+  - criterion: 将 `d.qq.com-clb-prod` 识别为 TopicName，并先通过 `GetTopicInfoByName` 完成 Topic 定位后再查询；整体按 Quantify / 类型 B 统计任务作答，而不是把本题当成纯检索或排障主体。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 时间处理严格使用时间工具链：先获取当前时间，再把“今天”落实为当天 `00:00:00` 到当前时刻的时间范围，并用时间转换工具生成 `From`/`To`；输出中的时间口径与“今天”一致，而不是“最近24小时”。
+    points: 12
+    tags:
+    - axis:timeliness
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在执行统计前先确认 `uri` 字段可用，并以 `uri` 作为主字段完成分析；只有在实际确认 `uri` 不存在时，才降级改用 `path`、`requestUri` 等语义相近字段，并在结果中明确说明替代关系。
+    points: 8
+    tags:
+    - axis:schema
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 查询逻辑对路径字段正确执行“前 50 个字符截断”，使用 `substr(uri, 1, 50)`、`substring(uri, 1, 50)` 或等效写法；不是更短、更长，也不是直接输出原始 `uri`。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:tool_trace
+  - criterion: 按“截断后的路径前缀”聚合请求量，结果以结构化表格展示至少包含“路径前缀/请求量”等关键列，并按请求量降序输出 TopN；不能只给原始日志样本、零散示例或无序列表。
+    points: 10
+    tags:
+    - axis:quantify
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 最终回答首句直接给出头部路径或访问集中度的核心结论，不以“查询结果如下”“经过分析”等空话开头。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之后自动衔接一步到“头部路径模式/集中度观察”，例如指出接口类、静态资源类、协作类或长尾分布的特征，而不是停在表格后只给泛泛建议。
+    points: 8
+    tags:
+    - axis:insight
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当出现空结果、字段缺失、截断表达式失败、查询报错或超时等异常时，不会直接结束；会说明已知情况，并给出至少 1 条明确可执行的排查/降级路径，如回看样本字段、切换替代字段、缩短时间范围、分段查询、启用采样或改用 `TextToSearchLogQuery`。
+    points: 10
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 未使用时间工具而手算或硬编码时间戳，或把“今天”错误处理成最近24小时、昨天此刻到现在，或通过 `From + 跨度` 反推 `To`。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:tool_trace
+  - criterion: 对 `uri` 前50字符逻辑执行错误，或输出中的头部路径/统计结论明显不来自“截断后聚合”的真实结果（如直接按原始 `uri` 分组、主观改写为模板路径、编造不存在的路径或安全告警）。
+    points: -12
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:tool_trace_and_actual_result
+- Input: redis(d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)过去一周每个region和每个instance_id的日志量,还想看region+instance_id的交叉统计
+  ExpectedOutput: '---
+
+
+    ## 📊 Redis 日志统计分析报告 | 2026-03-08 至 2026-03-15
+
+
+    **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**
+
+
+    ---
+
+
+    ### 📋 摘要
+
+    | 指标 | 数值 |
+
+    |------|------|
+
+    | 时间范围 | 过去7天 (2026-03-08 19:08 ~ 2026-03-15 19:08) |
+
+    | Topic | redis (d036bd9c-6a9d-4567-8d3b-a1d93a452dc9) |
+
+    | 总日志量 | **~645亿条** |
+
+    | 覆盖 Region | 6个 |
+
+    | 覆盖 Instance | **~10.5万个** |
+
+
+    ---
+
+
+    ### 📈 一、Region 维度统计
+
+
+    | Region | 日志量 | 占比 |
+
+    |--------|--------|------|
+
+    | **beijing** | ~4,682亿条 | **72.6%** |
+
+    | shanghai | ~941亿条 | 14.6% |
+
+    | guangzhou | ~678亿条 | 10.5% |
+
+    | jinrong | ~72亿条 | 1.1% |
+
+    | haiwai | ~72亿条 | 1.1% |
+
+    | chengdu | ~53亿条 | 0.8% |
+
+
+    **洞察**：
+
+    - **北京 Region 是绝对主力**，贡献了超过 7 成的日志量
+
+    - 北京+上海+广州 三地域合计占比 **97.7%**
+
+
+    ---
+
+
+    ### 📈 二、Instance ID 维度统计 (Top 20)
+
+
+    | 排名 | Instance ID | 日志量 | 占比 |
+
+    |------|-------------|--------|------|
+
+    | 1 | 100064738 | ~4,197亿条 | **65.1%** |
+
+    | 2 | 140015672 | ~325亿条 | 5.0% |
+
+    | 3 | 100076852 | ~254亿条 | 3.9% |
+
+    | ... | ... | ... | ... |
+
+    | 20 | 80128092 | ~21亿条 | 0.3% |
+
+
+    **洞察**：
+
+    - **Instance 100064738 是超级大头**，单实例贡献了 **65.1%** 的日志量
+
+    - Top 20 实例合计占比约 **87%**
+
+
+    ---
+
+
+    ### ⚠️ 三、Region + Instance 交叉统计
+
+
+    由于数据量过大（7天645亿条），双维度 GROUP BY 查询触发超时。
+
+
+    ---
+
+
+    ### 💡 下一步洞察与建议
+
+
+    1. **关注超级实例**：Instance `100064738` 日志量异常庞大，建议确认是否为集群主节点
+
+    2. **Region 容量规划**：北京 Region 承载压力过大
+
+    3. **获取交叉统计**：建议按天拆分查询
+
+    4. **异常检测**：监控 Top 实例的日志量波动'
+  Judge:
+  - criterion: 直接将 UUID `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 作为 TopicId 传入查询参数，未再执行 TopicName 解析或名称搜索。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在构造聚合前先做字段 Schema 感知，确认 `region` 为地域维度、`instance_id` 为实例标识且两者真实存在后再发起统计查询。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 调用时间工具确定当前时间，并按 `To=当前时间`、`From=To-7天` 明确落地‘过去一周’时间窗口。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对 7 天大窗口查询显式采用至少一种性能或可靠性策略：采样、按天分段、按 `region` 拆分，或在超时后给出继续执行的降级方案。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 输出给出了按 `region` 单维分组的日志量统计结果，并按日志量从高到低呈现。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出给出了按 `instance_id` 单维分组的日志量统计结果，并以 TopN 或降序方式收敛头部实例。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出给出了按 `region` 与 `instance_id` 双维交叉分组的日志量统计结果。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 将 `region` 单维、`instance_id` 单维、`region+instance_id` 交叉三类统计拆成三个独立分节或表格，标题明确标注统计口径。
+    points: 8
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 首段先给核心结论或摘要，再给结构化统计表，最后自动衔接热点组合、集中度观察或下钻建议。
+    points: 10
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在三类统计结果之后，主动指出热点 `region+instance_id` 组合、头部集中度或明显偏斜现象，而不是只罗列数字。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若使用采样、估算或近似统计，明确说明其近似性质，并说明代表性或误差影响。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 遇到空结果、字段缺失、`FailedOperation.SearchTimeout` 或其他查询失败时，给出至少一种可执行的排查或降级路径（如缩短时间、按天拆分、按 `region` 分拆、重新核验字段）。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 整体回答保持 Quantify / 类型 B 骨架，主体是分组聚合与量化结论，而非原始日志样本罗列或类型 0 纯检索模板。
+    points: 8
+    tags:
+    - axis:task_fit
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 将 UUID `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 当作 TopicName 调 `GetTopicInfoByName`、TopicName 搜索，或先做名称匹配再查询。
+    points: -12
+    tags:
+    - axis:tool_use
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 在没有拿到统计结果、字段校验失败或查询报错后直接结束回答，未提供任何排查或降级路径。
+    points: -10
+    tags:
+    - axis:robustness
+    - type:negative
+    - eval_source:actual_result
+- Input: csip-prod-logaccess-1302396215-tcss-container_launch_audit这个月的数据,按cluster_id和action两个维度做个多层汇总
+  ExpectedOutput: "📋 **摘要**：2026-03-13 ~ 2026-03-16（3天） | Topic: `d.qq.com-gateway-apisix` | 各 AppId 访问路径分析\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），已启用 10% 采样\n\n---\n\n## 📊 全局总览：各 AppId 请求概况\n\n> ⚠️ **字段说明**：该日志中无独立 `appid` 字段，以下 AppId 提取自 `user_agent` 中的 `AppId/xxx`（即 QQ 客户端内嵌浏览器请求），**普通浏览器请求不携带该字段**。\n\n| AppId | 总请求数（估算） | 不同接口路径数 |\n|---|---|---|\n| 537339047 | ~70 | 5 |\n| **537345855** | **~70** | **4** |\n| 537265587 | ~60 | 5 |\n| 537306618 | ~30 | 2 |\n| 537341691 | ~20 | 1 |\n| 537345726 | ~20 | 2 |\n| 537341690 | ~10 | 1 |\n\n> 💡 以上绝对数值为 10% 采样后的估算值（采样量×10），实际值上下浮动 ≤5%。\n\n---\n\n## 🔍 示例详情：AppId `537345855` 访问的接口路径\n\n```sql\n* | SELECT uri, COUNT(*) AS cnt FROM log \n  WHERE user_agent LIKE '%AppId/537345855%' \n  GROUP BY uri ORDER BY cnt DESC LIMIT 20\n```\n\n| 接口路径 | 请求数（估算） |\n|---|---|\n| `/video/interface-video.mp4` | ~30 |\n| `/video/1764748102091AI02.mp4` | ~20 |\n| `/video/1764748102089AI03.mp4` | ~10 |\n| `/video/176405330503...1b.mp4` | ~10 |\n\n**解读**：AppId `537345855` 在最近 3 天**只访问了视频资源路径**（`/video/*.mp4`），全部是 MP4 视频文件请求，属于典型的 QQ 客户端内嵌视频播放行为。从路径特征来看，`interface-video.mp4` 可能是介绍/引导视频，而带数字 ID 的文件是用户上传的内容视频。\n\n---\n\n## 💡 下一步建议\n\n1. **如需查看全部 AppId 各自的路径详情**，我可以逐一展开其他 6 个 AppId 的访问路径明细。\n2. **如果你要查的\"appid\"不是 UA 中的 QQ AppId**，而是某个业务自定义字段（如 query_string 中的参数），请告知具体位置，我可以重新提取。\n3. **绝大多数请求来自普通浏览器**（不携带 AppId），如需按其他维度（如 `team_id`、`org_id`、`client_ip`）聚合分析路径访问分布，可以直接告诉我。"
+  Judge:
+  - criterion: 将 `csip-prod-logaccess-1302396215-tcss-container_launch_audit` 识别为 TopicName，并先完成 Topic 定位拿到唯一 TopicId 后再发起统计查询，而不是把它当普通关键词或其他实体使用。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 使用时间工具把“这个月”精确落地为本月 1 日 00:00:00 到当前时刻的查询窗口，From/To 与该语义一致，不偷换成最近 30 天、最近 31 天或其他滚动区间。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 将本题识别为 Quantify / 类型 B 的多维汇总任务，主体围绕聚合统计与量化结论展开，而不是套用类型 0 纯检索模板或输出原始日志样本。
+    points: 8
+    tags:
+    - axis:task_fit
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在正式聚合前，先通过 `GetTopicInfoByName`、Schema 感知或 `SearchLog LIMIT 1` 等等价方式确认 `cluster_id` 与 `action` 字段真实存在，且对其语义做了最小必要确认；若语义不清，会明确说明而不是主观臆测。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 考虑到“这个月”窗口远超 48 小时，工具链显式采用了采样、按天/按周分段查询、或超时后缩窗重试等至少一种性能策略，而不是直接整月重查询到底。
+    points: 8
+    tags:
+    - axis:efficiency
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若最终统计使用了采样、近似聚合或分段拼接，输出中同步说明采样比例、代表性、估算性质或误差边界；若未采样，也能让读者明确这是全量口径。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结果至少给出了按 `cluster_id` 单维汇总的统计结果，并按计数从高到低排序，能够直接看出头部 cluster。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结果至少给出了按 `cluster_id + action` 双维交叉汇总的统计结果，能够回答各 cluster 下不同 action 的分布情况。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 如额外补充了 `action` 单维总览，并与其他层级分开展示、口径清晰，可判加分。
+    points: 6
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: '`cluster_id` 单维、`cluster_id + action` 交叉（以及若有 `action` 单维）分别以独立小节或独立表格呈现，标题或说明明确标注统计口径，不能混成一张口径不明的大表。'
+    points: 8
+    tags:
+    - axis:structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出顺序符合类型 B：先一句话给出核心结论或集中度判断，再给结构化表格，随后自动衔接一步到热点 `cluster_id` / 热点 `cluster_id+action` 组合或集中度观察；不以“查询结果如下”“经过分析”等空话开头。
+    points: 10
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之后，明确指出头部 `cluster_id`、头部 `action`（若有单维总览）或热点 `cluster_id+action` 组合是否明显集中；若分布均匀，也会明确说明未见突出的头部集中。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若遇到空结果、字段缺失、查询报错或 `FailedOperation.SearchTimeout`，不会直接结束，而会给出至少一种可执行的排查/降级路径，如核对 Topic/字段名、先拉样本确认字段、按周/按天拆分时间窗口、缩小范围重试。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 把“这个月”错当最近 30 天或 31 天、手算时间戳，或工具链里完全没有时间工具调用记录。
+    points: -15
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 未确认 `cluster_id` / `action` 字段就编造多层汇总结论，或把本题误套成类型 0 纯检索 / 原始日志罗列 / 单层统计后仍声称已完成“多层汇总”。
+    points: -12
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-gateway-apisix最近3天每个appid都访问了哪些接口路径,随便给我列一个出来就行
+  ExpectedOutput: "📋 **摘要**：2026-03-13 ~ 2026-03-16（3天） | Topic: `d.qq.com-gateway-apisix` | 各 AppId 访问路径分析\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），已启用 10% 采样\n\n---\n\n## 📊 全局总览：各 AppId 请求概况\n\n> ⚠️ **字段说明**：该日志中无独立 `appid` 字段，以下 AppId 提取自 `user_agent` 中的 `AppId/xxx`（即 QQ 客户端内嵌浏览器请求），**普通浏览器请求不携带该字段**。\n\n| AppId | 总请求数（估算） | 不同接口路径数 |\n|---|---|---|\n| 537339047 | ~70 | 5 |\n| **537345855** | **~70** | **4** |\n| 537265587 | ~60 | 5 |\n| 537306618 | ~30 | 2 |\n| 537341691 | ~20 | 1 |\n| 537345726 | ~20 | 2 |\n| 537341690 | ~10 | 1 |\n\n> 💡 以上绝对数值为 10% 采样后的估算值（采样量×10），实际值上下浮动 ≤5%。\n\n---\n\n## 🔍 示例详情：AppId `537345855` 访问的接口路径\n\n```sql\n* | SELECT uri, COUNT(*) AS cnt FROM log \n  WHERE user_agent LIKE '%AppId/537345855%' \n  GROUP BY uri ORDER BY cnt DESC LIMIT 20\n```\n\n| 接口路径 | 请求数（估算） |\n|---|---|\n| `/video/interface-video.mp4` | ~30 |\n| `/video/1764748102091AI02.mp4` | ~20 |\n| `/video/1764748102089AI03.mp4` | ~10 |\n| `/video/176405330503...1b.mp4` | ~10 |\n\n**解读**：AppId `537345855` 在最近 3 天**只访问了视频资源路径**（`/video/*.mp4`），全部是 MP4 视频文件请求，属于典型的 QQ 客户端内嵌视频播放行为。从路径特征来看，`interface-video.mp4` 可能是介绍/引导视频，而带数字 ID 的文件是用户上传的内容视频。\n\n---\n\n## 💡 下一步建议\n\n1. **如需查看全部 AppId 各自的路径详情**，我可以逐一展开其他 6 个 AppId 的访问路径明细。\n2. **如果你要查的\"appid\"不是 UA 中的 QQ AppId**，而是某个业务自定义字段（如 query_string 中的参数），请告知具体位置，我可以重新提取。\n3. **绝大多数请求来自普通浏览器**（不携带 AppId），如需按其他维度（如 `team_id`、`org_id`、`client_ip`）聚合分析路径访问分布，可以直接告诉我。"
+  Judge:
+  - criterion: 将本题识别为 Quantify / 类型 B 的分组枚举任务：主体围绕“最近 3 天按 `appid` 查看代表性接口路径样例”作答，而不是原始日志检索、上下文追溯或根因排障主线。
+    points: 10
+    tags:
+    - angle:意图体系
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 正确理解“随便列一个出来就行”：最终结果对每个 `appid` 只需收敛展示 1 个代表性接口路径样例（或极少量样例），不以穷举该 `appid` 的全部路径清单为目标。
+    points: 8
+    tags:
+    - angle:意图体系
+    - axis:scope_control
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对输入中的 TopicName `d.qq.com-gateway-apisix` 先执行 `GetTopicInfoByName` 或等价名称定位拿到唯一 TopicId，并在后续查询中使用该 TopicId；未把 TopicName 当作 UUID/TopicId 直接硬查。
+    points: 8
+    tags:
+    - angle:安全底线
+    - axis:topic_resolution
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 时间处理严格走工具链：先无参调用 `ConvertTimestampToTimeString()` 获取当前时间，再分别将“当前时间”和“3 天前同一时刻”的时间字符串送入 `ConvertTimeStringToTimestamp()` 生成 `To`/`From`，且查询时间口径与“最近 3 天”一致。
+    points: 10
+    tags:
+    - angle:安全底线
+    - axis:time_range
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对“最近 3 天”这一 ≥48h 大窗口，工具链显式采用了大范围查询策略：如启用采样、分段查询，或在首查超时后继续降级；若使用采样，结果中明确说明估算/代表性影响，而不是把大窗口风险完全忽略。
+    points: 8
+    tags:
+    - angle:安全底线
+    - axis:large_window_strategy
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在正式统计前，先通过 Topic schema、`GetTopicInfo` 或小样本确认 `appid` 字段真实存在且语义可直接分组；仅在字段缺失时才说明替代提取口径，而不是在当前 Topic 已有 `appid` 字段时改从 `userAgent`、QueryString 等位置臆测提取。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:appid_schema
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在正式统计前，先确认路径字段存在与语义；当前 Topic 优先基于 `reqPath` 统计，仅在确认缺失时才降级为 `requestUri` / `uri` / `path` 等替代字段，并在最终答复中明确说明替代关系。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:path_schema
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 查询与结果真正形成了“每个 `appid` 对应 1 个路径样例”的一一对应关系：可通过 Top1 路径、窗口函数、子查询或等价收敛方式完成；不能只统计 `appid` 总量、只返回某一个 `appid` 的路径明细，或简单 `GROUP BY appid, reqPath` 后把全量路径全部倒出。
+    points: 12
+    tags:
+    - angle:核心能力要求
+    - axis:grouped_sample_selection
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 最终结果至少以结构化表格或等价结构展示 `appid` 与其代表性路径样例两列，且二者在同一行内一一对应；不能把 `appid` 与路径拆散到不同段落或只做散文式描述。
+    points: 8
+    tags:
+    - angle:核心能力要求
+    - axis:result_mapping
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若能在 `appid + 路径样例` 之外，进一步补充该样例对应的请求量、排名或“是否为该 `appid` 头部路径”的说明，且补充信息与该样例一一对应，可获得加分。
+    points: 6
+    tags:
+    - angle:核心能力要求
+    - axis:value_add
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出组织符合“先结论、再结构化表格、再一步观察”的顺序：首句直接回答最近 3 天各 `appid` 的代表性访问路径结论；随后给出结构化结果；表格后自动衔接到头部 `appid` 或热点路径的集中度/观察，而不是停在数字清单。
+    points: 10
+    tags:
+    - angle:内容组织与输出规范
+    - axis:structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失、字段语义不明、`FailedOperation.SearchTimeout`、查询报错等异常，答案未直接结束，而是给出至少 1 条明确可执行的排查或降级路径，例如回看样本字段、切换替代路径字段、缩短时间范围、分段重查、启用采样或改用 `TextToSearchLogQuery`。
+    points: 10
+    tags:
+    - angle:工具调用异常处理
+    - axis:exception_handling
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 未调用时间工具却直接手算、硬编码“最近 3 天”的时间戳，或通过 `From + 3天` 反推 `To` 后执行查询。
+    points: -12
+    tags:
+    - angle:安全底线
+    - axis:time_violation
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把本题误套为类型 0 纯检索/原始日志回显，或最终没有形成真实的“`appid` → 代表性路径样例”分组结果，而是全局样例、全量路径穷举或无对应关系的路径罗列。
+    points: -10
+    tags:
+    - angle:意图体系
+    - axis:type_mismatch
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-gateway-apisix最近一天,帮我把reqQueryString里的参数用逗号拼接成一个字符串看看
+  ExpectedOutput: '基于获取到的日志数据，我现在可以为您分析 `reqQueryString`（实际字段名为 `query_string`）中的参数情况。
+
+
+    ---
+
+
+    ## 📋 **摘要**
+
+    **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）** | 2026-03-14 19:20:40 ~ 2026-03-15 19:20:40 | Topic: d.qq.com-gateway-apisix | 分析查询字符串参数分布
+
+
+    ---
+
+
+    ## 🔍 **核心结论**
+
+
+    在 d.qq.com-gateway-apisix 最近一天的日志中，查询字符串参数主要分为**三类**：
+
+    1. **WebSocket 连接参数**（业务正常请求）
+
+    2. **时间戳参数**（缓存刷新）
+
+    3. **安全测试/扫描参数**（大量异常参数）
+
+
+    ---
+
+
+    ## 📊 **关键数据**
+
+
+    ### 参数分类统计
+
+
+    | 参数类型 | 典型参数 | 出现次数 | 占比 | 说明 |
+
+    |---------|---------|---------|-----|------|
+
+    | **WebSocket 连接** | fileId, X-Team-Id, X-Org-Id, tracking_session_id, EIO, transport | ~100+ | ~60% | 文件协作实时通信 |
+
+    | **时间戳** | t | ~10 | ~5% | 防缓存随机参数 |
+
+    | **重定向** | redirect | ~5 | ~3% | 登录后跳转 |
+
+    | **组织信息** | org_id | ~35 | ~20% | 组织上下文 |
+
+    | **安全测试** | 大量异常参数（见下方） | ~20+ | ~12% | 疑似扫描/测试 |
+
+
+    ### WebSocket 连接参数（正常业务）
+
+    ```
+
+    fileId, X-Team-Id, X-Org-Id, tracking_session_id, EIO, transport
+
+    ```
+
+    **示例**: `fileId=644311867508467&X-Team-Id=590805191478472&X-Org-Id=1&tracking_session_id=4C58FqGP5nIQDYHT&EIO=4&transport=websocket`
+
+
+    ### 安全测试/扫描参数（异常请求）
+
+    检测到大量疑似安全测试或扫描产生的异常参数，包括数百个不同的测试参数。
+
+
+    ---
+
+
+    ## 🛠️ **建议**
+
+
+    ### 下一步洞察
+
+
+    1. **安全排查**：建议进一步分析包含敏感参数（如 `password`, `token`, `accesskey`）的请求来源 IP 和频率，判断是否为恶意扫描
+
+
+    2. **参数规范化**：建议对 `query_string` 进行标准化解析，提取关键业务参数进行监控
+
+
+    3. **异常流量告警**：可设置告警规则，当单 IP 在短时间内发送大量不同参数组合的请求时触发告警
+
+
+    4. **WebSocket 健康度**：WebSocket 连接参数稳定，建议继续监控 `EIO` 和 `transport` 参数的变化趋势'
+  Judge:
+  - criterion: 准确将查询对象锁定为 TopicName `d.qq.com-gateway-apisix`，且后续查询始终围绕该 Topic 展开；未将其误当 TopicId，也未切换到其他相似 Topic。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 将“最近一天”正确处理为“以当前时刻为结束时间的滚动 24 小时窗口”，并通过时间工具生成/换算起止时间后再发起检索，而不是直接按自然日或拍脑袋写死时间。
+    points: 12
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在构造 `reqQueryString` 变换查询前，先通过 GetTopicInfo、字段探查或 `SearchLog LIMIT 1` 一类手段确认该 Topic 中存在 `reqQueryString` 字段，并实际查看其样例结构。
+    points: 10
+    tags:
+    - axis:capability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若 `reqQueryString` 样例为原始 querystring（如 `a=1&b=2`），明确说明将按 `&` 分割或等价替换为逗号拼接，且保留 `key=value` 语义；若该字段缺失/为空，明确给出替代路径（如从 `requestUri` 提取 query 后再拼接）。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 查询主体采用类型 0 纯检索骨架：以字段变换和样例查看为主，只取样展示，不把任务主轴做成 GROUP BY、分布占比、趋势统计或其他复杂聚合。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终输出包含清晰的“结果摘要 + 样例内容”两部分：结果摘要至少交代 Topic、时间范围和命中情况；样例内容部分用于直接展示拼接后的参数字符串。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终输出实际展示了多条（至少 2 条）`reqQueryString` 逗号拼接后的具体样例字符串，供用户“看看”；不能只给 SQL、只给字段说明，或只给统计结论。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若样例中顺手发现明显异常的扫描式参数（如注入/探测特征），仅以“疑似异常参数、建议进一步结合状态码/IP/UA/路径排查”的方式做增值提醒，不把安全推断直接说死为已确认攻击。
+    points: 6
+    tags:
+    - axis:safety
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、`reqQueryString` 字段缺失、或查询报错/超时，不能直接结束；而是给出明确的排查或降级路径，例如：缩小时间范围、先取样探字段、改从 `requestUri` 提取 query、降低 limit、必要时说明可尝试采样。
+    points: 8
+    tags:
+    - axis:resilience
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未调用任何时间工具，或把“最近一天”错误处理成自然日（如今日 00:00 至今）/固定日期窗口，判为关键链路错误。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 主体输出误套类型 B 统计模板：以 count、GROUP BY、占比、趋势图式解读为主，而没有把“逗号拼接后的 `reqQueryString` 样例查看”作为核心交付，判为任务偏航。
+    points: -10
+    tags:
+    - axis:intent
+    - type:negative
+    - eval_source:actual_result
+- Input: ahids_suricata_prod过去一周的告警数据,帮我把src_ip做个脱敏处理再展示
+  ExpectedOutput: "## 📊 cfw_ids_event_white_common 告警统计报告 | 过去一周\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**，采样率 10%。高危告警数量已通过全量检索二次确认。\n\n**时间范围**：2026-03-09 00:34 ~ 2026-03-16 00:34（7天）\n**Topic**：`cfw_ids_event_white_common`（`1bd5b757-2593-4429-98e8-37bbb804a3e1`）\n\n---\n\n### 🔍 核心结论\n\n**过去一周内无高危告警（threat_level=1），全部告警均为低危（threat_level=3）。** 这是一个积极信号，说明该时段内未触发高优先级入侵检测事件。\n\n---\n\n### 📊 关键数据\n\n| 告警类别 | threat_level 值 | 数量（估算） | 占比 |\n|---------|----------------|-------------|------|\n| **高危告警** | 1 | **0** 条 | 0% |\n| **低危告警** | 3 | **~467,675** 条 | ≈100% |\n| **全部告警** | — | **~467,685** 条 | 100% |\n\n> 💡 高危告警数量 `0` 已通过**全量检索（无采样）**确认，非采样遗漏。\n\n---\n\n### 📝 详细证据\n\n```sql\n-- 查询1：全部告警数量\n* | SELECT COUNT(*) AS total_count\n\n-- 查询2：高危告警数量\nthreat_level:1 | SELECT COUNT(*) AS high_threat_count\n\n-- 查询3：threat_level 值分布\n* | SELECT threat_level, COUNT(*) AS cnt GROUP BY threat_level ORDER BY cnt DESC LIMIT 10\n```\n\n**字段分布发现**：`threat_level` 字段在过去一周仅存在值 `3`（低危），不存在值 `1`（高危）或 `2`（中危）。\n\n---\n\n### 💡 洞察\n\n- 过去一周日均告警量约 **66,812 条**（467,685 / 7），全部为低危级别，说明云防火墙入侵检测系统持续在工作，但未捕获到高危威胁。\n- 低危告警量较大（日均 6.6 万+），建议关注是否存在**大量重复告警**导致噪声过高的情况。\n\n---\n\n### 🛠️ 下一步建议\n\n1. **低危告警降噪分析**：日均 6.6 万条低危告警体量偏高，建议按攻击类型/来源 IP 聚合分析 Top 告警源，具体可执行：\n  ```\n  * | SELECT src_ip, COUNT(*) AS cnt GROUP BY src_ip ORDER BY cnt DESC LIMIT 20\n  ```\n  识别高频来源 IP，评估是否需要加入白名单或封禁策略。\n\n2. **扩展时间范围确认历史高危**：若需确认更长周期内是否出现过高危告警，可将时间范围扩展至 30 天重新检索 `threat_level:1`。\n\n3. **告警级别枚举确认**：当前数据仅见 `threat_level=3`，建议与云防火墙产品文档核实告警级别枚举（1=高危 / 2=中危 / 3=低危），确保 threat_level 字段定义与预期一致。"
+  Judge:
+  - criterion: 先通过 `GetTopicInfoByName` 以 TopicName `ahids_suricata_prod` 完成 Topic 定位，输出中体现正确的 Topic 名称和 TopicId。
+    points: 10
+    tags:
+    - axis:topic_resolution
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "时间处理：输出中的时间范围与'过去一周'（约 7 天）一致，日期合理。"
+    points: 10
+    tags:
+    - axis:time_handling
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "性能保护策略（加分项）：输出的元信息中体现启用了采样、分段查询或降级策略。此项为 bonus，不计入 total_positive 分母。"
+    points: 5
+    tags:
+    - axis:reliability
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: "字段确认（加分项）：输出中有证据表明在展示前确认了 src_ip 字段的存在。此项为 bonus，不计入 total_positive 分母。"
+    points: 5
+    tags:
+    - axis:schema_validation
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: 最终主体展示了告警相关数据（可以是脱敏后的告警样例或脱敏后的 IP 聚合统计），内容中除脱敏 src_ip 外至少出现 1 个告警上下文字段（如 timestamp、alert.signature、alert.category、dest_ip、src_port、告警次数等）。
+    points: 12
+    tags:
+    - axis:task_alignment
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "IP 脱敏（三档互斥评分）：输出中所有位置的 src_ip 均已脱敏（掩码/截断/哈希），且读者仍可区分不同来源，判为完全脱敏(+12)；输出中部分位置脱敏、部分暴露完整 IP（如表格内脱敏但正文未脱敏），判为部分脱敏(-5)；输出中完全未对 src_ip 做任何脱敏处理，判为完全未脱敏(-15)。三档互斥，只取一个。"
+    points: 12
+    negative_points_partial: -5
+    negative_points_full: -15
+    tags:
+    - axis:safety
+    - type:mutual_exclusive_3tier
+    - eval_source:actual_result
+  - criterion: 输出对检索策略有交代（如声明全量/采样/分段/降级等），查询口径透明。
+    points: 8
+    tags:
+    - axis:method_disclosure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "输出骨架：输出以展示数据为主轴（而非纯统计分析报告），包含摘要/结论和数据展示模块。展示形式可以是样例表格或聚合统计表格。"
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 整体表述符合安全运维语气，对告警样例、敏感字段处理和结论边界保持审慎、专业、不夸张的措辞。
+    points: 4
+    tags:
+    - axis:tone
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在完成展示后附带至少一条安全运维导向的后续建议，建议围绕告警签名、攻击类型、目的 IP、时间片或相关字段继续下钻。
+    points: 4
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "辅助统计（加分项）：在完成脱敏展示后，补充了来源分布/Top 来源等辅助统计或观察。此项为 bonus，不计入分母。"
+    points: 4
+    tags:
+    - axis:value
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: "异常处理（条件触发）：若检索结果为空、src_ip 字段缺失或查询报错，输出给出排查/降级路径。仅当实际遇到异常时评估；正常运行时不参与计分。"
+    points: 8
+    tags:
+    - axis:exception_handling
+    - type:conditional
+    - condition: 检索结果为空或遇到异常
+    - eval_source:actual_result
+  - criterion: 主体输出完全不包含告警相关内容（如只有纯 IP 列表无任何告警上下文信息），也未对 src_ip 执行任何脱敏操作。
+    points: -8
+    tags:
+    - axis:task_alignment
+    - type:negative
+    - eval_source:actual_result
+- Input: cfw_ids_event_white_common过去一周,只统计高危告警（threat_level=1）的数量,和全部告警的数量分开看
+  ExpectedOutput: "## 📊 cfw_ids_event_white_common 告警统计报告 | 过去一周\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**，采样率 10%。高危告警数量已通过全量检索二次确认。\n\n**时间范围**：2026-03-09 00:34 ~ 2026-03-16 00:34（7天）\n**Topic**：`cfw_ids_event_white_common`（`1bd5b757-2593-4429-98e8-37bbb804a3e1`）\n\n---\n\n### 🔍 核心结论\n\n**过去一周内无高危告警（threat_level=1），全部告警均为低危（threat_level=3）。** 这是一个积极信号，说明该时段内未触发高优先级入侵检测事件。\n\n---\n\n### 📊 关键数据\n\n| 告警类别 | threat_level 值 | 数量（估算） | 占比 |\n|---------|----------------|-------------|------|\n| **高危告警** | 1 | **0** 条 | 0% |\n| **低危告警** | 3 | **~467,675** 条 | ≈100% |\n| **全部告警** | — | **~467,685** 条 | 100% |\n\n> 💡 高危告警数量 `0` 已通过**全量检索（无采样）**确认，非采样遗漏。\n\n---\n\n### 📝 详细证据\n\n```sql\n-- 查询1：全部告警数量\n* | SELECT COUNT(*) AS total_count\n\n-- 查询2：高危告警数量\nthreat_level:1 | SELECT COUNT(*) AS high_threat_count\n\n-- 查询3：threat_level 值分布\n* | SELECT threat_level, COUNT(*) AS cnt GROUP BY threat_level ORDER BY cnt DESC LIMIT 10\n```\n\n**字段分布发现**：`threat_level` 字段在过去一周仅存在值 `3`（低危），不存在值 `1`（高危）或 `2`（中危）。\n\n---\n\n### 💡 洞察\n\n- 过去一周日均告警量约 **66,812 条**（467,685 / 7），全部为低危级别，说明云防火墙入侵检测系统持续在工作，但未捕获到高危威胁。\n- 低危告警量较大（日均 6.6 万+），建议关注是否存在**大量重复告警**导致噪声过高的情况。\n\n---\n\n### 🛠️ 下一步建议\n\n1. **低危告警降噪分析**：日均 6.6 万条低危告警体量偏高，建议按攻击类型/来源 IP 聚合分析 Top 告警源，具体可执行：\n   ```\n   * | SELECT src_ip, COUNT(*) AS cnt GROUP BY src_ip ORDER BY cnt DESC LIMIT 20\n   ```\n   识别高频来源 IP，评估是否需要加入白名单或封禁策略。\n\n2. **扩展时间范围确认历史高危**：若需确认更长周期内是否出现过高危告警，可将时间范围扩展至 30 天重新检索 `threat_level:1`。\n\n3. **告警级别枚举确认**：当前数据仅见 `threat_level=3`，建议与云防火墙产品文档核实告警级别枚举（1=高危 / 2=中危 / 3=低危），确保 threat_level 字段定义与预期一致。"
+  Judge:
+  - criterion: 基于输入中的 TopicName `cfw_ids_event_white_common` 完成主题定位，且未把 TopicName 当作 TopicId 使用。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“过去一周”先通过时间工具换算出明确起止时间，并让查询上界对齐当前时间。
+    points: 10
+    tags:
+    - axis:capability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在按 `threat_level=1` 统计前，先确认 `threat_level` 字段存在，并确认或明确说明其枚举语义；只有在确认 `1` 代表高危后才按该条件统计。
+    points: 12
+    tags:
+    - axis:safety
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对 7 天时间窗，查询方案显式考虑了全量、按天/按小时分段、或采样/近似的降级策略之一；若使用采样/近似，明确说明采样比例与代表性。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 分别完成并返回‘过去一周高危告警数量’与‘过去一周全部告警数量’两项统计，且两者口径一致（同一 Topic、同一时间窗）。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结果中将高危告警数量与全部告警数量以两个独立字段、行或项目分开展示，而非混成一句话。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答先给结论性一句话，再给结构化结果，再自然衔接至少一条观察，不以“经过分析”“查询结果如下”等空话起头。
+    points: 10
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在两个基础计数之外，额外补充至少一个衍生观察：高危占比、最近 7 天按天趋势、或 threat_name/style_id/源 IP 的集中度之一。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 给出了安全场景下的人话解读，说明高危数量或高危占比对风险态势意味着什么，且未把回答写成故障排障或止损方案。
+    points: 6
+    tags:
+    - axis:interpretation
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当出现空结果、字段缺失、或 `FailedOperation.SearchTimeout`/查询报错时，后续回复提供了明确的排查或降级路径（如校验 Topic、校验字段语义、缩短时间窗、按天分段、采样重试）。
+    points: 8
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 未确认 `threat_level` 字段或枚举语义，就直接把 `threat_level=1` 当作高危并出数。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 没有任何时间工具调用记录，或查询时间窗未落实为“当前时间往前 7 天”的明确范围。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把本题回答成类型 A 排障或止损题，输出根因定位、修复步骤或故障处置模板，偏离了 Quantify / 类型 B 的统计目标。
+    points: -10
+    tags:
+    - axis:intent
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 未分别给出高危告警数量和全部告警数量两个独立值，或把两者混成无法核对口径的模糊描述。
+    points: -9
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:actual_result
+- Input: csip-prod-logaccess-1302396215-tcss-container_launch_audit最近两周的数据,先筛选出异常状态的启动事件,再按cluster统计,用CTE写法
+  ExpectedOutput: "---\n\n## 📋 **摘要** | 2025-01-14 至 2026-03-15 | Topic: `csip-prod-logaccess-1302396215-tcss-container_launch_audit`\n\n### ⚠️ **查询结果：该 Topic 在指定时间范围内无数据**\n\n---\n\n## 🔍 **核心结论**\n\n经过多轮查询验证，Topic `csip-prod-logaccess-1302396215-tcss-container_launch_audit`（ID: `f2f1d20e-fad2-4362-baf7-bc5de01db9b9`）在以下时间范围内**未返回任何日志数据**：\n\n| 查询范围 | 时间跨度 | 结果 |\n|---------|---------|------|\n| 最近两周 | 2025-03-01 ~ 2026-03-15 | 无数据 |\n| 最近一个月 | 2025-02-13 ~ 2026-03-15 | 无数据 |\n| 最近两个月 | 2025-01-14 ~ 2026-03-15 | 无数据 |\n\n---\n\n## 📝 **诊断分析**\n\n### 空结果的业务含义分析\n\n| 可能原因 | 概率 | 排查建议 |\n|---------|------|---------|\n| **该 Topic 近期无业务流量** | 中 | 确认 `tcss-container_launch_audit` 服务是否仍在运行，或容器启动审计功能是否已下线/迁移 |\n| **日志采集配置问题** | 中 | 检查 CLS 采集配置（如采集路径、解析规则）是否正常 |\n| **Topic 名称/ID 不匹配** | 低 | 已通过 `GetTopicInfoByName` 确认 Topic 存在，ID 正确 |\n| **日志已过期清理** | 中 | 检查 Topic 的日志存储周期设置，确认数据是否已被清理 |\n\n---\n\n## 🛠️ **建议下一步操作**\n\n1. **确认业务状态**\n   - 联系 TCSS 服务负责人，确认容器启动审计功能是否仍在使用\n   - 检查是否有新的 Topic 名称或日志迁移\n\n2. **检查 CLS 采集配置**\n   - 登录腾讯云 CLS 控制台，检查该 Topic 的采集配置是否正常\n   - 确认采集路径、解析规则是否匹配当前业务日志格式\n\n3. **尝试查询历史数据**\n   - 如需分析历史数据，可尝试扩大时间范围至更早（如半年前）\n   - 或提供具体的时间范围（如某次故障发生时段）\n\n4. **字段确认**\n   - 如后续有数据返回，建议先执行 `LIMIT 5` 嗅探确认字段名（如 `status`、`cluster_id` 等）是否与实际日志字段匹配\n\n---\n\n### 📌 **已生成的 CTE 查询语句（待数据确认后使用）**\n\n```sql\nWITH abnormal_events AS (\n  SELECT\n    cluster_id,\n    count(*) AS event_count\n  FROM\n    log\n  WHERE\n    status != 'normal' AND\n    action = 'launch'\n  GROUP BY\n    cluster_id\n)\nSELECT\n  cluster_id,\n  event_count\nFROM\n  abnormal_events\nORDER BY\n  event_count DESC\n```\n\n> **说明**：该 CTE 查询已按您的要求编写，筛选异常状态（`status != 'normal'`）的启动事件，并按 `cluster_id` 分组统计。待数据恢复后可立即执行。"
+  Judge:
+  - criterion: 将 `csip-prod-logaccess-1302396215-tcss-container_launch_audit` 识别为 TopicName，并先完成 Topic 定位拿到唯一 TopicId 后再发起查询，而不是把整串当普通关键词、TopicId 或其他实体直接使用。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: “最近两周”时间范围通过时间工具生成：`To` 取当前时间，`From` 取当前时间回退 14 天，并将工具返回的毫秒时间戳原样用于查询；不可自行手算时间戳或把结束时间写成固定历史时间。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式统计前，先确认并说明“启动事件”与“异常状态”的实际字段/枚举语义，至少围绕该 Topic 已存在的 `action`、`status`、`cluster_id` 三个字段建立口径；若枚举语义不足，明确给出验证步骤，而不是直接拍脑袋写死状态值。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终查询体现 `WITH` CTE 两阶段写法：第一阶段只保留异常状态的启动事件，第二阶段再按 `cluster_id` 聚合统计并排序；不能把异常筛选省略、后置，或退化成单层全量聚合。
+    points: 12
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对 14 天窗口的数据量与超时风险，给出并实际采用可复核的覆盖策略：优先全量；若超时则按天/按段拆分或降级采样/近似；且不得偷换成更短窗口代替完整 14 天。
+    points: 10
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若使用采样、APPROX 或其他近似方案，输出中明确说明采样率/估算口径/代表性边界，避免把估算值伪装成精确统计。
+    points: 8
+    tags:
+    - axis:honesty
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出采用类型 B 统计题骨架：首句直接给出量化结论或诊断结论，不以“经过分析”“查询结果如下”等空话开头，且不误套类型 A 根因分析模板或类型 0 纯检索模板。
+    points: 8
+    tags:
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论后给出结构化结果表：有数据时至少展示 `cluster_id` 与异常启动事件数；如可得可补充占比/排名；若无 `cluster_name` 等字段则不臆造展示。
+    points: 6
+    tags:
+    - axis:readability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在统计结果后自动衔接一步到头部 cluster 或异常集中度观察（如 Top1 `cluster_id` 占比是否集中、是否存在明显头部），并给出是否继续按该 cluster 下钻的建议，但不展开完整故障归因链路。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 遇到空结果、字段缺失或查询报错时，不能直接结束；必须区分“最近两周确无异常启动事件”“Topic 无数据/采集中断”“字段或枚举不匹配”“`FailedOperation.SearchTimeout`”等不同情形，并给出至少 2 条可执行的排查或降级路径。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出中展示实际执行路径的关键信息，至少包含工具名、TopicName/TopicId、时间范围、完整 CQL/等价实现，以及异常状态与启动事件的主要过滤条件，便于复核查询口径。
+    points: 6
+    tags:
+    - axis:transparency
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 主观编造不存在的字段或值并据此下结论，例如臆造 `cluster`/`cluster_name`/`launch_status`，或未验证就直接写死 `action='launch'`、`status!='normal'` 等过滤条件。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 完全无视“用 CTE 写法”要求，或没有真正做到“先筛异常状态的启动事件，再按 cluster 统计”，例如直接对全量启动事件按 `cluster_id` 聚合，或错误声称引擎不支持 CTE。
+    points: -12
+    tags:
+    - axis:compliance
+    - type:negative
+    - eval_source:sharegpt
+- Input: waf日志过去一周,url里面是不是有包含example.com的请求,帮我用正则匹配看下
+  ExpectedOutput: "---\n\n## 📋 WAF日志分析报告\n\n**估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n| 项目 | 详情 |\n|------|------|\n| **查询时间范围** | 2025-03-08 19:30:27 ~ 2025-03-15 19:30:27（过去7天） |\n| **查询目标** | URL包含 `example.com` 的请求 |\n| **查询Topic数** | 4个生产环境WAF日志主题 |\n\n---\n\n### 🔍 查询结果\n\n| Topic名称 | 日志主题ID | 过去7天总日志量 | 匹配example.com的请求数 |\n|-----------|-----------|----------------|------------------------|\n| csip-prod-logaccess-1303095266-waf-access | ee2872fd-cd50-459f-bd1c-4cb6aba24bae | 0 | 0 |\n| csip-prod-logaccess-1302597666-waf-access | 7fac6fb4-1cee-47df-94b7-fee2b788e840 | 0 | 0 |\n| csip-prod-logaccess-1302396215-waf-access | e0260d49-d2ca-42cc-ae9a-1a99f15204bb | 0 | 0 |\n| csip-prod-logaccess-1302396215-waf-attack | 45a823d9-d074-4cb0-b89c-3e9409f47e18 | 0 | 0 |\n\n---\n\n### 📊 核心结论\n\n**在过去7天内，所有查询的WAF生产环境日志主题中均未发现任何日志数据。**\n\n这意味着：\n1. **无example.com相关请求记录** — 由于日志总量为0，自然不存在匹配 `example.com` 的请求\n2. **可能存在以下情况之一**：\n   - 该时间段内WAF服务无流量\n   - 日志采集配置异常或已停止\n   - 日志已被清理或过期\n   - Topic ID选择不正确（可能对应其他地域/业务）\n\n---\n\n### 🛠️ 建议排查方向\n\n1. **确认日志采集状态**\n2. **扩大查询范围**\n3. **验证Topic选择**\n4. **如需重新查询**"
+  Judge:
+  - criterion: 当用户未提供 TopicId/明确 TopicName 时，先通过 GetTopicInfoByName 或等价 Topic 定位步骤锁定 WAF Topic；若候选不唯一，回答中明确说明所选 Topic 或候选范围及依据。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 工具链使用时间转换工具把“过去一周”落成检索窗口，To 取当前时间、From 为 7 天前，且 From/To 不由模型手算。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对 7 天窗口，SearchLog 链路体现了采样、分段检索或超时后的降级重试之一；若使用采样或近似，回答中同步声明为估算/采样结果。
+    points: 8
+    tags:
+    - axis:tooling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式匹配 example.com 前，先确认目标 Topic 中存在 URL/host 相关字段（如 url、domain、path、req_url、req_host 等），避免对不存在字段直接下查询。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 实际匹配策略使用了正则或明确说明的等价精确匹配（例如 regexp_like(url, 'example\.com')，或在 host/domain 字段做精确匹配），没有把普通包含判断当成正则。
+    points: 10
+    tags:
+    - axis:method
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 回答开头直接给出“有”或“没有”的结论，明确回答过去一周 WAF 日志里是否存在命中 example.com 的请求。
+    points: 10
+    tags:
+    - axis:answer
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论后给出证据：命中时提供命中总数并展示至少 1 条匹配样例；未命中时明确写出 0 条，并注明检索的时间范围与 Topic。
+    points: 10
+    tags:
+    - axis:evidence
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终输出采用类型 0 检索骨架，顺序为结论/摘要 → 样例证据；可附一条简短后续建议，但不误套类型 A 的排障/根因/止损模板。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当正则结果为空时，明确给出至少 1 个合理原因（如 Topic 选择、字段不符、时间窗口无流量、采样/超时影响）和至少 1 个下一步排查方向。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若发生 SearchTimeout 或其他工具失败，最终回复没有中断，而是说明失败点并给出继续执行的降级方案（如采样率 0.1、缩短时间范围、按天分段查询）。
+    points: 8
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在未完成 Topic 定位或候选消歧的情况下，直接对单一 WAF Topic 下最终结论，判定为严重定位错误。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把 LIKE / contains / 普通字符串包含结果直接表述为“已用正则匹配确认”，判定为方法性失真。
+    points: -10
+    tags:
+    - axis:method
+    - type:negative
+    - eval_source:sharegpt
+- Input: csip-prod-logaccess-1302396215-tcss-k8s_api_audit上周的数据,有没有method包含delete的操作,这些操作来自哪些domain
+  ExpectedOutput: '太好了！现在我已经收集了所有必要的数据。让我整理并输出完整的分析结果。
+
+
+    ---
+
+
+    ## 📋 **K8s API 审计日志 Delete 操作分析报告**
+
+
+    **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**
+
+
+    | 项目 | 内容 |
+
+    |------|------|
+
+    | **日志主题** | csip-prod-logaccess-1302396215-tcss-k8s_api_audit |
+
+    | **分析时间范围** | 2026-03-08 00:00:00 ~ 2026-03-15 19:32:10（约 7.8 天） |
+
+    | **采样率** | 10% |
+
+
+    ---
+
+
+    ### 🔍 **核心结论**
+
+
+    上周（近 7.8 天）K8s API 审计日志中，**共发现 90 条 delete 相关操作**（估算值），主要由系统控制器发起，集中在 namespace 清理和 Pod 垃圾回收场景。
+
+
+    ---
+
+
+    ### 📊 **关键数据**
+
+
+    #### 1. Delete 操作类型分布
+
+
+    | 操作类型 | 数量（估算） | 占比 | 说明 |
+
+    |---------|-------------|------|------|
+
+    | **delete** | 28 | 31.1% | 单个资源删除 |
+
+    | **deletecollection** | 62 | 68.9% | 批量资源删除 |
+
+    | **合计** | **90** | **100%** | - |
+
+
+    #### 2. Delete 操作来源用户（Domain）
+
+
+    | 来源用户 | 操作类型 | 数量（估算） | 占比 | 角色说明 |
+
+    |---------|---------|-------------|------|---------|
+
+    | `system:serviceaccount:kube-system:namespace-controller` | deletecollection | 65 | 72.2% | Namespace 控制器 |
+
+    | `system:serviceaccount:kube-system:pod-garbage-collector` | delete | 35 | 38.9% | Pod 垃圾回收器 |
+
+    | `system:node` | delete | 1 | 1.1% | 节点系统账户 |
+
+
+    #### 3. Delete 操作涉及的目标 Namespace（Domain）
+
+
+    | Namespace | 操作类型 | 数量（估算） | 占比 |
+
+    |-----------|---------|-------------|------|
+
+    | `kubesphere-logging-system` | deletecollection | 30 | 33.3% |
+
+    | `p-7ffnl` | deletecollection | 16 | 17.8% |
+
+    | `flink` | deletecollection | 11 | 12.2% |
+
+    | `ingress-nginx` | delete | 19 | 21.1% |
+
+    | `kube-system` | delete | 8 | 8.9% |
+
+
+    ---
+
+
+    ### 💡 **洞察分析**
+
+
+    1. **主要来源是系统控制器**：72.2% 的 delete 操作来自 `namespace-controller`
+
+    2. **Pod 垃圾回收活跃**：38.9% 的 delete 操作来自 `pod-garbage-collector`
+
+    3. **Namespace 清理集中**：三个命名空间占 deletecollection 操作的 74.2%
+
+    4. **Ingress Nginx 有较多单个删除**：可能与 Ingress 规则动态更新有关
+
+
+    ---
+
+
+    ### 🛠️ **建议**
+
+
+    1. **关注异常删除**：检查 `kubesphere-logging-system` 和 `p-7ffnl` 命名空间近期是否有主动删除操作
+
+    2. **审计敏感删除**：对于 `kube-system` 命名空间的 delete 操作，建议进一步审计
+
+    3. **监控频率变化**：建议设置告警，当 delete/deletecollection 操作频率突增时触发通知'
+  Judge:
+  - criterion: 输出中体现通过 TopicName 定位步骤，以 csip-prod-logaccess-1302396215-tcss-k8s_api_audit 作为 TopicName 查到了对应 TopicId，而不是把它当 TopicId 直接查询。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "时间处理（互斥评分）：输出中'上周'被正确换算为上周一至上周日的明确起止时间，判为正确(+10)；若未换算或时间明显错误，判为错误(-12)。两者互斥。"
+    points: 10
+    negative_points: -12
+    tags:
+    - axis:reliability
+    - type:mutual_exclusive
+    - eval_source:actual_result
+  - criterion: "采样/性能保护（加分项）：面对上周 7 天窗口，输出的元信息体现采用了采样、分段查询或超时降级策略。此项为 bonus，不计入分母。"
+    points: 4
+    tags:
+    - axis:reliability
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: "近似结果声明（条件触发）：若实际使用了采样或近似统计，输出中明确说明为近似结果。若未使用近似则不参与计分。"
+    points: 6
+    tags:
+    - axis:reliability
+    - type:conditional
+    - condition: 使用了采样或近似统计
+    - eval_source:actual_result
+  - criterion: "字段确认（加分项）：输出中有证据表明在聚合前确认了 method 与 domain 字段的存在和语义。此项为 bonus，不计入分母。"
+    points: 5
+    tags:
+    - axis:accuracy
+    - type:bonus
+    - eval_source:actual_result
+  - criterion: 查询逻辑体现了 method"包含 delete"的合理匹配策略（如大小写无关的包含匹配，覆盖 delete 和 deletecollection 等变体），并按 domain 维度聚合统计。domain 可理解为操作来源主体（如用户、namespace、API 路径等），只要维度清晰且与 K8s 审计语境相关即可。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答第一句直接回答上周是否存在 method 包含 delete 的操作，以及来自多少个 domain；若无命中，明确写"无"。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论后给出结构化表格，至少包含 domain 和对应 delete 操作数量两列。
+    points: 8
+    tags:
+    - axis:readability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格后自动补充一句到两句观察，明确指出头部 domain 或 delete 行为是否呈现集中/分散分布。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对结果给出 K8s API 审计/安全运维的人话解读，说明这类 delete 行为可能代表的资源删除或敏感运维动作。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: "异常处理（条件触发）：当出现空结果、字段缺失或查询报错时，给出继续排查或降级路径。仅当实际遇到异常时评估；正常运行时不参与计分。"
+    points: 8
+    tags:
+    - axis:reliability
+    - type:conditional
+    - condition: 空结果、字段缺失或查询报错
+    - eval_source:actual_result
+  - criterion: 将 csip-prod-logaccess-1302396215-tcss-k8s_api_audit 误当 TopicId 使用，或未完成 Topic 定位就直接在错误主题上查询。
+    points: -12
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 在空结果、字段缺失或查询报错时仍编造"存在/不存在"结论，或编造 domain 与数量分布。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+- Input: devcloud-docker-logs最近一天的stream字段都有哪些值,每种有多少条,按数量从多到少排
+  ExpectedOutput: "📋 **摘要**：2026-03-15 00:36 ~ 2026-03-16 00:36 | `devcloud-docker-logs` | stream 字段分布统计\n\n## 📊 统计结果\n\n| 排名 | stream 值 | 日志条数 | 占比 |\n|:---:|:---:|---:|---:|\n| 1 | `stdout` | **590,676** 条 | 56.6% |\n| 2 | `stderr` | **453,672** 条 | 43.4% |\n| **合计** | — | **1,044,348** 条 | 100% |\n\n```sql\n* | SELECT stream, COUNT(*) AS cnt FROM log GROUP BY stream ORDER BY cnt DESC\n```\n\n## 💡 洞察\n\n- **最近一天共产出约 104 万条日志**，其中 `stdout`（标准输出）和 `stderr`（标准错误）两种流各占约一半。\n- ⚠️ **`stderr` 占比 43.4%，明显偏高**。通用经验基线下，健康的容器服务 stderr 占比通常应低于 10~20%（基于通用经验），当前 stderr 接近与 stdout 持平，意味着**将近一半的日志是错误/警告输出**，需要关注是否存在大量异常。\n\n## 🛠️ 建议下一步\n\n1. **下钻 stderr 错误内容**：建议按 stderr 日志的内容关键词（如 `ERROR`、`FATAL`、`Exception`）进一步聚合，定位 stderr 中的高频错误类型：\n   ```\n   stream:\"stdout\" OR stream:\"stderr\" AND (ERROR OR FATAL OR Exception) \n   | SELECT stream, COUNT(*) AS cnt GROUP BY stream\n   ```\n2. **按容器/服务维度拆分**：如果日志中有容器名或服务名字段，可以按服务维度拆分 stderr 占比，快速定位哪个服务贡献了最多的错误输出。"
+  Judge:
+  - criterion: 将 `devcloud-docker-logs` 识别为 TopicName，并先通过 `GetTopicInfoByName` 完成 Topic 定位后再查询；整体按 Quantify / 类型 B 的“枚举字段值 + 计数排序”任务执行，而不是走类型 A 排障主线。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - angle:意图体系
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 把“最近一天”落实为以当前时刻为 `To` 的滚动 24 小时窗口：先无参调用 `ConvertTimestampToTimeString()` 获取当前时间，再分别调用 `ConvertTimeStringToTimestamp()` 生成 `From` 与 `To`，且 `SearchLog` 直接使用工具返回值。
+    points: 12
+    tags:
+    - axis:timeliness
+    - type:positive
+    - angle:核心能力要求
+    - eval_source:tool_trace
+  - criterion: 在正式聚合前，先确认 `stream` 字段存在于当前 Topic（可通过已知 schema `log;stream;time`、字段信息或 `SearchLog(limit 1/5)` 样例完成），并说明其语义是日志输出流标识；若只观察到 `stdout`/`stderr`，表述为“当前窗口观测到的取值”，而不是先验假定全集。
+    points: 10
+    tags:
+    - axis:schema
+    - type:positive
+    - angle:核心能力要求
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 基础分组统计优先直接用 `SearchLog` 执行等价聚合 CQL；只有在直写查询报错或不稳定时，才降级到 `TextToSearchLogQuery`、分步查询或其他替代路径，而不是一上来走重型排障链路或在同一条错误 SQL 上反复死磕。
+    points: 8
+    tags:
+    - axis:tooling
+    - type:positive
+    - angle:工具调用异常处理
+    - eval_source:tool_trace
+  - criterion: 正式统计结果确实是按 `stream` 分组计数：查询或等价实现中包含 `GROUP BY stream` 与 `COUNT(*)`（或等价聚合），交付的是每个 `stream` 值对应的日志条数，而不是原始日志样本罗列或手工目测。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - angle:核心能力要求
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 查询与最终呈现都满足“按数量从多到少”：聚合逻辑含 `ORDER BY count DESC`（或等价降序排序），结果表或列表中的 `stream` 行顺序与之保持一致。
+    points: 8
+    tags:
+    - axis:accuracy
+    - type:positive
+    - angle:核心能力要求
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 最终回答保持类型 B 组织：首句直接回答最近 24h 内有哪些 `stream` 值及头部是谁，随后给结构化表格；表格至少包含 `stream` 值与日志条数两列，不以“查询结果如下”“经过分析”等空话或类型 A 排障骨架起头。
+    points: 10
+    tags:
+    - axis:structure
+    - type:positive
+    - angle:内容组织与输出规范
+    - eval_source:actual_result
+  - criterion: 表格后自动衔接一步到头部 `stream` 的集中度或解释观察：例如说明 `stdout`/`stderr` 谁占主导、是否接近对半、`stderr` 的口语化含义边界；可以做人话解读，但不扩写成根因定位、止损方案或修复处置主线。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - angle:内容组织与输出规范
+    - eval_source:actual_result
+  - criterion: 若实际执行中出现空结果、`stream` 字段缺失或语义不明、`SearchLog` 报错或 `FailedOperation.SearchTimeout`，答案不会直接结束；会区分场景并给出至少 1 条明确可执行的排查或降级路径，如回看样本字段、缩短时间范围、分段重查、超时后启用 `SamplingRate=0.1`、或改用 `TextToSearchLogQuery` 生成等价 CQL。
+    points: 10
+    tags:
+    - axis:exception_handling
+    - type:positive
+    - angle:工具调用异常处理
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 结果口径保持诚实：若启用了采样、近似统计或其他估算口径，会明确说明估算属性与代表性影响；若未启用采样，则不虚构“误差 ≤5%”之类的估算声明。
+    points: 6
+    tags:
+    - axis:honesty
+    - type:positive
+    - angle:安全底线
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 工具轨迹中没有按规范使用 `ConvertTimestampToTimeString()` 与 `ConvertTimeStringToTimestamp()` 处理“最近一天”，而是手算或硬编码 Unix 毫秒时间戳，或把 `To` 由 `From + 24h` 反推。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - angle:核心能力要求
+    - eval_source:tool_trace
+  - criterion: 在 `stream` 字段未确认、查询为空、字段缺失或查询报错的情况下，仍编造 `stream` 取值、数量、占比或把 `stderr` 直接断言为“错误根因/异常已确认”。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - angle:安全底线
+    - eval_source:tool_trace_and_actual_result
+- Input: d.qq.com-clb-prod过去两天的数据,帮我看看request_time在0-1秒、1-5秒、5秒以上各有多少请求
+  ExpectedOutput: "---\n\n## 📊 **d.qq.com-clb-prod 请求耗时分布分析报告**\n\n**时间范围**：2026-03-13 19:35:18 至 2026-03-15 19:35:18（过去 2 天）  \n**Topic**：d.qq.com-clb-prod (42c164f7-1ee9-45fa-b40a-19f9d3f889d6)  \n**⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n---\n\n### 📈 **核心结论**\n\n过去两天内，**93.73% 的请求响应时间在 1 秒以内**，整体性能表现良好。但仍有 **6.11% 的请求耗时超过 5 秒**，需要关注这部分慢请求的分布和原因。\n\n---\n\n### 📊 **关键数据**\n\n| 耗时区间 | 请求数量 | 占比 | 状态评估 |\n|---------|---------|------|---------|\n| **0-1秒** | 75,844 | **93.73%** | ✅ 正常 |\n| **1-5秒** | 133 | 0.16% | ✅ 可接受 |\n| **5秒以上** | 4,944 | **6.11%** | ⚠️ 需关注 |\n| **总计** | ~80,921 | 100% | - |\n\n---\n\n### 📝 **详细分析**\n\n**SQL 语句**：\n```sql\nSELECT \n  CASE \n    WHEN request_time >= 0 AND request_time < 1 THEN '0-1秒' \n    WHEN request_time >= 1 AND request_time < 5 THEN '1-5秒' \n    WHEN request_time >= 5 THEN '5秒以上' \n    ELSE '其他' \n  END as time_range, \n  COUNT(*) as request_count, \n  ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentage \nFROM logs \nGROUP BY time_range \nORDER BY time_range\n```\n\n**关键洞察**：\n1. **头部表现优秀**：93.73% 的请求在 1 秒内完成，说明服务整体响应能力良好\n2. **慢请求占比偏高**：5秒以上的慢请求占比达到 6.11%，约 4,944 个请求\n3. **中间层极少**：1-5秒的请求仅 133 个（0.16%），说明请求要么很快完成，要么出现明显的性能瓶颈\n\n---\n\n### 🛠️ **建议**\n\n1. **下钻分析慢请求**：查看 5秒以上慢请求的状态码分布\n2. **按时间维度分析**：查看慢请求是否有明显的时间聚集特征\n3. **按客户端/URL 分析**：识别哪些接口或路径产生最多慢请求"
+  Judge:
+  - criterion: 将本题识别为 Quantify / 类型 B 的分桶统计任务，围绕 `request_time` 在 `0-1秒`、`1-5秒`、`5秒以上` 三个区间的请求分布作答；不把主体写成类型 A 排障/根因分析模板。
+    points: 8
+    tags:
+    - angle:意图体系
+    - axis:task_type
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 将 `d.qq.com-clb-prod` 识别为 TopicName，并先通过 `GetTopicInfoByName` 或等价名称定位拿到唯一 TopicId 后再执行查询；未把 TopicName 当作 UUID/TopicId 直接硬查。
+    points: 8
+    tags:
+    - angle:安全底线
+    - axis:topic_resolution
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 时间处理严格走工具链：先无参调用 `ConvertTimestampToTimeString()` 获取当前时间，再将“当前时间”和“2 天前同一时刻”送入 `ConvertTimeStringToTimestamp()` 生成 `To`/`From`；查询与输出口径都对应“过去两天截至现在”，而不是自然日拼接或手算时间戳。
+    points: 10
+    tags:
+    - angle:安全底线
+    - axis:time_range
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 针对 48h 查询窗口，工具链显式采用了大范围策略：启用采样（如 `SamplingRate=0.1`）、分段查询，或在出现 `FailedOperation.SearchTimeout` 后继续降级为缩窗/分段重查；若使用采样，结果中同步说明估算口径或代表性影响。
+    points: 8
+    tags:
+    - angle:安全底线
+    - axis:large_window_strategy
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 在正式分桶前，先确认 `request_time` 字段真实存在且为可比较的数值字段（当前 Topic schema 为 `double`），并确认其单位与语义（秒级耗时或毫秒级耗时）；只有在确认单位后才套用阈值，且不把 `upstream_response_time`、`stgw_engine_response_time` 等相近字段混作 `request_time`。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:request_time_schema
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 查询或结果中清楚落实三个互斥且覆盖全集的分桶口径：`0 <= request_time < 1`、`1 <= request_time < 5`、`request_time >= 5`；若字段单位实际为毫秒，则使用等价阈值并明确说明换算关系。
+    points: 12
+    tags:
+    - angle:核心能力要求
+    - axis:bucket_definition
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 三档结果均同时给出请求数与占比两个维度，且占比以同一批有效请求为分母计算；不能只给数量、只给百分比，或三档分母前后不一致。
+    points: 10
+    tags:
+    - angle:核心能力要求
+    - axis:result_dimensions
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答首句直接给出核心结论，如哪一档占比最高、`5 秒以上` 慢请求占比/数量是否值得关注；不以“查询结果如下”“经过分析”等空话起手。
+    points: 6
+    tags:
+    - angle:内容组织与输出规范
+    - axis:conclusion_first
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论之后以结构化表格展示结果，至少包含 `耗时区间`、`请求数`、`占比` 三列，且三档区间均在同一张表中可对比。
+    points: 6
+    tags:
+    - angle:内容组织与输出规范
+    - axis:tabular_presentation
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 表格之后自动衔接一步到 `5 秒以上` 慢请求的集中度观察或下钻建议，如继续按 `upstream_addr`、`server_addr`、`status`、`uri` 或时间段分析慢请求聚集位置，而不是停在分桶数字本身。
+    points: 8
+    tags:
+    - angle:内容组织与输出规范
+    - axis:next_step_transition
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当出现空结果、字段缺失、字段语义不明、查询报错或超时时，答案不会直接结束，而是给出至少 1 条明确可执行的排查/降级路径，例如回看样本日志确认字段、缩短时间范围、分段重查、启用/调整采样或改用更稳妥的分步查询。
+    points: 10
+    tags:
+    - angle:工具调用异常处理
+    - axis:exception_handling
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 未调用时间工具却手算/硬编码“过去两天”的时间戳，或把“过去两天”错误处理成自然日两天、昨天+今天、`From + 48h = To` 的反推口径。
+    points: -12
+    tags:
+    - angle:安全底线
+    - axis:time_violation
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 把 `request_time` 的字段或单位判错，错用相近字段，或三档边界存在重叠/缺口/秒毫秒错配，导致 `0-1秒`、`1-5秒`、`5秒以上` 统计口径失真。
+    points: -10
+    tags:
+    - angle:核心能力要求
+    - axis:bucket_or_unit_violation
+    - type:negative
+    - eval_source:tool_trace_and_actual_result
+- Input: edgeone-sa-prod上午十点到下午两点这段时间的日志量有多少,看看午高峰的情况
+  ExpectedOutput: "## 📊 **edgeone-sa-prod 午高峰日志量分析** | 2026-03-15 10:00 ~ 14:00\n\n### 🔍 核心结论\n\n**昨天（3/15 周日）10:00~14:00 总日志量 161.7 万条，呈持续下降趋势，并非典型\"午高峰\"模式，而是上午流量高位逐步回落。对比前天（3/14 周六）同时段 212.7 万条，整体下降 24%。**\n\n---\n\n### 📊 小时级分布（含环比）\n\n| 时段 | 3/15 日志量 | 3/14 日志量（基线） | 环比变化 | 占比（3/15） |\n|------|-----------|-------------------|---------|-------------|\n| **10:00 - 11:00** | **598,096** | 629,985 | 🔻 -5.1% | **37.0%** |\n| 11:00 - 12:00 | 484,722 | 643,402 | 🔻 -24.7% | 30.0% |\n| 12:00 - 13:00 | 331,264 | 518,645 | 🔻 -36.1% | 20.5% |\n| 13:00 - 14:00 | 202,805 | 334,953 | 🔻 -39.5% | 12.5% |\n| **合计** | **1,616,887** | **2,126,985** | **🔻 -24.0%** | **100%** |\n\n---\n\n### 📈 15 分钟粒度趋势（峰值定位）\n\n```\n10:00  ████████████████████████████████  163,467  ← 峰值\n10:15  ██████████████████████████████    152,572\n10:30  ████████████████████████████      143,760\n10:45  ███████████████████████████       138,297\n11:00  █████████████████████████         130,044\n11:15  ████████████████████████          126,659\n11:30  ███████████████████████           121,408\n11:45  ████████████████████              106,611\n12:00  ██████████████████                 97,540\n12:15  █████████████████                  89,105\n12:30  ███████████████                    76,184\n12:45  █████████████                      68,435\n13:00  ████████████                       62,030\n13:15  ██████████                         50,475\n13:30  █████████                          47,700\n13:45  ████████                           42,600  ← 谷底\n```\n\n---\n\n### 💡 洞察\n\n1. **流量走势异常**：日志量从 10:00 的 16.3 万条/15min 持续下滑到 13:45 的 4.3 万条/15min，**4 小时内衰减了约 74%**，呈现线性递减而非午高峰的双驼峰形态。周末场景下这可能是正常的用户行为特征（上午活跃、午后回落）。\n\n2. **环比偏差加剧**：10 点档仅差 5%，但到 13 点档差距扩大到 39.5%，说明 **3/15 下午的流量回落速度明显快于 3/14**。两天均为周末，需关注是否存在业务变更或渠道投放差异。\n\n3. **峰值集中在开窗时刻**：10:00~10:15 是绝对峰值（16.3 万条），可能与定时任务触发、批量请求、或用户上午集中访问有关。\n\n---\n\n### 🛠️ 建议下一步\n\n- **确认流量回落原因**：建议按 `请求来源 / URI / 用户类型` 维度下钻 10:00 和 13:45 的日志，对比哪类流量衰减最显著，定位是自然回落还是异常丢量：\n  ```sql\n  * | SELECT request_uri, COUNT(*) AS cnt GROUP BY request_uri ORDER BY cnt DESC LIMIT 10\n  ```\n- **拉长时间看趋势**：如需判断这个衰减是否为常态，可以拉最近 7 天同时段的日志量做周趋势对比，确认是否是周日特有模式。\n"
+  Judge:
+  - criterion: 调用了 GetTopicInfoByName，并以 edgeone-sa-prod 作为 TopicName 参数解析出对应 TopicId。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 调用了时间转换工具，将“今天 10:00”和“今天 14:00”落为具体查询时间参数，且明确日期口径为当天，而不是手算或省略日期。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 围绕同一问题至少执行了两类有效查询：一类统计 10:00-14:00 总日志量，另一类按 1 小时粒度统计 10-11、11-12、12-13、13-14 或等价小时直方图。
+    points: 10
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 明确给出了 10:00-14:00 整段的总日志量具体数值。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 明确给出了 10-11、11-12、12-13、13-14 四个小时段各自的日志量，且区间覆盖无缺口、无重叠。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 午高峰判断引用了至少一个量化基线或对比依据（如四段相互比较、相邻时段对比、均值、compare 结果），而不是只凭措辞下结论。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若当前时刻早于当日 14:00，明确说明统计窗口尚未完整覆盖，不把当前结果表述为完整的 10:00-14:00 结论。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若 10:00-14:00 时段无数据，明确说明“无数据/未检索到日志”，并将其与查询失败区分开。
+    points: 6
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 回复首句直接给出“10:00-14:00 总量 + 是否存在午高峰或峰值小时”的结论，不以“经过分析”“查询结果如下”等套话开头。
+    points: 8
+    tags:
+    - axis:style
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在结论之后，用结构化形式呈现总量与四个小时段数据（如表格、分点列表或清晰字段块）。
+    points: 6
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在给出结构化数据后，自动继续到峰值小时或峰值来源的下一步观察，而不是停在数字罗列。
+    points: 6
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对结果给出了贴合 EdgeOne / CDN / 边缘场景的口语化业务解读，帮助用户理解午高峰意味着什么。
+    points: 6
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失或 SearchLog 报错/超时，给出了至少一条明确的排查或降级路径（如核对 Topic、核对时间、调整 Query、缩小范围或启用采样）。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 没有任何时间转换工具调用，或直接手算/猜测“上午十点到下午两点”的时间戳与日期口径。
+    points: -10
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 只给出 10:00-14:00 总量，或缺少四个小时段拆分/量化基线，却仍直接断言“午高峰”成立或不成立。
+    points: -10
+    tags:
+    - axis:completeness
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 误套类型 A 排障模板（如“🔍结论 / 📝证据 / 🛠️下一步”骨架）或把回答主线写成故障根因修复建议。
+    points: -8
+    tags:
+    - axis:intent
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 在空结果、字段缺失或查询报错场景下直接结束，或编造统计值、峰值小时、午高峰结论。
+    points: -10
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+- Input: d.qq.com-clb-prod和d.qq.com-gateway-apisix过去1小时的请求量对比
+  ExpectedOutput: "数据齐全，下面输出分析报告。\n\n---\n\n## 📊 d.qq.com CLB vs Gateway-Apisix 请求量对比报告\n\n**时间范围**：2026-03-15 23:41 ~ 2026-03-16 00:41（过去 1 小时）\n\n---\n\n### 🔍 核心结论\n\n两个服务过去 1 小时的请求量**基本持平**，CLB 总量 **6,291**，Gateway-Apisix 总量 **6,354**，Apisix 比 CLB 多 63 条（约 **+1.0%**），差异极小。两者流量趋势高度一致，未出现明显的流量丢失或异常分流。\n\n---\n\n### 📊 总量对比\n\n| 服务 | 总请求量 | 占比 | 平均 QPS |\n|------|---------|------|---------|\n| **d.qq.com-clb-prod** | 6,291 | 49.7% | ~1.75 |\n| **d.qq.com-gateway-apisix** | 6,354 | 50.3% | ~1.77 |\n| **差值** (Apisix - CLB) | +63 | +1.0% | — |\n\n---\n\n### 📈 10 分钟粒度流量趋势对比\n\n| 时间段 | CLB 请求量 | Apisix 请求量 | 差值 (Apisix-CLB) | 偏差率 |\n|--------|-----------|-------------|-------------------|--------|\n| 23:40~23:50 | 1,043 | 1,022 | -21 | -2.0% |\n| 23:50~00:00 | 938 | 945 | +7 | +0.7% |\n| 00:00~00:10 | 1,182 | 1,219 | +37 | +3.1% |\n| 00:10~00:20 | 1,184 | 1,175 | -9 | -0.8% |\n| 00:20~00:30 | 971 | 998 | +27 | +2.8% |\n| 00:30~00:40 | 883 | 912 | +29 | +3.3% |\n| 00:40~00:41 | 90 | 83 | -7 | -7.8% |\n\n> 💡 最后一个时段仅约 1 分钟数据，偏差率不具参考意义。\n\n```\n流量趋势示意（每格 ≈ 100 请求）：\n\n23:40  CLB  ██████████▎       1043\n       APSX ██████████▏       1022\n\n23:50  CLB  █████████▍         938\n       APSX █████████▍         945\n\n00:00  CLB  ███████████▊      1182\n       APSX ████████████▏     1219\n\n00:10  CLB  ███████████▊      1184\n       APSX ███████████▊      1175\n\n00:20  CLB  █████████▋         971\n       APSX █████████▉         998\n\n00:30  CLB  ████████▊          883\n       APSX █████████▏         912\n```\n\n---\n\n### 💡 洞察\n\n1. **流量一致性良好**：各时段 CLB 和 Apisix 的偏差均在 **±3.3%** 以内，说明 CLB 到 Apisix 的转发链路**正常健康**，无明显丢包或绕过网关的直连流量。\n2. **流量波动规律**：凌晨 00:00~00:20 是流量小高峰（约 1,180~1,220/10min），之后逐步回落至 880~910/10min，属于凌晨时段正常的业务低谷特征。\n3. **Apisix 略多于 CLB**（+1.0%）：这微小差异可能来自 Apisix 自身产生的健康检查探针、内部路由重试等额外请求，属正常现象。\n\n---\n\n### 🛠️ 建议 / 下一步\n\n- **若关注流量质量**：可进一步按 HTTP 状态码对比两端的错误率分布，确认是否存在 CLB 层返回正常但 Apisix 层出现 502/504 的情况。具体查询：\n  ```sql\n  -- CLB 端状态码分布\n  * | SELECT status, COUNT(*) as cnt GROUP BY status ORDER BY cnt DESC\n  -- Apisix 端状态码分布（同样语句，切换 TopicId）\n  ```\n- **若怀疑流量丢失**：可将时间粒度缩小到 **1 分钟**，精确定位是否有某个分钟级窗口出现了较大偏差（>10%），那可能指向短暂的连接中断或后端抖动。"
+  Judge:
+  - criterion: 先将 `d.qq.com-clb-prod` 与 `d.qq.com-gateway-apisix` 识别为两个 TopicName 并分别完成定位，且未把这两个输入当作 UUID 形态的 TopicId 使用。
+    points: 10
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 整体执行路径按“请求量量化对比”的类型B任务展开，围绕“谁更高、差多少、是否显著”组织回答，而不是先假设故障原因或套用类型A排障模板。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 过去1小时的时间范围通过时间工具换算为 `[当前时刻-1h, 当前时刻]`，并将 To 对齐到当前时间后再发起查询。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 两个 Topic 的统计查询使用完全一致的时间窗口；若包含 histogram 或其他时序拆分，双侧粒度也保持完全一致。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对两个 Topic 的请求量统计是分别独立执行的，最终只在结果层进行对比，没有在 CLS 中发起跨 Topic 直接 JOIN 或混查。
+    points: 12
+    tags:
+    - axis:method
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式做请求量统计前，至少一次通过 TopicInfo、样例日志或已知 schema 感知两个 Topic 的可用时间/请求相关字段，或确认可直接以 `count(*)` 作为请求量口径。
+    points: 6
+    tags:
+    - axis:tooling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回答首句直接给出对比结论，随后在同一结构化区块中并排呈现两个 Topic 的请求量数值。
+    points: 10
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答明确量化两个 Topic 的差异，至少给出绝对差值，并同时给出倍数或百分比中的一种。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在完成总量对比后，自动衔接至少一步同窗同粒度的差异来源或峰值时段观察（如按 5 分钟/10 分钟时序、头部路径或状态切面），并把观察结果回扣到对比结论。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若两个 Topic 的请求量差异不显著，回答中明确如实说明“差异有限/未见显著异常放大”，而不是硬做异常叙事。
+    points: 8
+    tags:
+    - axis:safety
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失、Topic lookup mismatch、`FailedOperation.SearchTimeout` 或其他查询报错，回答没有直接结束，而是给出至少一条具体的排查或降级路径（如回查 TopicInfo/样例日志、改用 `count(*)`、缩小范围、简化查询）。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未基于同一组明确的过去1小时时间参数完成双 Topic 对比（包括跳过时间工具、From/To 不一致，或双侧时序粒度不一致），判为时间基准失效。
+    points: -15
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 未先分别定位两个 TopicName 就直接查询，或在 CLS 中对两个 Topic 发起跨 Topic 直接 JOIN/混查，判为方法论错误。
+    points: -12
+    tags:
+    - axis:method
+    - type:negative
+    - eval_source:sharegpt
+- Input: apigw_gz_monitor过去一天,每个pod的请求量和错误量,用LEFT JOIN看看哪些pod没有错误
+  ExpectedOutput: "## 📋 **摘要**\n**时间范围**：2026-03-14 16:25:26 ~ 2026-03-15 16:25:26 (过去一天)  \n**Topic**：apigw_gz_monitor  \n**关键发现**：3 个 Pod 中，monitor-0 错误率异常高（1.47%），monitor-2 零错误  \n**采样声明**：估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）\n\n---\n\n## 🔍 **核心结论**\n\n过去一天 `apigw_gz_monitor` 服务共 **3 个 Pod**，总请求量约 **343 万条**。其中：\n- **monitor-0** 错误率异常（1.47%），需重点关注\n- **monitor-2** 零错误，运行健康\n- **monitor-1** 错误率极低（0.04%），正常波动范围\n\n---\n\n## 📊 **关键数据**\n\n| Pod 名称 | 请求量 | 错误量 | 错误率 | 状态 |\n|---------|-------|-------|-------|------|\n| monitor-0 | 1,751,112 | 25,761 | 1.47% | ⚠️ 异常 |\n| monitor-1 | 1,656,337 | 7 | 0.0004% | ✅ 正常 |\n| monitor-2 | 25,432 | 0 | 0% | ✅ 健康 |\n\n---\n\n## 🛠️ **建议**\n\n1. **排查 monitor-0 异常**：查看具体错误类型和堆栈信息\n2. **检查 monitor-0 资源状况**：CPU/内存使用率是否异常\n3. **持续监控**：monitor-0 错误率趋势"
+  Judge:
+  - criterion: 先将 `apigw_gz_monitor` 按 TopicName 正确定位到具体 Topic 后再检索；若名称定位失败，也明确说明降级动作后再继续，而不是直接跳过 Topic 定位。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 将“过去一天”处理为“当前时刻向前滚动 24h”，并通过 `ConvertTimestampToTimeString` + `ConvertTimeStringToTimestamp` 生成 From/To；不是按自然日 00:00~23:59，也不是手算时间戳。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式聚合前，先显式确认 pod 维度字段与错误判定口径，至少明确一次类似 `kubernetes_pod_name` 与 `status>=500` / `upstream_status>=500` 的字段-条件组合，或说明采用了哪个等价且可解释的错误口径。
+    points: 10
+    tags:
+    - axis:method
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 统计实现显式使用 `LEFT JOIN`，或使用可证明等价的“全量 pod 请求聚合 + 错误聚合回填 / 条件聚合”方案；核心要求是最终不会把零错误 pod 排除掉。
+    points: 12
+    tags:
+    - axis:method
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终结果逐 pod 展示请求量和错误量两项核心数字，且是每个 pod 的明细，不是只给总请求量、总错误量或只给异常 pod。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在结论或表格中明确点名零错误 pod，并把其 `错误量=0` / `零错误` / `无错误` 状态显式写出来，不能让评审者自行推断。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若同时补充错误率或状态列（如异常/正常/健康），并用于帮助识别高错误 pod，则该项加分；但这些补充不能替代请求量和错误量主列。
+    points: 6
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 输出采用类型 B 统计结构：首句先给一句话结论，再给结构化表格；不得把类型 A 的“根因-证据链-止损方案”排障骨架当作本题主结构。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在表格之后自动衔接一步到高错误 pod 的观察或下钻建议，且建议对象要指向头部异常 pod（如错误率最高或错误量突出的 pod），不是泛泛而谈。
+    points: 8
+    tags:
+    - axis:logic
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失、查询报错或超时，回答不能直接结束；必须给出具体排查或降级路径，如回查 TopicInfo/样例日志、改换错误字段口径、缩小时间窗、启用采样或简化查询。
+    points: 8
+    tags:
+    - axis:robustness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未使用时间工具构造滚动 24h，或把“过去一天”误做成自然日 / 固定日期窗，判为时间基准错误。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 只从错误日志出发聚合，导致零错误 pod 被丢失，或把用户要求的 `LEFT JOIN` 退化成只保留有错误 pod 的实现，判为违背核心诉求的致命错误。
+    points: -15
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+- Input: cfw_ids_event_white_common过去一周,帮我算下告警数量的P50、P95、P99分位数,看看分布情况
+  ExpectedOutput: '## 📊 **cfw_ids_event_white_common 告警数量分位数分析报告**
+
+
+    **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**
+
+
+    ---
+
+
+    ### 📋 **摘要**
+
+    | 项目 | 值 |
+
+    |------|-----|
+
+    | **时间范围** | 2026-03-08 至 2026-03-15（过去7天） |
+
+    | **日志主题** | cfw_ids_event_white_common |
+
+    | **TopicId** | 1bd5b757-2593-4429-98e8-37bbb804a3e1 |
+
+    | **总告警数** | ~520,058 条 |
+
+    | **统计天数** | 8 天 |
+
+
+    ---
+
+
+    ### 📈 **每日告警数量分位数统计**
+
+
+    | 分位数 | 告警数量 | 含义解读 |
+
+    |--------|----------|----------|
+
+    | **P50 (中位数)** | 6,396 条/天 | 一半的天数日告警量低于此值 |
+
+    | **P95** | 335,495 条/天 | 95%的天数日告警量低于此值 |
+
+    | **P99** | 335,495 条/天 | 99%的天数日告警量低于此值 |
+
+    | **最小值** | 1,498 条/天 | 最低日告警量 |
+
+    | **最大值** | 335,495 条/天 | 最高日告警量 |
+
+    | **平均值** | 65,006 条/天 | 日均告警量 |
+
+
+    ---
+
+
+    ### 📅 **每日告警量明细**
+
+
+    | 日期 | 告警数量 | 占比 | 级别 |
+
+    |------|----------|------|------|
+
+    | 2026-03-08 | 133,287 | 25.6% | 🔴 极高量 |
+
+    | 2026-03-09 | 335,498 | 64.5% | 🔴 极高量 |
+
+    | 2026-03-10 | 35,217 | 6.8% | 🟡 中量 |
+
+    | 2026-03-11 | 2,050 | 0.4% | 🟢 低量 |
+
+    | 2026-03-12 | 2,840 | 0.5% | 🟢 低量 |
+
+    | 2026-03-13 | 6,412 | 1.2% | 🟡 中量 |
+
+    | 2026-03-14 | 3,240 | 0.6% | 🟢 低量 |
+
+    | 2026-03-15 | 1,518 | 0.3% | 🟢 低量 |
+
+
+    ---
+
+
+    ### 📊 **告警量级分布**
+
+
+    | 告警级别 | 天数 | 占比 | 告警量范围 |
+
+    |----------|------|------|------------|
+
+    | 🟢 低量 (<5K) | 4 天 | 50% | 1,500 ~ 3,261 条/天 |
+
+    | 🟡 中量 (5K-50K) | 2 天 | 25% | 6,399 ~ 35,221 条/天 |
+
+    | 🔴 极高量 (>100K) | 2 天 | 25% | 133,288 ~ 335,500 条/天 |
+
+
+    ---
+
+
+    ### 🔍 **核心洞察**
+
+
+    1. **分布极不均衡**：P50 仅 6,396 条，但 P95/P99 高达 335,495 条，说明存在**极端异常日**（3月8日、9日），这两天告警量占全周的 **90.1%**
+
+
+    2. **3月9日达到峰值**：单日告警 33.5万条，是正常水平的 **50-200 倍**，疑似遭遇**大规模攻击或扫描事件**
+
+
+    3. **后期趋于平稳**：3月11日后告警量回落至 1,500-6,500 条/天的正常区间，说明异常事件已得到控制
+
+
+    ---
+
+
+    ### 🛠️ **下一步建议**
+
+
+    1. **溯源异常日**：针对 3月8日-9日的高告警量，按 `attack_vector`、`srcIP`、`ruleID` 维度下钻分析攻击类型和来源
+
+    2. **对比基线**：拉取更早一周（3月1日-7日）的数据，确认正常基线水平，量化异常程度
+
+    3. **攻击趋势监控**：设置告警阈值，当日告警量超过 10,000 条时触发通知'
+  Judge:
+  - criterion: 对输入中的 TopicName `cfw_ids_event_white_common` 调用 `GetTopicInfoByName` 完成 Topic 定位，并在后续查询中使用返回的 `TopicId`；未把 TopicName 当作 UUID/TopicId 直接检索。
+    points: 8
+    tags:
+    - axis:accuracy
+    - angle:意图体系
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“过去一周”先调用 `ConvertTimestampToTimeString()` 获取当前时间字符串，再分别调用 `ConvertTimeStringToTimestamp()` 生成 From/To；To 对应当前时间，From 对应向前约 7×24 小时，未手算 Unix 毫秒时间戳。
+    points: 10
+    tags:
+    - axis:reliability
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: '【强制】≥48h 查询的采样声明：
+
+      1. 对于≥48小时的查询，必须在最终答复中显式声明使用了采样或近似计算
+
+      2. 声明格式示例："⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）" 或 "基于 0.1 采样率的结果"
+
+      3. 禁止在未声明的情况下使用采样结果进行统计分析
+
+      4. 若首次查询超时后启用采样，也必须声明"因查询超时，当前结果基于 X% 采样，误差约 ±Y%"'
+    points: 10
+    tags:
+    - axis:robustness
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若最终使用了 `SamplingRate`、`approx_percentile` 或其他近似路径，最终答复显式标注了“估算值/采样率/代表性说明”，并说明该结果用于过去一周聚合序列的分布判断，而非逐条事件精确统计。
+    points: 6
+    tags:
+    - axis:reliability
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: '先明确"告警数量"的统计口径与样本序列：
+
+      1. 【强制】统计口径必须是"按时间聚合后的告警量"（如每日告警量），而非"原始单条日志的 attack_count 字段值"
+
+      2. 【强制】具体实现：先用 histogram/GROUP BY 按天聚合每日告警量（如 `SELECT histogram(__TIMESTAMP__, ''1d'') as day, count(*) as daily_count`），得到时间序列
+
+      3. 【强制】对该序列计算 P50/P95/P99，而非直接对原始日志的 attack_count 字段求分位数
+
+      4. 若直接对 attack_count 字段计算分位数，必须明确说明这是"单条日志字段值分布"，而非"时间维度的告警量分布"
+
+      5. 若统计口径不是每日告警量（如每小时、每周），需在答案中明确说明选择的粒度'
+    points: 15
+    tags:
+    - axis:accuracy
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 工具链实际落地为“两阶段计算”：先在 CLS 中聚合出时间粒度上的告警量序列，再对该序列计算 `P50/P95/P99`（可用 `approx_percentile(..., 0.5/0.95/0.99)`、子查询/CTE/分步等价实现）；不是只拉明细后在回答层手工估值。
+    points: 10
+    tags:
+    - axis:tooling
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 最终回答开头先直接回答 `cfw_ids_event_white_common` 过去一周告警分布结论，未以“查询结果如下”“经过分析”等空话起手。
+    points: 8
+    tags:
+    - axis:style
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结构化结果中同时给出本次分析的具体时间窗口，以及 P50、P95、P99 三个分位值的明确数值。
+    points: 12
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对分位数给出人话解读，且至少包含一种分布形态判断：如“中位数低但 P95/P99 很高，说明长尾/异常日集中”或“P50/P95/P99 接近，说明分布较平稳”，并把判断依据与数值对应起来。
+    points: 10
+    tags:
+    - axis:value
+    - angle:核心能力要求
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 补充了每日告警量明细、Top 异常日，或至少点名贡献 P95/P99 的高告警日期/时间段，帮助用户理解分位数背后的样本分布。
+    points: 6
+    tags:
+    - axis:completeness
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在 Quantify 结果后自动衔接一步到异常日/异常来源观察建议，优先沿该 Topic 已有字段 `attack_vector`、`srcIP`、`ruleID`、`threat_name`、`threat_level` 等维度给出下一步下钻方向，而不是停在裸分位值。
+    points: 8
+    tags:
+    - axis:logic
+    - angle:意图体系
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答整体采用类型 B 统计分析骨架：先结论，再结构化统计结果，再下一步观察/建议；未误用类型 0 纯检索骨架，也未套用类型 A 故障根因报告骨架。
+    points: 8
+    tags:
+    - axis:style
+    - angle:内容组织与输出规范
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若出现空结果、字段缺失、字段口径不明、查询报错或 `FailedOperation.SearchTimeout`，答案不会直接结束；会交代已核查的 Topic/时间范围/Query/失败原因，并给出至少 1 条明确的排查或降级路径，如改按天分段、启用采样、缩短窗口、核对 `attack_count`/时间字段口径、或回看样本字段。
+    points: 10
+    tags:
+    - axis:exception_handling
+    - angle:工具调用异常处理
+    - type:positive
+    - eval_source:tool_trace_and_actual_result
+  - criterion: 未先定义“告警数量”的口径与样本序列，就直接对原始单条告警、原始 `attack_count` 值或明细日志列表谈 “P50/P95/P99 告警数量分位数”。
+    points: -15
+    tags:
+    - axis:accuracy
+    - angle:安全底线
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 在没有实际检索结果、空结果、字段不明或查询报错的情况下，编造具体的 P50/P95/P99、异常日期、TopicId 或分布结论，或把失败场景伪装成成功分析。
+    points: -12
+    tags:
+    - axis:safety
+    - angle:安全底线
+    - type:negative
+    - eval_source:actual_result
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去12小时,请求耗时的P90和P99分别是多少,看看尾部延迟
+  ExpectedOutput: "📊 **ahids_suricata_prod 告警来源国家分析** | 2026-03-13 ~ 2026-03-16（最近 3 天）\n\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），采样率 10%\n\n---\n\n## 🔍 核心结论\n\n**告警来源高度集中于中国（占比 96.6%），以 DNS Beacon 后门活动为主**；境外告警虽占比低，但涉及 DNS 放大攻击、SSH 异常协议等多类威胁，需重点关注。\n\n---\n\n## 📊 src_ip 国家分布 Top 20\n\n| 排名 | 国家 | 告警数（估算） | 占比 | 备注 |\n|:---:|------|----------:|-----:|------|\n| 1 | 🇨🇳 中国 | **146,814** | 96.60% | 绝对主导，DNS Beacon 为主 |\n| 2 | 🇺🇸 美国 | 2,043 | 1.34% | DNS Beacon + SSH 异常 |\n| 3 | 🇸🇬 新加坡 | 1,469 | 0.97% | DNS Beacon + DNS 放大攻击 |\n| 4 | 🇨🇦 加拿大 | 954 | 0.63% | DNS 放大攻击为主 |\n| 5 | 🇮🇳 印度 | 285 | 0.19% | DNS 放大攻击 |\n| 6 | 🇫🇷 法国 | 164 | 0.11% | SSH 异常协议 |\n| 7 | ❓ 未知(NULL) | 120 | 0.08% | IP 无法归属 |\n| 8 | 🇳🇱 荷兰 | 63 | 0.04% | — |\n| 9 | 🇩🇪 德国 | 62 | 0.04% | — |\n| 10 | 🇮🇩 印度尼西亚 | 27 | 0.02% | — |\n| 11 | 🇧🇷 巴西 | 20 | 0.01% | — |\n| 12 | 🇧🇬 保加利亚 | 18 | 0.01% | — |\n| 13 | 🇬🇧 英国 | 17 | 0.01% | — |\n| 14 | 🇹🇭 泰国 | 17 | 0.01% | — |\n| 15 | 🇻🇳 越南 | 15 | <0.01% | — |\n| 16 | 🇯🇵 日本 | 15 | <0.01% | — |\n| 17 | 🇦🇺 澳大利亚 | 12 | <0.01% | — |\n| 18 | 🇰🇷 韩国 | 11 | <0.01% | — |\n| 19 | 🇷🇴 罗马尼亚 | 10 | <0.01% | — |\n| 20 | 🇹🇷 土耳其 | 9 | <0.01% | — |\n\n**总计（估算）：约 152,000+ 条告警**\n\n---\n\n## 🔥 头部国家 × 告警类型 归因分析\n\n| 国家 | 告警类型 (signature) | 数量 | 该国占比 | 威胁等级 |\n|------|---------------------|-----:|--------:|:--------:|\n| 🇨🇳 中国 | `dns-beacon-live-response` | 123,795 | 84.3% | 🔴 高危 |\n| 🇨🇳 中国 | `dns-beacon-metadata-response` | 15,970 | 10.9% | 🔴 高危 |\n| 🇨🇳 中国 | `SSH Traffic with Invalid Protocol Version String` | 2,313 | 1.6% | 🟡 中危 |\n| 🇨🇳 中国 | `phpsocks5 found!` | 2,118 | 1.4% | 🟡 中危 |\n| 🇨🇳 中国 | `Possible SYN Flood / Slowloris Attack` | 1,581 | 1.1% | 🔴 高危 |\n| 🇺🇸 美国 | `dns-beacon-live-response` | 1,839 | 90.0% | 🔴 高危 |\n| 🇸🇬 新加坡 | `dns-beacon-live-response` | 1,222 | 83.2% | 🔴 高危 |\n| 🇨🇦 加拿大 | `ET DOS DNS Amplification Attack Inbound` | 887 | 93.0% | 🔴 高危 |\n| 🇨🇳 中国 | `SQL Injection Attack Detected` | 344 | 0.2% | 🔴 高危 |\n\n---\n\n## 💡 洞察与解读\n\n1. **DNS Beacon（后门通信）占据绝对主力**：仅 `dns-beacon-live-response` 一个签名就贡献了全部告警的 **~81%**，涉及中国、美国、新加坡三国来源。这表明**可能存在大量主机通过 DNS 隧道进行 C2 通信**，属于 APT 级别威胁，基于通用安全经验，DNS Beacon 告警应为 0，当前量级极度异常。\n\n2. **加拿大、印度来源以 DNS 放大攻击为主**：加拿大 93% 的告警为 `DNS Amplification Attack`，属于 DDoS 攻击行为，需关注目标服务器是否出现带宽饱和。\n\n3. **SSH 异常协议**来自中国（2,313）和法国（154），可能是暴力破解或协议探测。\n\n4. **SQL 注入告警**（344条）虽量不大，但属于直接针对应用层的攻击，风险极高。\n\n---\n\n## 🛠️ 建议\n\n- [ ] **【紧急】排查 DNS Beacon 后门**：对触发 `dns-beacon-live-response` 的 `dest_ip`（被回调主机）进行排查，确认是否已被植入后门。可执行：\n  ```sql\n  * | SELECT dest_ip, APPROX_DISTINCT(src_ip) AS src_cnt, COUNT(*) AS cnt \n  FROM log WHERE \"alert.signature\" = 'dns-beacon-live-response' \n  GROUP BY dest_ip ORDER BY cnt DESC LIMIT 10\n  ```\n- [ ] **【高优】封堵加拿大/印度来源的 DNS 放大攻击 IP**：按 `src_ip` 聚合 Top IP 并加入防火墙黑名单\n- [ ] **【中优】排查 SQL 注入来源**：下钻 SQL 注入告警的具体 payload 和目标路径，确认 WAF 规则是否覆盖\n- [ ] **【建议】对 NULL 国家（120条）的 IP 段进行人工归属确认**，可能是内网 IP 或新分配 IP 段未更新地理库  "
+  Judge:
+  - criterion: 工具调用中直接将给定 UUID `e0260d49-d2ca-42cc-ae9a-1a99f15204bb` 作为 TopicId 使用，未把它当作 TopicName，也未为此做冗余的 TopicName 搜索。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 工具链显式使用时间工具，将“过去12小时”解析为明确的 From/To 查询窗口，且 To 对齐当前时间，而不是手写或口算时间范围。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在做分位统计前，先通过 schema 或样本日志确认请求耗时字段及单位；若该 Topic 使用 `cost` 作为耗时字段，需明确说明后再计算。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 查询层面对同一耗时字段同时计算 P90 与 P99 两个分位值（如 `approx_percentile(..., 0.90)` 与 `approx_percentile(..., 0.99)` 或等价能力），未用 avg/max/count 等非分位指标替代。
+    points: 10
+    tags:
+    - axis:method
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 最终回答首句直接给出 P90、P99 与尾延迟判断，先说结论，不以“经过分析”“查询结果如下”等空话开头。
+    points: 8
+    tags:
+    - axis:organization
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答的主体按 Quantify / 类型B 组织，围绕分位统计与尾延迟解读展开，不套用类型0或类型A的“日志条数/日志原文列表”检索模板。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答明确给出 P90 和 P99 两个实际数值，二者分别独立标注，且单位一致、不缺任一项。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终回答准确解释尾延迟含义，明确说明 P99 反映最慢 1% 请求的耗时水位，并结合 P90/P99 差距判断尾部是否偏长。
+    points: 10
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 结论之后给出结构化结果，至少包含 TopicId、时间范围、耗时字段、单位、P90、P99 六项关键信息。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在给出分位结果后，自动衔接下一步慢尾观察：继续查看慢请求集中时段，或按 `domain`、`path`、`apiName`、`url` 等来源维度下钻。
+    points: 8
+    tags:
+    - axis:next_step
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若有可用基线、历史窗口或 SLO 阈值，主动给出对照并说明当前 P90/P99 是否超出预期。
+    points: 6
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 当出现空结果、字段缺失或 `FailedOperation.SearchTimeout` 等查询报错时，最终回答没有直接结束，而是给出可执行的排查或降级路径，如先探字段、缩窄时间窗、调整查询、检查采样或改用样本验证。
+    points: 8
+    tags:
+    - axis:resilience
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若把给定 UUID 当作 TopicName 使用，或额外发起按名称匹配 Topic 的查询链路，判为主题识别错误。
+    points: -12
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 若未确认耗时字段与单位就直接报 P90/P99，或把 `count`、`status`、`code` 等非耗时字段拿去计算分位值，判为严重统计错误。
+    points: -15
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+- Input: ahids_suricata_prod最近3天的告警,src_ip主要来自哪些国家,帮我统计下
+  ExpectedOutput: "📊 **ahids_suricata_prod 告警来源国家分析** | 2026-03-13 ~ 2026-03-16（最近 3 天）\n\n> ⚠️ 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现），采样率 10%\n\n---\n\n## 🔍 核心结论\n\n**告警来源高度集中于中国（占比 96.6%），以 DNS Beacon 后门活动为主**；境外告警虽占比低，但涉及 DNS 放大攻击、SSH 异常协议等多类威胁，需重点关注。\n\n---\n\n## 📊 src_ip 国家分布 Top 20\n\n| 排名 | 国家 | 告警数（估算） | 占比 | 备注 |\n|:---:|------|----------:|-----:|------|\n| 1 | 🇨🇳 中国 | **146,814** | 96.60% | 绝对主导，DNS Beacon 为主 |\n| 2 | 🇺🇸 美国 | 2,043 | 1.34% | DNS Beacon + SSH 异常 |\n| 3 | 🇸🇬 新加坡 | 1,469 | 0.97% | DNS Beacon + DNS 放大攻击 |\n| 4 | 🇨🇦 加拿大 | 954 | 0.63% | DNS 放大攻击为主 |\n| 5 | 🇮🇳 印度 | 285 | 0.19% | DNS 放大攻击 |\n| 6 | 🇫🇷 法国 | 164 | 0.11% | SSH 异常协议 |\n| 7 | ❓ 未知(NULL) | 120 | 0.08% | IP 无法归属 |\n| 8 | 🇳🇱 荷兰 | 63 | 0.04% | — |\n| 9 | 🇩🇪 德国 | 62 | 0.04% | — |\n| 10 | 🇮🇩 印度尼西亚 | 27 | 0.02% | — |\n| 11 | 🇧🇷 巴西 | 20 | 0.01% | — |\n| 12 | 🇧🇬 保加利亚 | 18 | 0.01% | — |\n| 13 | 🇬🇧 英国 | 17 | 0.01% | — |\n| 14 | 🇹🇭 泰国 | 17 | 0.01% | — |\n| 15 | 🇻🇳 越南 | 15 | <0.01% | — |\n| 16 | 🇯🇵 日本 | 15 | <0.01% | — |\n| 17 | 🇦🇺 澳大利亚 | 12 | <0.01% | — |\n| 18 | 🇰🇷 韩国 | 11 | <0.01% | — |\n| 19 | 🇷🇴 罗马尼亚 | 10 | <0.01% | — |\n| 20 | 🇹🇷 土耳其 | 9 | <0.01% | — |\n\n**总计（估算）：约 152,000+ 条告警**\n\n---\n\n## 🔥 头部国家 × 告警类型 归因分析\n\n| 国家 | 告警类型 (signature) | 数量 | 该国占比 | 威胁等级 |\n|------|---------------------|-----:|--------:|:--------:|\n| 🇨🇳 中国 | `dns-beacon-live-response` | 123,795 | 84.3% | 🔴 高危 |\n| 🇨🇳 中国 | `dns-beacon-metadata-response` | 15,970 | 10.9% | 🔴 高危 |\n| 🇨🇳 中国 | `SSH Traffic with Invalid Protocol Version String` | 2,313 | 1.6% | 🟡 中危 |\n| 🇨🇳 中国 | `phpsocks5 found!` | 2,118 | 1.4% | 🟡 中危 |\n| 🇨🇳 中国 | `Possible SYN Flood / Slowloris Attack` | 1,581 | 1.1% | 🔴 高危 |\n| 🇺🇸 美国 | `dns-beacon-live-response` | 1,839 | 90.0% | 🔴 高危 |\n| 🇸🇬 新加坡 | `dns-beacon-live-response` | 1,222 | 83.2% | 🔴 高危 |\n| 🇨🇦 加拿大 | `ET DOS DNS Amplification Attack Inbound` | 887 | 93.0% | 🔴 高危 |\n| 🇨🇳 中国 | `SQL Injection Attack Detected` | 344 | 0.2% | 🔴 高危 |\n\n---\n\n## 💡 洞察与解读\n\n1. **DNS Beacon（后门通信）占据绝对主力**：仅 `dns-beacon-live-response` 一个签名就贡献了全部告警的 **~81%**，涉及中国、美国、新加坡三国来源。这表明**可能存在大量主机通过 DNS 隧道进行 C2 通信**，属于 APT 级别威胁，基于通用安全经验，DNS Beacon 告警应为 0，当前量级极度异常。\n\n2. **加拿大、印度来源以 DNS 放大攻击为主**：加拿大 93% 的告警为 `DNS Amplification Attack`，属于 DDoS 攻击行为，需关注目标服务器是否出现带宽饱和。\n\n3. **SSH 异常协议**来自中国（2,313）和法国（154），可能是暴力破解或协议探测。\n\n4. **SQL 注入告警**（344条）虽量不大，但属于直接针对应用层的攻击，风险极高。\n\n---\n\n## 🛠️ 建议\n\n- [ ] **【紧急】排查 DNS Beacon 后门**：对触发 `dns-beacon-live-response` 的 `dest_ip`（被回调主机）进行排查，确认是否已被植入后门。可执行：\n  ```sql\n  * | SELECT dest_ip, APPROX_DISTINCT(src_ip) AS src_cnt, COUNT(*) AS cnt \n  FROM log WHERE \"alert.signature\" = 'dns-beacon-live-response' \n  GROUP BY dest_ip ORDER BY cnt DESC LIMIT 10\n  ```\n- [ ] **【高优】封堵加拿大/印度来源的 DNS 放大攻击 IP**：按 `src_ip` 聚合 Top IP 并加入防火墙黑名单\n- [ ] **【中优】排查 SQL 注入来源**：下钻 SQL 注入告警的具体 payload 和目标路径，确认 WAF 规则是否覆盖\n- [ ] **【建议】对 NULL 国家（120条）的 IP 段进行人工归属确认**，可能是内网 IP 或新分配 IP 段未更新地理库"
+  Judge:
+  - criterion: 工具轨迹先按 TopicName `ahids_suricata_prod` 完成 Topic 定位（如 `GetTopicInfoByName` 或等价名称解析），并在后续查询与最终答复中保持同一 Topic，不把 TopicName 误当 UUID/TopicId 使用。
+    points: 10
+    tags:
+    - axis:topic_resolution
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 对“最近3天”严格走时间工具链：先获取当前时间，再分别将“当前时间”和“3天前同一时刻”转换为 `To`/`From`，且 `To` 对应当前时刻而不是自然日边界或手算时间戳。
+    points: 10
+    tags:
+    - axis:time_handling
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 将本题识别为 Quantify / 类型B 的安全分布统计任务，国家分布主查询由 `SearchLog` 聚合完成，而不是把主体链路升级成排障主流程或无关重型上探。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 针对最近3天这一大于24小时的窗口，工具链体现了性能保护：启用采样、按天/按段分查后汇总，或在 `FailedOperation.SearchTimeout` 后缩窗/降级重试；不是单次全量硬查到底。
+    points: 10
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在正式聚合前，先确认该 Topic 有 `src_ip`、`timestamp`、`alert.signature`/`alert.category` 等可用字段，且没有现成国家字段；随后使用 `ip_to_country(src_ip)` 或等价 GeoIP 能力统计国家，若当前链路不具备 Geo 能力则明确说明限制并给出替代口径。
+    points: 12
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 答复首段先给出一句直达结论，明确头部国家或来源集中度，不以“经过分析”“查询结果如下”等空话开头。
+    points: 8
+    tags:
+    - axis:output_structure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 最终结果提供按国家汇总的结构化表格，统计口径是各国家的告警数量（而非只给独立 IP 数）；表格至少包含“国家”“告警数量”，若可计算则补充占比或总量，并对 `NULL/未知` 国家单列展示或说明。
+    points: 10
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在国家分布表之后，自动衔接一步观察：对头部国家对应的 `alert.signature` 或 `alert.category` 集中度做下钻，说明主要是哪些告警类型在贡献头部国家占比。
+    points: 8
+    tags:
+    - axis:drilldown
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 安全场景解释使用人话表述，例如说明“来源高度集中”“境外占比较低但类型更杂”“未知国家需单独复核”等，且不把回答主体写成类型A排障模板。
+    points: 8
+    tags:
+    - axis:usability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 若查询为空、字段缺失、Geo 解析不可用、查询报错或 `FailedOperation.SearchTimeout`，最终答复不会直接结束，而会给出至少一条可执行的排查/降级路径，例如缩短时间、分段查询、启用/提高采样、先看样本字段、先按 `src_ip` TopN 统计后再做离线归属。
+    points: 10
+    tags:
+    - axis:resilience
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未调用时间工具就直接硬编码/手算最近3天的起止时间，或把“最近3天”错误处理为自然日窗口（如 00:00 到现在、固定日期段）。
+    points: -12
+    tags:
+    - axis:reliability
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 在未确认现成国家字段或 GeoIP 解析能力的前提下，直接输出具体国家名称、占比或国别排名，或把 `src_ip`/其他非国家字段直接当作国家维度统计。
+    points: -12
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+- Input: cfw_ids_event_white_common过去一周,攻击者的src_ip主要分布在哪些省份,帮我统计下
+  ExpectedOutput: "## 📊 **cfw_ids_event_white_common 攻击者来源省份分布分析报告**\n\n📋 **摘要** | 2026-03-08 ~ 2026-03-15 (过去一周) | Topic: cfw_ids_event_white_common  \n⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）** — 因时间跨度≥2天，已启用10%采样\n\n---\n\n### 🔍 **核心结论**\n\n过去一周共发生 **约 519,001 次攻击**，来自 **约 8,668 个独立 IP**。\n\n**攻击来源高度集中**：**广东省** 独占鳌头，攻击次数占比高达 **17.2%**，是第二名湖北省的 **2.1 倍**。Top 5 省份合计贡献了 **43.8%** 的总攻击量。\n\n---\n\n### 📊 **关键数据 - 攻击来源省份 TOP 20**\n\n| 排名 | 省份/地区 | 攻击次数 | 占比 | 独立IP数 | IP集中度(次/IP) |\n|:---:|---|---:|---:|---:|---:|\n| 1 | **广东省** | 89,420 | 17.2% | 483 | 185 |\n| 2 | **湖北省** | 42,126 | 8.1% | 136 | 310 |\n| 3 | **山东省** | 33,519 | 6.5% | 128 | 262 |\n| 4 | **浙江省** | 27,918 | 5.4% | 731 | 38 |\n| 5 | **黑龙江省** | 23,251 | 4.5% | 42 | **553** |\n| 6 | 福建省 | 20,949 | 4.0% | 215 | 97 |\n| 7 | 北京市 | 17,204 | 3.3% | 387 | 44 |\n| 8 | Tokyo(日本) | 16,494 | 3.2% | 236 | 70 |\n| 9 | 内蒙古自治区 | 16,111 | 3.1% | 64 | 252 |\n| 10 | 陕西省 | 14,848 | 2.9% | 154 | 96 |\n\n---\n\n### 🎯 **关键洞察**\n\n| 风险指标 | 发现 | 解读 |\n|---|---|---|\n| **IP集中度异常** | 黑龙江(553次/IP)、安徽(324次/IP)、湖北(310次/IP) | 这些省份存在**高频攻击IP**，疑似存在**僵尸网络或专业攻击团伙**集中驻扎 |\n| **广东双高** | 攻击次数+IP数均居首 | 可能是**攻击源头聚集地**，也可能是**IDC/云服务器集中区域**被利用 |\n| **浙江IP分散** | 攻击次数第4，但IP数第2(731个) | 攻击来源**高度分散**，可能是**大规模分布式扫描**或**肉鸡网络** |\n\n---\n\n### 🛠️ **建议**\n\n1. **立即封控高风险IP**：针对黑龙江、安徽、湖北等IP集中度>300的省份，提取高频攻击IP进行封禁\n2. **加强广东地区监控**：广东攻击量占近1/5，建议对该地区来源流量加强WAF规则检测\n3. **海外来源限速**：对Tokyo、California等非业务必需地区实施访问频率限制\n4. **NULL省份溯源**：调查7,080次NULL省份攻击的特征，排查是否为代理/VPN流量"
+  Judge:
+  - criterion: 将本题识别为 Quantify / 类型 B 的安全分布统计，并按“结论先行 → 结构化统计 → 安全含义解读 → 自动衔接一步 → 🛠️ 下一步”组织输出，而不是套用类型 A 排障骨架。
+    points: 8
+    tags:
+    - axis:intent
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 首句直接回答过去 7 天攻击源主要分布结论；若当前无法可靠统计到省份，也要直接说明限制，不以“根据查询结果”“经过分析”等铺垫开头。
+    points: 8
+    tags:
+    - axis:format
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 将“过去一周”明确落为最近 7 天滚动窗口，并通过时间工具生成 From / To，而不是手算或口头模糊处理。
+    points: 10
+    tags:
+    - axis:time
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 在构造统计前，先确认本 Topic 实际可用的攻击源 IP 字段，以及是否存在现成省份字段或可靠的 IP→省份解析能力；不能直接假设 `src_ip` 和省份能力天然可用。
+    points: 10
+    tags:
+    - axis:accuracy
+    - type:positive
+    - eval_source:sharegpt
+  - criterion: 若具备可靠省份维度，最终结果以结构化表格/列表展示头部省份，且至少同时包含省份、攻击数量、占比三项信息；若不具备，则明确说明限制并给出替代方案（如先看 src_ip TopN / 已有地域字段）。
+    points: 12
+    tags:
+    - axis:completeness
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 针对 7 天窗口体现性能保护：启用采样、分段查询或超时降级中的至少一种；若实际使用采样或近似统计，输出中明确披露代表性或误差影响。
+    points: 8
+    tags:
+    - axis:reliability
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 对省份集中度给出安全场景解读，例如说明是否存在明显地域聚集、代理池/肉鸡分布特征，且明确这是基于 IP 归属地的观察，不直接等同攻击者真实物理位置。
+    points: 8
+    tags:
+    - axis:value
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在省份统计后自动衔接一步观察：对头部省份对应的攻击类型、头部 src_ip 或活跃时段做轻量下钻，而不是只列排行就结束。
+    points: 10
+    tags:
+    - axis:closure
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 在 `🛠️ 下一步` 中给出具体继续分析方向，例如继续查头部省份的 `threat_name`、`threat_level`、Top 源 IP 或时间分布，而不是泛泛说“可进一步排查”。
+    points: 8
+    tags:
+    - axis:next_step
+    - type:positive
+    - eval_source:actual_result
+  - criterion: 未确认现成省份字段或 Geo / 省份解析能力，也未说明限制，就直接编出各省份排行、占比或结论。
+    points: -12
+    tags:
+    - axis:safety
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 将 `dstIP` / `req_dst_ip` / `dIP` 等目的地址，或其他非攻击源字段，当作攻击者来源地域的依据。
+    points: -10
+    tags:
+    - axis:accuracy
+    - type:negative
+    - eval_source:sharegpt
+  - criterion: 结果只列省份名称或排名，不给对应攻击数量与占比。
+    points: -8
+    tags:
+    - axis:completeness
+    - type:negative
+    - eval_source:actual_result
+  - criterion: 对“过去一周”采用手算时间、错误口径（非最近 7 天滚动窗口），或完全不通过时间工具落地。
+    points: -8
+    tags:
+    - axis:time
+    - type:negative
+    - eval_source:sharegpt
+- Input: cfw_ids_event_white_common最近一天有没有来自内网网段10.0.0.0/8的攻击事件
+  ExpectedOutput: '---
+
+
+    ## 📋 摘要
+
+
+    | 项目 | 内容 |
+
+    |------|------|
+
+    | **查询主题** | cfw_ids_event_white_common |
+
+    | **时间范围** | 2026-03-14 19:52:49 ~ 2026-03-15 19:52:49（最近24小时） |
+
+    | **查询目标** | 来自内网网段 10.0.0.0/8 的攻击事件 |
+
+
+    ---
+
+
+    ## 🔍 核心结论
+
+
+    **最近24小时内，没有发现来自内网网段 10.0.0.0/8 的攻击事件。**
+
+
+    进一步扩展到所有内网网段（10.0.0.0/8、172.16.0.0/12、192.168.0.0/16）的排查结果同样显示：**无任何内网源IP的攻击记录**。
+
+
+    ---
+
+
+    ## 📊 关键数据
+
+
+    | 指标 | 数值 |
+
+    |------|------|
+
+    | **攻击事件总数** | 32,773 条 |
+
+    | **独立源IP数** | 201 个 |
+
+    | **独立目标IP数** | 160 个 |
+
+    | **10.0.0.0/8 网段攻击** | **0 条** |
+
+    | **172.16.0.0/12 网段攻击** | **0 条** |
+
+    | **192.168.0.0/16 网段攻击** | **0 条** |
+
+
+    ### 攻击源IP Top 5（均为公网IP）
+
+
+    | 排名 | 源IP地址 | 攻击次数 | 占比 |
+
+    |------|----------|----------|------|
+
+    | 1 | 111.20.163.222 | 17,442 | 53.2% |
+
+    | 2 | 180.76.158.150 | 3,814 | 11.6% |
+
+    | 3 | 118.31.51.31 | 3,456 | 10.5% |
+
+    | 4 | 47.112.133.200 | 2,880 | 8.8% |
+
+    | 5 | 39.105.107.222 | 1,290 | 3.9% |
+
+
+    ---
+
+
+    ## 📝 详细分析
+
+
+    所有攻击事件的源IP均为公网地址，未发现内网横向移动或内部主机发起的攻击。攻击主要集中在前5个IP，合计占比约 88%，呈现明显的头部集中特征。
+
+
+    ---
+
+
+    ## 🛡️ 安全建议
+
+
+    1. **持续监控内网流量**：虽然目前未发现内网攻击，但建议保持对 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16 网段的监控告警
+
+    2. **关注高频攻击源**：IP `111.20.163.222` 攻击次数高达 17,442 次，建议评估是否需要封禁或加强防护
+
+    3. **定期巡检**：建议每日检查内网网段攻击情况，及时发现潜在的横向移动风险'
+  Judge:
+  - criterion: 首句先直接回答“有”或“没有/未检出”，而不是先讲查询过程、背景或表格。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:intent
+  - criterion: 整体按 Quantify / 类型 B 的统计问答组织：先给存在性结论，再给统计证据与简短下一步；不按类型 A 排障/止损模板展开。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:style
+  - criterion: 工具链使用时间转换工具将“最近一天”落为相对当前时刻的滚动 24h 查询窗口，而非自然日或手算时间。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:reliability
+  - criterion: 在执行网段过滤前，先确认并使用 Topic 中真实表示攻击源的字段，而不是臆造 `src_ip` 或误用 `dstIP`。
+    points: 8
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 对 `10.0.0.0/8` 的过滤使用完整 CIDR 语义，确保覆盖全部 `10.*.*.*` 地址。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 若存在命中，明确给出命中数量、查询时间范围，并至少展示 1 条样例或 1 组关键字段证据；证据字段优先包含源 IP、目标端口/目标 IP、威胁名称/等级、时间中的 3 项以上。
+    points: 12
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 若存在命中，对结果给出安全含义解读（如疑似内网失陷、横向移动等），并自动只补一步轻量下钻：量化头部威胁类型、目标端口或头部源 IP 之一；不要扩展成完整根因链路。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:value
+  - criterion: 若不存在命中，明确说明“没有/未检出来自 10.0.0.0/8 的攻击事件”，并给出合理后续建议（如扩查其他内网段、延长时间窗或核对源 IP 字段）。
+    points: 6
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:usability
+  - criterion: 若出现字段缺失、采样、查询口径不确定等异常，主动说明其对结论的影响，并给出替代查询或验证方案。
+    points: 6
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:reliability
+  - criterion: 未先直接回答“有/没有”，而是先铺垫“查询结果如下”、大段过程说明，或只给表格让用户自行判断。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:intent
+  - criterion: 将 `10.0.0.0/8` 错误缩窄为 `10.0.0.x`、仅做字符串前缀匹配，或混用错误字段导致网段判断失真。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:accuracy
+  - criterion: 把“最近一天”手算成固定时间戳、误当自然日，或工具链里完全未调用时间转换工具。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:reliability
+  - criterion: 当字段缺失、结果为空或采样/口径存在风险时直接结束输出，没有任何排雷说明或替代建议。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:reliability
+  - criterion: 明明存在命中，却只说“有”或只给总数，不给时间范围、样例或关键字段证据。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:completeness
+- Input: redis(TopicID:d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)最近一天,帮我把不同region和instance_id组成一个数组看看
+  ExpectedOutput: "## 📋 **摘要**\n**估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n| 项目 | 值 |\n|---|---|\n| 时间范围 | 2026-03-14 19:59:22 ~ 2026-03-15 19:59:22 (最近1天) |\n| Topic | redis (d036bd9c-6a9d-4567-8d3b-a1d93a452dc9) |\n| 查询类型 | region + instance_id 组合分布 |\n\n---\n\n## 📊 **Region + Instance ID 组合数组**\n\n根据查询结果，不同 region 和 instance_id 的组合如下（按日志量降序排列）：\n\n### **Top 20 组合**\n\n| 序号 | Region | Instance ID | 日志数量 (估算) |\n|:---:|:---:|:---:|:---:|\n| 1 | beijing | 100064738 | 5,991,183,704 |\n| 2 | shanghai | 140015672 | 441,557,389 |\n| 3 | beijing | 100076852 | 362,817,795 |\n| 4 | guangzhou | 80060068 | 178,621,656 |\n| 5 | shanghai | 140061477 | 122,929,135 |\n| 6 | guangzhou | 80132903 | 99,635,958 |\n| 7 | jinrong | 130008022 | 79,035,816 |\n| 8 | guangzhou | 80135241 | 57,284,759 |\n| 9 | guangzhou | 80036330 | 53,250,195 |\n| 10 | guangzhou | 80020576 | 52,507,049 |\n| 11 | guangzhou | 80131086 | 52,435,565 |\n| 12 | guangzhou | 80107573 | 52,208,571 |\n| 13 | shanghai | 140111976 | 50,083,845 |\n| 14 | haiwai | 60027782 | 44,996,122 |\n| 15 | beijing | 100006231 | 42,022,223 |\n| 16 | jinrong | 130007996 | 38,329,816 |\n| 17 | beijing | 100004477 | 37,396,446 |\n| 18 | beijing | 100016806 | 36,377,804 |\n| 19 | beijing | 100061432 | 35,046,924 |\n| 20 | shanghai | 140009738 | 32,763,624 |\n\n### **Region 分布概览**\n\n| Region | 实例数量 | 主要特征 |\n|:---:|:---:|:---|\n| **beijing** | 30+ | 头部实例 100064738 日志量极大（约60亿条），占总日志量约 55% |\n| **shanghai** | 100+ | 实例分布较均匀，140015672 为最大实例（约4.4亿条） |\n| **guangzhou** | 50+ | 实例数量中等，80060068 为最大实例（约1.8亿条） |\n| **haiwai** | 10+ | 实例较少，60027782 为主力实例（约4500万条） |\n| **jinrong** | 5+ | 实例较少，130008022 为主力实例（约7900万条） |\n| **chengdu** | 5+ | 实例较少，40035265 为主力实例（约340万条） |\n\n### **JSON 格式数组**\n\n```json\n[\n  {\"region\": \"beijing\", \"instance_id\": 100064738, \"count\": 5991183704},\n  {\"region\": \"shanghai\", \"instance_id\": 140015672, \"count\": 441557389},\n  {\"region\": \"beijing\", \"instance_id\": 100076852, \"count\": 362817795},\n  {\"region\": \"guangzhou\", \"instance_id\": 80060068, \"count\": 178621656},\n  {\"region\": \"shanghai\", \"instance_id\": 140061477, \"count\": 122929135},\n  {\"region\": \"guangzhou\", \"instance_id\": 80132903, \"count\": 99635958},\n  {\"region\": \"jinrong\", \"instance_id\": 130008022, \"count\": 79035816},\n  {\"region\": \"guangzhou\", \"instance_id\": 80135241, \"count\": 57284759},\n  {\"region\": \"guangzhou\", \"instance_id\": 80036330, \"count\": 53250195},\n  {\"region\": \"guangzhou\", \"instance_id\": 80020576, \"count\": 52507049},\n  {\"region\": \"guangzhou\", \"instance_id\": 80131086, \"count\": 52435565},\n  {\"region\": \"guangzhou\", \"instance_id\": 80107573, \"count\": 52208571},\n  {\"region\": \"shanghai\", \"instance_id\": 140111976, \"count\": 50083845},\n  {\"region\": \"haiwai\", \"instance_id\": 60027782, \"count\": 44996122},\n  {\"region\": \"beijing\", \"instance_id\": 100006231, \"count\": 42022223},\n  {\"region\": \"jinrong\", \"instance_id\": 130007996, \"count\": 38329816},\n  {\"region\": \"beijing\", \"instance_id\": 100004477, \"count\": 37396446},\n  {\"region\": \"beijing\", \"instance_id\": 100016806, \"count\": 36377804},\n  {\"region\": \"beijing\", \"instance_id\": 100061432, \"count\": 35046924},\n  {\"region\": \"shanghai\", \"instance_id\": 140009738, \"count\": 32763624}\n]\n```\n\n---\n\n## 💡 **洞察与建议**\n\n1. **头部集中**：beijing 区域的 instance_id `100064738` 日志量异常高（约60亿条），占总日志量约 **55%**，建议关注该实例是否存在：\n   - 日志级别设置过低（如 debug 级别未关闭）\n   - 业务流量异常或循环调用\n   - 健康状态异常导致频繁报错\n\n2. **Region 分布**：日志主要集中在 beijing 和 shanghai 两个区域，guangzhou 区域也有一定规模，其他区域（haiwai/jinrong/chengdu）日志量相对较小。\n\n3. **下一步建议**：\n   - 对 instance_id `100064738` 进行错误类型分析，确认是否为正常业务日志\n   - 检查该实例的日志级别配置\n   - 如需进一步分析，可针对该实例按时间维度查看日志趋势\n\n---\n\n**查询语句**：\n```sql\n* | SELECT region, instance_id, COUNT(*) as count \n    GROUP BY region, instance_id \n    ORDER BY count DESC \n    LIMIT 1000\n```"
+  Judge:
+  - criterion: 将本题识别为纯检索 / 类型 0 的结构变换查看题，主交付聚焦“把 `region` 和 `instance_id` 组合后展示给用户看”，不自动展开 Quantify / Find Patterns / Resolve 闭环。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:intent
+  - criterion: 直接将输入中的 UUID `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 作为 TopicId 使用，不再做 TopicName 定位、模糊搜索或名称回填。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 通过时间工具把“最近一天”落为滚动 24 小时的 From / To 查询窗口，而不是自然日口径；输出中的时间范围与该 24h 窗口一致且可读。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:time
+  - criterion: 在做组合变换前，先通过 `GetTopicInfo` 或小样本 `SearchLog(limit 1-5)` 确认 `region` 与 `instance_id` 字段存在、可用于结构化输出。
+    points: 8
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:schema
+  - criterion: 最终主结果明确以数组或列表形式交付，且每个元素同时包含 `region` 与 `instance_id` 两个值；不是把两个字段拆开分别展示。
+    points: 12
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:structure
+  - criterion: 首句直接给出结果性说明（如已整理出若干组 `region + instance_id` 组合），不以“经过分析”“查询结果如下”等流程性废话开头。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:style
+  - criterion: 输出遵循类型 0 的轻量骨架：先给摘要区（至少含时间范围、TopicId / Topic、查询对象），再给结构化数组/列表结果；如有补充，也保持简短不过度延展。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:format
+  - criterion: 若查询结果为空、`region` / `instance_id` 缺失，或实际查询启用了采样 / 近似计算，明确说明限制、代表性或误差影响，并给出至少一个替代方案。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:reliability
+  - criterion: 将 UUID `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 当作 TopicName 使用，或先调用 `GetTopicInfoByName` / TopicName 搜索再回填到查询。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:accuracy
+  - criterion: 把“最近一天”按自然日 `00:00:00~23:59:59` 处理、手算时间范围，或工具链中完全缺少时间转换工具调用。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:time
+  - criterion: 没有交付 `region + instance_id` 组合数组 / 列表，而是只给散表、单字段清单、TopN 排行、占比统计，或把“看看数组”强行改写成统计 / 排行 / 排障题。
+    points: -10
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:intent
+  - criterion: 在 `region` 或 `instance_id` 字段缺失、为空或无法确认时仍直接输出组合结果，既不说明限制，也不给替代查看方案。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:reliability
+- Input: d.qq.com-clb-prod过去1小时,把响应时间向上向下取整看看分布
+  ExpectedOutput: "📊 **Redis 日志量趋势分析报告** | 2026-03-09 ~ 2026-03-16\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**，采样率 10%。3/8 和 3/15 为不完整日（查询起止时间切分），仅完整日参与趋势分析。\n\n---\n\n### 📈 每日日志量 & 对数趋势\n\n| 日期 | 日志量（估算） | 日志量（亿） | ln（自然对数） | log₁₀（常用对数） | 日环比 | 备注 |\n|------|-------------|------------|--------------|----------------|-------|------|\n| 03/08 | 2,660,435,613 | 26.6 亿 | 21.70 | 9.42 | — | ⚠️ 不完整日 |\n| **03/09** | **9,204,312,219** | **92.0 亿** | **22.94** | **9.96** | — | 基准日 |\n| 03/10 | 9,194,486,030 | 91.9 亿 | 22.94 | 9.96 | 🔽 -0.11% | |\n| 03/11 | 9,250,204,306 | 92.5 亿 | 22.95 | 9.97 | 🔺 +0.61% | |\n| 03/12 | 9,309,904,062 | 93.1 亿 | 22.95 | 9.97 | 🔺 +0.64% | |\n| 03/13 | 9,284,238,499 | 92.8 亿 | 22.95 | 9.97 | 🔽 -0.28% | |\n| 03/14 | 9,179,886,891 | 91.8 亿 | 22.94 | 9.96 | 🔽 -1.12% | |\n| 03/15 | 6,424,857,281 | 64.2 亿 | 22.58 | 9.81 | — | ⚠️ 不完整日 |\n\n---\n\n### 🔍 核心结论\n\n**日志量极其稳定，无明显趋势变化。**\n\n1. **对数值几乎不变**：完整日的 ln 值稳定在 **22.94 ~ 22.95** 之间（波动仅 0.01），log₁₀ 稳定在 **9.96 ~ 9.97**。对数尺度下这是一条**近乎水平的直线**。\n\n2. **绝对量级**：日均约 **92 亿条**（≈ 10.6 万条/秒），7 天完整日总量约 **644.2 亿条**。\n\n3. **波动幅度极小**：\n  - 最大值：03/12 的 93.1 亿\n  - 最小值：03/14 的 91.8 亿\n  - **极差仅 1.4%**，远低于通常 ±5% 的正常波动基线（基于通用经验）\n  - 标准差 ≈ 0.5 亿，变异系数 CV ≈ **0.54%**\n\n4. **无周末效应**：03/14（周六）、03/15（周日，不完整）的数据与工作日基本一致，说明 Redis 流量不受工作日/周末影响，符合**基础设施级服务**的特征。\n\n---\n\n### 📉 对数趋势可视化（ln 值）\n\n```\nln值\n22.96 |                  ·           \n22.95 |            · · ·   ·        \n22.94 |      · ·               ·    \n22.93 |                              \n      +---+---+---+---+---+---+---→ 日期\n      3/9 3/10 3/11 3/12 3/13 3/14\n```\n> 趋势线斜率接近 0，日志产生速率无增长/衰减趋势。\n\n---\n\n### 💡 洞察\n\n- **Redis 负载平稳**：对数值的稳定说明没有突发的流量增长或服务降级。日均 92 亿条（~10.6w QPS）是当前系统的稳态基线，可作为后续异常检测的参照标准。\n- **如果关注成本**：按当前量级，7天日志存储量约 644 亿条。建议评估是否所有日志都需要全量采集，部分 DEBUG 级别日志可考虑降采样以控制成本。\n\n---\n\n### 🛠️ 建议下一步\n\n- [ ] **容量规划**：若想判断是否需要扩容，可查看 **Redis 慢查询日志**（如 `latency > 100ms`），看慢查询数量是否有上升趋势：\n  ```\n  Query: latency > 100 | SELECT DATE_FORMAT(...) AS log_date, COUNT(*) AS slow_count GROUP BY log_date ORDER BY log_date\n  ```\n- [ ] **异常检测基线设定**：基于本周数据，可将日志量告警阈值设为 **日均 ±10%**（即 <83 亿或 >101 亿触发告警），对数尺度下对应 ln 值偏离 ±0.1。"
+  Judge:
+  - criterion: 将本题识别为 Quantify / 类型 B 的响应时间分布统计题，输出首句直接给出过去 1 小时 floor / ceil 分布的核心结论，而不是铺垫过程或检索说明。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:intent
+  - criterion: “过去 1 小时”通过时间工具落地到实际查询窗口，并在结果中体现可读时间范围；不得手算时间。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:workflow
+  - criterion: 在做分布前先确认所用响应时间字段及单位，例如先确认到底使用哪个耗时字段，以及它是秒还是毫秒，再做取整。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 单独完成一套 `floor(响应时间)` 的分布统计查询，而不是口头描述或只给单个样例。
+    points: 8
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:completeness
+  - criterion: 单独完成一套 `ceil(响应时间)` 的分布统计查询，而不是用 floor 结果替代。
+    points: 8
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:completeness
+  - criterion: 向下取整与向上取整两套结果分开展示，且每套至少有清晰的桶位与条数；有占比更佳。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:format
+  - criterion: 对 floor 与 ceil 两种分布的差异给出简短对比解读，并指出是否存在明显集中区间、头部桶或长尾现象。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:insight
+  - criterion: 类型 B 输出在分布结果后自动衔接一步，补充头部区间、慢请求占比或值得继续关注的桶位提示，但不过度扩展为根因排障链路。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:workflow
+  - criterion: 若查询为空、字段缺失、字段语义不清或单位无法确认，主动说明风险并给出替代方案（如先看样本、改字段、改 Topic、改时间窗）。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:robustness
+  - criterion: 误套类型 0 纯检索模板（如以“📋 检索结果摘要 / 📝 日志”为主骨架）或主要返回原始日志明细而非分布统计。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:format
+  - criterion: 未确认响应时间字段或秒 / 毫秒单位，就直接对耗时做 floor / ceil 分布，导致分桶口径失真。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:accuracy
+  - criterion: 只做 floor 或只做 ceil；或把 floor 与 ceil 混进同一个 GROUP BY / 同一统计口径中，导致重复统计或结果不可比。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:method
+  - criterion: 只给表格或桶计数，不比较 floor 与 ceil 的差异，也不解释头部桶、集中区间或长尾特征。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:insight
+  - criterion: 将“过去 1 小时”通过手算时间直接写入查询，或全程跳过时间工具。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:workflow
+- Input: redis(TopicID:d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)过去一周的日志量,帮我算个对数值看看趋势
+  ExpectedOutput: "📊 **Redis 日志量趋势分析报告** | 2026-03-09 ~ 2026-03-16\n\n> ⚠️ **估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**，采样率 10%。3/8 和 3/15 为不完整日（查询起止时间切分），仅完整日参与趋势分析。\n\n---\n\n### 📈 每日日志量 & 对数趋势\n\n| 日期 | 日志量（估算） | 日志量（亿） | ln（自然对数） | log₁₀（常用对数） | 日环比 | 备注 |\n|------|-------------|------------|--------------|----------------|-------|------|\n| 03/08 | 2,660,435,613 | 26.6 亿 | 21.70 | 9.42 | — | ⚠️ 不完整日 |\n| **03/09** | **9,204,312,219** | **92.0 亿** | **22.94** | **9.96** | — | 基准日 |\n| 03/10 | 9,194,486,030 | 91.9 亿 | 22.94 | 9.96 | 🔽 -0.11% | |\n| 03/11 | 9,250,204,306 | 92.5 亿 | 22.95 | 9.97 | 🔺 +0.61% | |\n| 03/12 | 9,309,904,062 | 93.1 亿 | 22.95 | 9.97 | 🔺 +0.64% | |\n| 03/13 | 9,284,238,499 | 92.8 亿 | 22.95 | 9.97 | 🔽 -0.28% | |\n| 03/14 | 9,179,886,891 | 91.8 亿 | 22.94 | 9.96 | 🔽 -1.12% | |\n| 03/15 | 6,424,857,281 | 64.2 亿 | 22.58 | 9.81 | — | ⚠️ 不完整日 |\n\n---\n\n### 🔍 核心结论\n\n**日志量极其稳定，无明显趋势变化。**\n\n1. **对数值几乎不变**：完整日的 ln 值稳定在 **22.94 ~ 22.95** 之间（波动仅 0.01），log₁₀ 稳定在 **9.96 ~ 9.97**。对数尺度下这是一条**近乎水平的直线**。\n\n2. **绝对量级**：日均约 **92 亿条**（≈ 10.6 万条/秒），7 天完整日总量约 **644.2 亿条**。\n\n3. **波动幅度极小**：\n   - 最大值：03/12 的 93.1 亿\n   - 最小值：03/14 的 91.8 亿\n   - **极差仅 1.4%**，远低于通常 ±5% 的正常波动基线（基于通用经验）\n   - 标准差 ≈ 0.5 亿，变异系数 CV ≈ **0.54%**\n\n4. **无周末效应**：03/14（周六）、03/15（周日，不完整）的数据与工作日基本一致，说明 Redis 流量不受工作日/周末影响，符合**基础设施级服务**的特征。\n\n---\n\n### 📉 对数趋势可视化（ln 值）\n\n```\nln值\n22.96 |                  ·           \n22.95 |            · · ·   ·        \n22.94 |      · ·               ·    \n22.93 |                              \n      +---+---+---+---+---+---+---→ 日期\n       3/9 3/10 3/11 3/12 3/13 3/14\n```\n> 趋势线斜率接近 0，日志产生速率无增长/衰减趋势。\n\n---\n\n### 💡 洞察\n\n- **Redis 负载平稳**：对数值的稳定说明没有突发的流量增长或服务降级。日均 92 亿条（~10.6w QPS）是当前系统的稳态基线，可作为后续异常检测的参照标准。\n- **如果关注成本**：按当前量级，7天日志存储量约 644 亿条。建议评估是否所有日志都需要全量采集，部分 DEBUG 级别日志可考虑降采样以控制成本。\n\n---\n\n### 🛠️ 建议下一步\n\n- [ ] **容量规划**：若想判断是否需要扩容，可查看 **Redis 慢查询日志**（如 `latency > 100ms`），看慢查询数量是否有上升趋势：\n  ```\n  Query: latency > 100 | SELECT DATE_FORMAT(...) AS log_date, COUNT(*) AS slow_count GROUP BY log_date ORDER BY log_date\n  ```\n- [ ] **异常检测基线设定**：基于本周数据，可将日志量告警阈值设为 **日均 ±10%**（即 <83 亿或 >101 亿触发告警），对数尺度下对应 ln 值偏离 ±0.1。\n"
+  Judge:
+  - criterion: 将该请求判定为 Quantify / 类型 B 的趋势统计题，并围绕“过去一周日志量 + 对数趋势”作答，而不是纯检索题或根因排障题。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:intent
+  - criterion: 工具链直接使用 UUID TopicId `d036bd9c-6a9d-4567-8d3b-a1d93a452dc9` 发起查询，不再按 TopicName 做搜索或模糊定位。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:topic_resolution
+  - criterion: 通过时间工具把“过去一周”落为最近 7 天滚动窗口，且结束时间对齐当前时刻，而不是手工推算时间范围。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:time_handling
+  - criterion: 先按天或固定时间粒度聚合出日志量时间序列，再在该序列上计算对数值；不能直接对原始日志明细谈“对数趋势”。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:methodology
+  - criterion: 输出同时体现原始日志量趋势与对应的对数值趋势，或明确把对数变化解释回原始量级变化，避免只给抽象 log 数字。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 首句直接给出趋势结论，并明确说明整体是上升、下降、波动还是基本平稳，同时点出最明显的日期或时间段。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:presentation
+  - criterion: 使用类型 B 的结构化趋势表或列表呈现结果，至少包含时间粒度、原始日志量、对数值（或等价对数指标）三项。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:structure
+  - criterion: 对对数趋势给出口语化解读，例如说明哪些天只是量级小幅变化、哪些天出现明显抬升或回落，并自动衔接一步指出最值得关注的峰值 / 拐点。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:insight
+  - criterion: 面对 7 天窗口，若发生采样、分段查询、超时降级、空结果、字段缺失或采样偏差，会主动披露其对趋势判断的影响，并给出替代方案或下一步建议。
+    points: 6
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:robustness
+  - criterion: 若输出未采用类型 B 的统计 / 巡检结构，而误套类型 0 纯检索骨架或写成排障 / 根因定位模板，判为模板错配。
+    points: -9
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:template
+  - criterion: 若未先定义“按天 / 按固定粒度的日志量序列”，就直接给“对数趋势”结论，或直接对原始日志明细谈 log 趋势，判为方法性错误。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:methodology
+  - criterion: 若只给对数值、对数曲线或抽象的 log 变化，而没有提供原始日志量趋势或原始量级说明，判为关键信息缺失。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:completeness
+  - criterion: 若工具链中未调用时间转换工具，而是直接手算最近 7 天起止时间、手写时间戳或输出依赖手算的时间口径，判为严重流程错误。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:time_handling
+  - criterion: 若把 UUID TopicId 当作 TopicName 再调用 `GetTopicInfoByName`、模糊搜索或其他主题定位步骤，判为 Topic 定位错误。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:topic_resolution
+- Input: d.qq.com-clb-prod过去一天,把每个server_addr的请求量和错误数做行转列统计
+  ExpectedOutput: "📋 **摘要** | 2026-03-14 20:08:41 ~ 2026-03-15 20:08:41 | Topic: d.qq.com-clb-prod | 估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）\n\n## 📊 d.qq.com-clb-prod 后端服务器请求统计（过去24小时）\n\n### 行转列统计结果\n\n| server_addr | 总请求量 | 错误数 | 错误率 |\n|-------------|---------|--------|--------|\n| 109.244.129.235 | 14,676 | 4,715 | 32.13% |\n| 14.18.202.224 | 10,037 | 2,139 | 21.31% |\n| 157.148.47.200 | 5,145 | 1,176 | 22.86% |\n| **合计** | **29,858** | **8,030** | **26.89%** |\n\n### 📈 关键洞察\n\n1. **请求分布不均**：`109.244.129.235` 承载了约 **49.2%** 的总流量（14,676/29,858），但错误率高达 **32.13%**，显著高于其他节点\n\n2. **整体健康度堪忧**：整体错误率达到 **26.89%**，远超正常水平（通常应 <5%），建议立即排查\n\n3. **问题节点定位**：`109.244.129.235` 错误数占总错误量的 **58.7%**（4,715/8,030），是主要问题来源\n\n### 🔍 下一步建议\n\n1. **紧急排查 `109.244.129.235`**：\n   - 检查该节点服务状态、资源使用率（CPU/内存/连接数）\n   - 查看该节点特定错误类型分布：`server_addr:109.244.129.235 | select status, count(*) group by status`\n\n2. **对比分析**：\n   - 对比昨日同期数据，确认是否为新增问题\n   - 分析错误类型分布，区分 4xx（客户端）vs 5xx（服务端）\n\n3. **负载均衡检查**：\n   - 检查 CLB 健康检查配置，确认异常节点是否已被自动摘除\n   - 评估是否需要调整权重或临时下线该节点\n\n```sql\n-- 使用的查询语句\n* | select server_addr, count(*) as total_count, \n    count_if(status >= 400 or status < 200) as error_count \n  from log group by server_addr order by total_count desc\n```"
+  Judge:
+  - criterion: 将 `d.qq.com-clb-prod` 识别为 TopicName，并先通过 `GetTopicInfoByName` 或等价 Topic 定位拿到 TopicId 后再查询；未把它当 UUID 直接使用。
+    points: 8
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:tooling
+  - criterion: 对“过去一天”使用时间工具落地为滚动 24 小时窗口：先取当前时间，再通过时间转换工具生成 `From` / `To`；最终查询时间范围与输出中的时间描述一致。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:reliability
+  - criterion: 在按 `server_addr` 做统计前，先通过字段信息或小样本检索确认 `server_addr` 字段存在；若不存在，后续答复中如实说明限制。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 在查询说明或结果解读中明确“错误数”的判定口径，且该口径与实际统计条件保持一致。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:accuracy
+  - criterion: 结果以真正的行转列表格呈现：做到“每个 `server_addr` 一行”，而不是日志散行、纯文本枚举或只报单个汇总数字。
+    points: 12
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 表格中至少同时包含 `请求量` 和 `错误数` 两列；如额外补充 `错误率`、`错误占比` 或 `合计` 行，只能作为辅助信息，不能替代这两列。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 按 Quantify / 类型 B 输出：首句直接给出量化结论或头部观察，不以“根据查询结果”“查询结果如下”等铺垫开头，也不套用类型 0 的日志检索模板。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:style
+  - criterion: 表格后用 1-2 句对 `server_addr` 之间的差异做简短解读，并自动衔接一步到头部 `server_addr` 的错误率 / 错误占比 / 流量占比观察；到此为止，不扩展成根因排障链路。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:value
+  - criterion: 若查询为空、字段缺失、采样导致代表性不足，或错误口径无法确认，能主动说明限制并给出下一步替代方案（如调整 Topic、时间范围、补看字段样本或改写 Query），而不是编造统计值或直接结束。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:robustness
+  - criterion: 将本题误套为类型 0 / 纯检索回答：主体使用 `📋 [检索结果摘要]`、`📝 日志`、日志样例或检索原文来代替统计表。
+    points: -10
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:style
+  - criterion: 未交付“每个 `server_addr` 一行，且同时含 `请求量` 与 `错误数` 两列”的行转列结果；只给散行日志、单个总量、Top1 / TopN 文本，或用 `错误率` / `占比` 代替核心列。
+    points: -10
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:completeness
+  - criterion: 未明确“错误数”口径，或在未确认 `server_addr` 字段存在的情况下直接硬猜统计逻辑、强行给出各节点错误数。
+    points: -10
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:accuracy
+  - criterion: 工具轨迹中缺少时间工具，却直接手算 / 硬编码时间戳，或把“过去一天”偷换成自然日、固定日期窗，而非相对当前时刻的滚动 24 小时。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:reliability
+- Input: TopicID:e0260d49-d2ca-42cc-ae9a-1a99f15204bb过去24小时,按域名分组统计每种状态码的数量,用CASE WHEN做列统计
+  ExpectedOutput: "已成功获取数据。由于 CLS CQL 对复杂 CASE WHEN 语法的支持限制，我将基于获取的行式数据，在输出中整理为列统计格式：\n\n---\n\n## 📊 **域名状态码分布统计报告**\n\n**估算值，误差 ≤5%（腾讯云CLS HyperLogLog实现）**\n\n| 域名 | 总请求数 | 200 | 204 | 301 | 307 | 400 | 403 | 502 | 600 | 615 | 其他 |\n|------|---------|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|\n| oneapp-api.faw-vw.com | 1,490 | - | - | - | - | - | - | - | 1,489 | 1 | - |\n| rtm.faw-vw.com | 1,241 | - | - | - | - | - | - | - | 1,241 | - | - |\n| bmp.faw-vw.com | 889 | - | - | - | - | - | - | - | 887 | 2 | - |\n| audiep.faw-vw.com | 460 | - | - | - | - | 1 | - | - | 459 | - | - |\n| vwmep.faw-vw.com | 448 | - | - | - | - | - | - | - | 448 | - | - |\n| shop.faw-vw.com | 448 | - | - | - | - | - | - | - | 448 | - | - |\n| audi2c.faw-vw.com | 388 | - | - | - | - | - | - | - | 388 | - | - |\n| ep.faw-vw.com | 345 | - | - | - | - | - | - | - | 345 | - | - |\n| trade-api.seasunwbl.com | 149 | 146 | 2 | - | - | - | - | 1 | - | - | - |\n| most.faw-vw.com | 91 | - | - | - | - | - | - | - | 91 | - | - |\n| m.pvp.xoyo.com | 95 | 82 | - | 2 | 10 | 1 | 1 | - | - | - | - |\n| salesapp-vwmep.faw-vw.com | 81 | - | - | - | - | - | - | - | 81 | - | - |\n| muse.xoyo.com | 79 | 79 | - | - | - | - | - | - | - | - | - |\n| m.pvp.xoyo.com:443 | 63 | 63 | - | - | - | - | - | - | - | - | - |\n| ws.xoyo.com | 28 | 28 | - | - | - | - | - | - | - | - | - |\n| audiwecom.faw-vw.com | 24 | - | - | - | - | - | - | - | 24 | - | - |\n| e-otd.faw-vw.com | 24 | - | - | - | - | - | - | - | 24 | - | - |\n| salesapp-audiep.faw-vw.com | 18 | - | - | - | - | - | - | - | 18 | - | - |\n| jettaapp-api.faw-vw.com | 15 | - | - | - | - | - | - | - | 15 | - | - |\n| chatrobot2.xoyo.com | 14 | 14 | - | - | - | - | - | - | - | - | - |\n| pf-api.xoyo.com | 13 | 13 | - | - | - | - | - | - | - | - | - |\n| cdpprod.faw-vw.com | 12 | - | - | - | - | - | - | - | 12 | - | - |\n| vw-activity-h5.faw-vw.com | 10 | - | - | - | - | - | - | - | 10 | - | - |\n| kefu.xoyo.com | 8 | 7 | - | 1 | - | - | - | - | - | - | - |\n| cdpapi.faw-vw.com | 6 | - | - | - | - | - | - | - | 6 | - | - |\n| ai.faw-vw.com | 5 | - | - | - | - | - | - | - | 5 | - | - |\n| vw.faw-vw.com | 5 | - | - | - | - | - | - | - | 5 | - | - |\n| acms.faw-vw.com | 4 | - | - | - | - | - | - | - | 4 | - | - |\n| one-app-h5.faw-vw.com | 4 | - | - | - | - | - | - | - | 4 | - | - |\n| pb-xgp3.xgsdk.com | 4 | 4 | - | - | - | - | - | - | - | - | - |\n| diy.audi.cn | 5 | - | - | - | - | - | - | - | 4 | 1 | - |\n| adc-audiep.faw-vw.com | 3 | - | - | - | - | - | - | - | 3 | - | - |\n| pay-pf-api.xoyo.com | 3 | 3 | - | - | - | - | - | - | - | - | - |\n| id.faw-vw.com | 3 | - | - | - | - | - | - | - | 3 | - | - |\n| zhongledui.faw-vw.com | 2 | - | - | - | - | - | - | - | 2 | - | - |\n| audiclub.faw-vw.com | 2 | - | - | - | - | - | - | - | 2 | - | - |\n| e-otd-api.faw-vw.com | 2 | - | - | - | - | - | - | - | 2 | - | - |\n| service-vwmep.faw-vw.com | 2 | - | - | - | - | - | - | - | 2 | - | - |\n| vwclubweixin.faw-vw.com | 2 | - | - | - | - | - | - | - | 2 | - | - |\n| pb-xga3.xgsdk.com | 2 | 2 | - | - | - | - | - | - | - | - | - |\n| wsh-api.seasungames.cn | 2 | 2 | - | - | - | - | - | - | - | - | - |\n| api-support.seasunwbl.com | 1 | 1 | - | - | - | - | - | - | - | - | - |\n| e-otd-sys.faw-vw.com | 1 | - | - | - | - | - | - | - | 1 | - | - |\n| ks-updatecaptcha.xgsdk.com | 1 | 1 | - | - | - | - | - | - | - | - | - |\n| dc-gs.xoyo.com | 1 | 1 | - | - | - | - | - | - | - | - | - |\n\n---\n\n### 🔍 **核心洞察**\n\n1. **状态码 600 占比异常高**：一汽大众相关域名（`faw-vw.com`）绝大多数请求返回状态码 **600**（WAF 拦截或特殊状态），占比超过 **99%**\n2. **正常服务分布**：游戏类域名（`xoyo.com`、`seasunwbl.com`）主要返回 **200** 状态码，服务正常\n3. **错误分布**：\n   - `trade-api.seasunwbl.com` 出现 1 次 **502** 错误\n   - `m.pvp.xoyo.com` 出现 **400**、**403** 错误各 1 次\n   - `audiep.faw-vw.com` 出现 1 次 **400** 错误\n\n---\n\n### 📝 **CQL 查询语句**\n\n```sql\n* | SELECT http_domain, status, COUNT(*) as cnt \n  GROUP BY http_domain, status \n  ORDER BY cnt DESC\n```\n\n> 注：由于 CLS CQL 对复杂 `CASE WHEN` 列转行的支持限制，本报告基于行式聚合结果手动整理为列统计格式展示。\n\n---\n\n### 💡 **下一步建议**\n\n1. **排查 600 状态码**：一汽大众域名大量返回 600 状态码，建议检查 WAF 规则配置或后端服务健康状态\n\
+    2. **关注错误域名**：`trade-api.seasunwbl.com` 和 `m.pvp.xoyo.com` 出现 4xx/5xx 错误，建议进一步排查具体原因\n3. **监控高频域名**：`oneapp-api.faw-vw.com`、`rtm.faw-vw.com`、`bmp.faw-vw.com` 请求量最大，建议重点监控"
+  Judge:
+  - criterion: 整体按 Quantify / 类型 B 组织输出，首句直接概括过去 24 小时按域名观察到的状态码分布结论，不以“根据查询结果”“经过分析”等铺垫开头。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:format
+  - criterion: 工具链直接使用用户提供的 TopicID `e0260d49-d2ca-42cc-ae9a-1a99f15204bb` 作为 TopicId 查询对象，不再按 Topic 名称做二次检索。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:workflow
+  - criterion: 通过时间转换工具落地“过去 24 小时”的滚动时间窗，查询参数中的 `To` 贴近当前时刻，且 `From` 与 `To` 的间隔约为 24 小时。
+    points: 10
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:workflow
+  - criterion: 用户明确要求 `CASE WHEN` 做列统计时，要么真实使用 `CASE WHEN` / 等价条件聚合把不同状态码统计成独立列，要么明确说明引擎限制并采用合理降级方案，再把结果整理成列统计形式。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 最终结果以按域名分组的结构化表格呈现，表头中包含各状态码列，单元格展示对应绝对数量，而不是仅返回 `domain + status` 的行式明细。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:format
+  - criterion: 结果至少给出绝对数量；若补充总量或占比更好，但不能因为缺少占比就否定本题的核心完成度。
+    points: 6
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 表格后的解读明确指出至少一个值得关注的状态码分布现象（如 4xx / 5xx 集中、非标准状态码异常偏高、异常域名头部集中），且用口语化业务语言表达。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:insight
+  - criterion: 在给出统计结果后，自动衔接一步到头部异常域名或头部异常状态码观察，并给出具体的下一步下钻建议，而不是停在数字展示。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:closure
+  - criterion: 若查询执行失败、字段缺失、结果为空或 CQL 受限，明确解释原因，并给出降级方案、替代查询或结果重整说明。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:robustness
+  - criterion: 把用户给出的 UUID 当成 TopicName 去调用 `GetTopicInfoByName`，或先按名称检索 Topic，判为明显流程错误。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:workflow
+  - criterion: 未使用时间工具而手算或硬编码“过去 24 小时”的时间范围，或把它误做成自然日 / 固定日期窗口，判为明显流程错误。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:workflow
+  - criterion: 无视“用 CASE WHEN 做列统计”的明确要求，最终只给普通 `GROUP BY domain,status` 的行式聚合结果，或完全不说明为何未做列统计，判为严重不合格。
+    points: -12
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:accuracy
+  - criterion: 字段缺失、执行失败或结果为空时，既不解释原因，也不给降级方案、替代查询或结果重整说明，判为严重鲁棒性缺失。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:robustness
+- Input: d.qq.com-clb-prod过去1小时,帮我看看bytes_sent字段的数据类型并转成bigint求和
+  ExpectedOutput: "## 📋 摘要 | 2026-03-15 19:13 ~ 20:13 | d.qq.com-clb-prod\n\n### 🔍 字段分析结果\n\n| 字段名 | 数据类型 | 说明 |\n|--------|----------|------|\n| `bytes_sent` | **String（字符串）** | 原始日志中为JSON字符串格式，如 `\"243\"`、`\"433\"` |\n\n### 📊 统计结果（已转换为 BIGINT 求和）\n\n| 指标 | 数值 |\n|------|------|\n| **总发送字节数 (bytes_sent)** | **180,649,977 bytes** ≈ **172.3 MB** |\n| 请求总数 | 6,313 次 |\n| 平均每次请求发送字节数 | 28,615.55 bytes ≈ 27.9 KB |\n\n### 📝 CQL 查询语句\n\n```sql\n* | select sum(cast(bytes_sent as bigint)) as total_bytes_sent, \n         count(*) as request_count, \n         avg(cast(bytes_sent as bigint)) as avg_bytes_sent\n```\n\n### 💡 洞察\n\n- `bytes_sent` 字段在原始日志中以**字符串形式存储**，需使用 `cast(bytes_sent as bigint)` 转换为数值类型才能进行聚合计算\n- 过去1小时内，CLB 共发送约 **172.3 MB** 数据，平均每次请求约 **28 KB**\n- 该指标可用于监控带宽消耗、评估流量成本\n\n### 🛠️ 下一步建议\n\n如需进一步分析，可尝试：\n1. **按时间分桶查看流量趋势**：`SELECT histogram(cast(__TIMESTAMP__ as timestamp), INTERVAL 5 MINUTE) as time, sum(cast(bytes_sent as bigint)) GROUP BY time`\n2. **按状态码分析流量分布**：`SELECT status, sum(cast(bytes_sent as bigint)) GROUP BY status`\n3. **找出大流量请求**：`SELECT request, bytes_sent ORDER BY cast(bytes_sent as bigint) DESC LIMIT 10`"
+  Judge:
+  - criterion: 工具链中明确使用时间转换工具将“过去 1 小时”落地为具体查询区间，并在输出中以人可读时间范围呈现该窗口。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:time
+  - criterion: 在求和前先通过字段 Schema 嗅探或样例日志确认 `bytes_sent` 的实际类型 / 典型样值，并按“先字段认知、后聚合”的顺序执行。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:workflow
+  - criterion: 输出第一句先明确 `bytes_sent` 的类型结论，并直接说明后续是否需要转成 bigint 后再统计。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:format
+  - criterion: 执行聚合时对 `bytes_sent` 显式使用 `CAST(... AS bigint)`、`TRY_CAST` 或等价安全转换后再做 `SUM`，而不是沿用原字段类型直接求和。
+    points: 12
+    tags:
+    - eval_source:sharegpt
+    - type:positive
+    - axis:accuracy
+  - criterion: 若 `bytes_sent` 存在空值、非数字或脏值风险，明确说明采用了过滤非数字、`TRY_CAST` 包裹、或先统计不可转换比例中的至少一种处理策略。
+    points: 10
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:robustness
+  - criterion: 输出中给出了 `bytes_sent` 转成 bigint 后 `SUM` 的具体数值结果，而不是只描述“已完成聚合”或只贴查询语句。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:completeness
+  - criterion: 对聚合结果使用 CLB 运维口径进行解释，例如明确说成“过去 1 小时总发送字节数”或“流量总量”，而不是只给裸字段名和裸数字。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:communication
+  - criterion: 整体输出保持轻量查看骨架：围绕“类型结论 → 聚合结果 → 必要补充 / 下一步”展开，可简短补充，但不强行进入完整 Quantify / Find Patterns 排障闭环。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:scope
+  - criterion: 若查询结果为空、字段不存在或转换失败，主动指出具体卡点，并给出可执行替代方案（如先看样例、过滤异常值、调整 Topic / 时间 / Query）。
+    points: 8
+    tags:
+    - eval_source:actual_result
+    - type:positive
+    - axis:resilience
+  - criterion: 未先确认 `bytes_sent` 的类型或样例，就直接对该字段执行 `SUM` 聚合。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:workflow
+  - criterion: 聚合时未对 `bytes_sent` 做 bigint 转换，或仍按字符串口径处理该字段后直接给出求和结果。
+    points: -10
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:accuracy
+  - criterion: 存在或明显可能存在脏值、空值、不可转换值时，输出仍直接给总和结论，且完全未说明风险或降级处理。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:robustness
+  - criterion: “过去 1 小时”通过手算时间、模糊口头描述或裸毫秒戳处理，工具链中没有时间转换动作。
+    points: -8
+    tags:
+    - eval_source:sharegpt
+    - type:negative
+    - axis:time
+  - criterion: 将本题误套成类型 A 或类型 B 的重模板，输出大段根因、关联分析、止损方案或完整巡检内容，偏离“字段确认 + 轻量聚合查看”的核心任务。
+    points: -8
+    tags:
+    - eval_source:actual_result
+    - type:negative
+    - axis:scope

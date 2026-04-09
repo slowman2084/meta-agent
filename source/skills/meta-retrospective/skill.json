@@ -1,0 +1,13 @@
+{
+  "type": "skill",
+  "name": "meta-retrospective",
+  "description": "迭代优化全局复盘专家。分析多轮提示词迭代历史，识别反模式和劣化主线，输出 forced_new_directions。内部专用，不面向用户。",
+  "tools": [
+    "read",
+    "write",
+    "search",
+    "bash"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

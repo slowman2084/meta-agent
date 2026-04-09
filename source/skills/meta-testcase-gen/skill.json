@@ -1,0 +1,12 @@
+{
+  "type": "skill",
+  "name": "meta-testcase-gen",
+  "description": "根据 Agent 提示词和理想态描述，自动生成高质量的 YAML 测试用例。内部专用，不面向用户。",
+  "tools": [
+    "read",
+    "write",
+    "search"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

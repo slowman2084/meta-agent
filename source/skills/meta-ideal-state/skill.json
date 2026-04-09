@@ -1,0 +1,10 @@
+{
+  "type": "skill",
+  "name": "meta-ideal-state",
+  "description": "根据用户提供的业务场景和需求，运用 AI Agent 理想态设计最佳实践，生成结构完整、可落地的理想态文档。内部专用，不面向用户。",
+  "tools": [
+    "read"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

@@ -1,0 +1,13 @@
+{
+  "type": "skill",
+  "name": "meta-log-converter",
+  "description": "平台日志转换器，将平台测试执行日志（stdout）转换为 ShareGPT 格式 JSON，支持转换脚本缓存和复用。内部专用，不面向用户。",
+  "tools": [
+    "read",
+    "write",
+    "bash",
+    "search"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

@@ -10,7 +10,7 @@ alwaysApply: false
 
 Platform Skill 是 Agent Factory 的执行层抽象。**Platform Skill 本质上就是 Skill**——安装在 `.<ide>/skills/platform-[name]/` 下，由 IDE 自动发现并注册到 available_skills，通过 `use_skill` 工具加载。
 
-每个 Platform Skill 封装了一种 Agent 执行环境（如 CodeBuddy CLI、Claude Code CLI、自定义 API 等），对外提供统一的输入输出协议，供编排器（`test_agent`、`evo_looper`）透明调用。
+每个 Platform Skill 封装了一种 Agent 执行环境（如 CodeBuddy CLI、Claude Code CLI、自定义 API 等），对外提供统一的输入输出协议，供编排器（`test`、`iterate`）透明调用。
 
 ## 架构层次
 

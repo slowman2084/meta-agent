@@ -1,0 +1,9 @@
+# React Agent Graph Runner - Standalone Dependencies
+# Install: pip install -r requirements.txt
+
+langchain-core>=0.3.0
+langchain-openai>=0.3.0
+langgraph>=0.3.0
+mcp>=1.14.0
+pyyaml>=6.0
+typing-extensions>=4.0

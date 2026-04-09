@@ -13,7 +13,7 @@ alwaysApply: true
 你在整个过程中，要做到：
 - 每一步执行前，先简要告知用户当前步骤和目的
 - 每一步执行后，简要汇报结果和下一步计划
-- 遇到需要用户确认的节点，提供清晰的选项；但 `evo_looper` 属于**默认全自动模式**，除非对应规则明确写出暂停/确认条件，否则不得主动停下来征询 `y/n`
+- 遇到需要用户确认的节点，提供清晰的选项；但 `iterate` 属于**默认全自动模式**，除非对应规则明确写出暂停/确认条件，否则不得主动停下来征询 `y/n`
 - 所有生成的文件都要实际写入磁盘
 
 ---
@@ -22,36 +22,44 @@ alwaysApply: true
 
 | 触发词 | 自然语言触发 | 模式 | 加载规则 |
 |--------|-------------|------|---------|
-| `create_agent` | "创建 Agent"、"新建 Agent" | 创建模式 | 加载 `af-create` + `af-rubric-retry` |
-| `create_testcases` | "生成用例"、"补充测试用例" | 用例生成模式 | 加载 `af-create` + `af-rubric-retry` |
-| `test_agent` | "测试 Agent"、"跑测试" | 测试模式 | 加载 `af-test` |
-| `evo_looper` | "迭代优化"、"开始迭代" | 迭代优化模式（默认计划模式，支持通过 todo list / plan 文件续跑） | 加载 `af-test` + `af-evo` |
+| `create agent` | "创建 Agent"、"新建 Agent" | 创建模式 | 加载 `af-create` + `af-rubric-retry` |
+| `create testcases` | "生成用例"、"补充测试用例" | 用例生成模式 | 加载 `af-create` + `af-rubric-retry` |
+| `test` | "测试 Agent"、"跑测试" | 测试模式 | 加载 `af-test` |
+| `iterate` | "迭代优化"、"开始迭代" | 迭代优化模式（默认计划模式，支持通过 todo list / plan 文件续跑） | 加载 `af-test` + `af-evo` |
 | `calibrate` | "校准"、"调试"、"debug"、"诊断评估体系" | 调试模式 | 加载 `af-test` + `af-calibrate` |
-| `create_skill` | "创建 Skill"、"新建 Skill"、"测试 Skill" | Skill 创建模式（方案 D：通过 Harness Agent 复用管道） | 加载 `af-skill-harness` |
-| `create_platformskill` | "创建平台 Skill"、"create platform skill" | 平台 Skill 创建 | 加载 `af-platformskill` |
+| `create skill` | "创建 Skill"、"新建 Skill" | Skill 创建模式 | 加载 `af-skill-harness` |
+| `create platformskill` | "创建平台 Skill"、"create platform skill" | 平台 Skill 创建 | 加载 `af-platformskill` |
 
-> **触发识别规则**：用户消息中包含上述触发词或自然语言表达时，**先用 read_rules 工具加载对应规则文件**，再按规则执行。
+> **触发识别规则**：`test` / `create` 等短触发词需要配合目标名称使用（如 `test cls-log-agent`），单独出现不触发。
+>
+> **兼容触发词**：`test_agent`、`create_agent`、`evo_looper`、`create_skill` 等旧式下划线触发词仍可识别，行为等价。
 >
 > **CodeBuddy CLI 兼容**：CLI 环境下子规则以 `.md` 格式自动全量加载（CLI 无 read_rules），无需手动加载。
 
-### `@` 执行模式路由
+### `on` 执行模式路由
 
-通过 Agent 名称中的 `@` 后缀路由到对应的 Platform Skill：
+通过 `on` 关键字路由到对应的 Platform Skill：
 
-| 用户输入 | Agent 目录 | 执行模式 |
-|---------|-----------|---------|
-| `test_agent cls-log-agent` | `source/cls-log-agent/` | subagent（IDE 直接调用） |
-| `test_agent cls-log-agent@codebuddycli` | `source/cls-log-agent/` | codebuddycli Platform Skill |
-| `test_agent cls-log-agent@claude` | `source/cls-log-agent/` | claude Platform Skill |
+| 用户输入 | 目标 | 执行模式 |
+|---------|------|---------|
+| `test cls-log-agent` | `source/agents/cls-log-agent/` | subagent（IDE 直接调用） |
+| `test cls-log-agent on codebuddycli` | `source/agents/cls-log-agent/` | codebuddycli Platform Skill |
+| `test cls-log-agent on tcop` | `source/agents/cls-log-agent/` | tcop Platform Skill |
+| `test cls-query` | `source/skills/cls-query/` | subagent + 动态套壳（自动识别为 Skill） |
+| `test cls-query on codebuddycli` | `source/skills/cls-query/` | codebuddycli + 动态套壳 |
 
-**关键设计**：
-- `@` 前 = Agent 名称（对应 `source/` 下的目录，**不创建独立平台目录**）
-- `@` 后 = Platform Skill 名称，**通过 `use_skill` 工具加载**（如 `use_skill(command="codebuddycli")`）
-- 无 `@` = 等同于 `@subagent`（IDE 内置模式，适合无 MCP 调用的 Agent）
+**解析规则**：
+- `on` 前 = 目标名称（Agent 或 Skill）
+- `on` 后 = Platform Skill 名称，**通过 `use_skill` 工具加载**（如 `use_skill(command="codebuddycli")`）
+- 无 `on` = 等同于 `on subagent`（IDE 内置模式）
 - Platform Skill 安装在 `.<ide>/skills/platform-[name]/`，IDE 自动发现并注册到 available_skills
-- 含 `@` 时额外加载 `af-platformskill` 规则了解协议细节
 
-> ⚠️ **强制首步**：进入 `test_agent` 或 `evo_looper` 流程后，**第一个动作**必须是调用 `use_skill(command="[平台名]")` 加载 Platform Skill（即 `af-test` 中的步骤 0）。所有执行模式（包括 subagent）都需要此步骤。跳过此步骤将导致 Skill 说明未注入上下文，后续执行将缺少关键指引。
+**目标类型识别**：
+1. 先查 `source/agents/[target]` — 存在则为 Agent
+2. 再查 `source/skills/[target]` — 存在则为 Skill，自动套壳 `meta-skill-harness`
+3. 都不存在 → 报错
+
+> ⚠️ **强制首步**：进入 `test` 或 `iterate` 流程后，**第一个动作**必须是调用 `use_skill(command="[平台名]")` 加载 Platform Skill。所有执行模式（包括 subagent）都需要此步骤。
 
 ---
 
@@ -64,7 +72,7 @@ alwaysApply: true
 | `meta-testcase-gen` | 生成测试用例 | Agent 提示词 + 理想态 + 用户画像（≥5） | — |
 | `meta-rubric-gen` | 逐条生成 Judge | 每条 Input + agent_name + must_follow/risk_notes | ExpectedOutput |
 | `meta-eval-judge` | 每条用例评估 | Input + ExpectedOutput + Judge + ActualOutput；ShareGPT RunLog（可选）。**每次只传一条** | 多条合并 |
-| `meta-retrospective` | evo_looper 每 3 轮 | current_prompt_path + bak_dir + eval_dir + eval_results_dir | testcases_yaml_path |
+| `meta-retrospective` | iterate 每 3 轮 | current_prompt_path + bak_dir + eval_dir + eval_results_dir | testcases_yaml_path |
 | `meta-debug` | calibrate 步骤 2 | agent_name + prompt_path + ideal_state_path + testcases_yaml_path + eval_results_dir + output_dir | bak_dir |
 
 > **注意**：`meta-log-converter` 主要服务于 subagent 模式下旧版 `platform_test.py` 产生的 stdout 日志转换。新的 Platform Skill 架构已直接输出 ShareGPT 格式的 `case_[N]_sharegpt.json`，无需额外转换。
@@ -79,7 +87,9 @@ alwaysApply: true
 
 ### 4.2 备份约束
 
-修改 Agent 提示词、YAML、理想态文件前，必须先备份到 `source/[AgentName]/bak/`，格式为 `[原文件名]_[YYYYMMDDHHmmss].bak`。
+修改 Agent/Skill 提示词、YAML、理想态文件前，必须先备份到对应目录的 `bak/`，格式为 `[原文件名]_[YYYYMMDDHHmmss].bak`。
+- Agent 备份到 `source/agents/[AgentName]/bak/`
+- Skill 备份到 `source/skills/[SkillName]/bak/`
 
 ### 4.3 反作弊约束
 
@@ -89,38 +99,34 @@ alwaysApply: true
 
 ### 4.4 架构约束
 
-- 提示词修改在 `source/[AgentName]/prompt.md` 中进行，通过 `./venv/bin/python scripts/install.py` 同步到所有 IDE
-- MCP 配置在 `source/[AgentName]/.mcp.json` 中维护
-- Skills 在 `source/[AgentName]/skills/` 中维护
+- Agent 提示词修改在 `source/agents/[AgentName]/prompt.md` 中进行，通过 `./venv/bin/python scripts/install.py` 同步到所有 IDE
+- Skill 指令修改在 `source/skills/[SkillName]/SKILL.md` 中进行，通过 `./venv/bin/python scripts/install.py [SkillName]` 同步
+- MCP 配置在 `source/agents/[AgentName]/.mcp.json` 中维护
 - **严禁**直接修改 IDE 目录中的 agent / skills / `.mcp.json` 文件
 
-### 4.4a Harness Agent 识别与行为约束（方案 D）
+### 4.4a Skill 识别与动态套壳
 
-当 `agent.json` 中存在 `harness` 字段时，该 Agent 是 **Skill Test Harness Agent**：
+当目标名称在 `source/skills/` 下时，自动识别为 Skill，使用 `meta-skill-harness` 动态套壳：
 
-- `harness.skill_name`：被测 Skill 名称
-- `harness.skill_source`：Skill 源文件路径（如 `source/skills/pdf-markdown`）
-- `harness.optimize_target`：优化目标文件名（默认 `SKILL.md`）
-- `harness.prompt_is_readonly`：若为 `true`，`evo_looper` 优化时**跳过 prompt.md**，转而优化 `SKILL.md`
+**识别规则**（由规则层判断，不依赖 `agent.json` 标记）：
+1. `test` / `iterate` / `calibrate` 的目标名 → 先查 `source/agents/` → 再查 `source/skills/`
+2. 目标在 `source/skills/` 下 → 自动套壳 `meta-skill-harness`
+3. `meta-skill-harness` 的 prompt.md 中 `{{SKILL_NAME}}` 由规则层替换为实际 Skill 名
 
-**行为差异**：
-- `test_agent`：无差异（Harness Agent 视为普通 Agent 执行和评估）
-- `evo_looper` 步骤 C（优化）：若 `harness.optimize_target` 存在：
-  1. 备份 `source/skills/[SkillName]/SKILL.md`（而非 prompt.md）
-  2. 调用 `meta-prompt-engineer` 优化 SKILL.md（而非 prompt.md）
-  3. 将优化后的 SKILL.md 同步回 Harness Agent 的 `skills/` 目录
-  4. 运行 `install.py` 同步
-- `create_skill` 流程（详见 `af-skill-harness` 规则）：
-  1. 创建 Skill 源文件（`source/skills/[SkillName]/`）
-  2. 自动调用 `create_harness.py` 生成 Harness Agent
-  3. 复用 `create_agent` 后续流程（生成用例、Judge、安装）
+**iterate 对 Skill 的优化行为**：
+- 备份 `source/skills/[SkillName]/bak/SKILL.md_[timestamp].bak`
+- 调用 `meta-prompt-engineer` 优化 `SKILL.md`（而非 prompt.md）
+- 优化后运行 `install.py [SkillName]` 重新分发到所有 IDE
+
+**Skill 测试前**：确认 Skill 已分发安装（检查 `.<ide>/skills/[SkillName]/` 是否存在）
 
 ### 4.5 读取用例规范
 
 - **按需读取**：禁止一次性读取整个大型 `testcases.yaml` 文件
 - **CLI 工具**：使用 `scripts/yaml_tool.py`
-  - 获取总数：`./venv/bin/python scripts/yaml_tool.py count source/[AgentName]/testcases.yaml`
-  - 读取单条：`./venv/bin/python scripts/yaml_tool.py get source/[AgentName]/testcases.yaml 0`
+  - 获取总数：`./venv/bin/python scripts/yaml_tool.py count source/agents/[AgentName]/testcases.yaml`
+  - Skill 用例：`./venv/bin/python scripts/yaml_tool.py count source/skills/[SkillName]/testcases.yaml`
+  - 读取单条：`./venv/bin/python scripts/yaml_tool.py get source/agents/[AgentName]/testcases.yaml 0`
   - 只读指定字段：`...get ... 0 --fields Input,Judge`
   - 批量读取：`...get ... 0-4`
 
@@ -142,7 +148,7 @@ cases:
 
 ### 4.8 平台一致性约束
 
-- `@平台名` 一旦确定，本轮正式输出目录只能接收该平台产物
+- `on 平台名` 一旦确定，本轮正式输出目录只能接收该平台产物
 - 判断依据以 `case_[N]_sharegpt.json` 中的 `metadata.platform` 为准
 - 若目录名为 `*_tcop/`，则其中正式产物的 `metadata.platform` 必须全部为 `tcop`
 - 任何 fallback / shadow 结果必须写入独立目录，**严禁**回写到当前正式目录
@@ -160,11 +166,21 @@ cases:
 |------|------|
 | `./venv/bin/python scripts/install.py [AgentName]` | 安装指定 Agent |
 | `./venv/bin/python scripts/install.py [AgentName] --model xxx` | 指定模型安装 |
-| `./venv/bin/python scripts/install.py` | 安装所有（Agent + Rules + Platform Skills） |
+| `./venv/bin/python scripts/install.py` | 安装所有（Agent + Skill + Rules + Platform Skills） |
 
-前置条件：`source/[AgentName]/agent.json`（含 `description` + `tools` 语义值数组）。
+前置条件：`source/agents/[AgentName]/agent.json`（含 `description` + `tools` 语义值数组）。
 
 脚本自动：读取 agent.json + prompt.md + .mcp.json → 生成各平台文件头 → 写入 .cursor/agents/ + .codebuddy/agents/ + .claude/agents/ → 更新 AGENTS.md → 合并 MCP → 复制 skills。
+
+### Skill 安装
+
+| 命令 | 说明 |
+|------|------|
+| `./venv/bin/python scripts/install.py [SkillName]` | 安装指定 Skill |
+
+前置条件：`source/skills/[SkillName]/skill.json`。
+
+脚本自动：将 Skill 源文件（SKILL.md、skill.json、scripts/、references/ 等）复制到所有 IDE 的 skills/ 目录。排除测试产物（testcases.yaml、ideal_state.md、changelog.md、bak/、tmp/）。
 
 ### Platform Skills 安装
 
@@ -194,26 +210,24 @@ cases:
 
 | 路径 | 用途 |
 |------|------|
-| `source/[AgentName]/prompt.md` | Agent 提示词源文件 |
-| `source/[AgentName]/agent.json` | 元数据（description + tools） |
-| `source/[AgentName]/ideal_state.md` | 理想态描述 |
-| `source/[AgentName]/testcases.yaml` | 测试用例 |
-| `source/[AgentName]/changelog.md` | 变更日志 |
-| `source/[AgentName]/.mcp.json` | MCP 服务配置 |
-| `source/[AgentName]/bak/` | 历史备份 |
-| `source/[AgentName]/tmp/` | 运行时产物 |
-| `source/[AgentName]/references/` | 领域参考资源 |
-| `source/[AgentName]/skills/` | 专属 skill |
-| `source/skills/[SkillName]/` | 🆕 Skill 源文件目录 |
-| `source/skills/[SkillName]/skill.json` | 🆕 Skill 元数据 |
-| `source/skills/[SkillName]/SKILL.md` | 🆕 Skill 指令文档 |
-| `source/skill-harness-[SkillName]/` | 🆕 Skill Test Harness Agent（自动生成） |
-| `source/platform-skills/` | 平台 Skill 源目录 |
-| `source/platform-skills/registry.json` | 平台 Skill 注册表 |
-| `source/platformskill-creator/` | 平台 Skill 创建工具（Skill） |
+| `source/agents/[AgentName]/prompt.md` | Agent 提示词源文件 |
+| `source/agents/[AgentName]/agent.json` | 元数据（description + tools） |
+| `source/agents/[AgentName]/ideal_state.md` | 理想态描述 |
+| `source/agents/[AgentName]/testcases.yaml` | 测试用例 |
+| `source/agents/[AgentName]/changelog.md` | 变更日志 |
+| `source/agents/[AgentName]/.mcp.json` | MCP 服务配置 |
+| `source/agents/[AgentName]/bak/` | 历史备份 |
+| `source/agents/[AgentName]/tmp/` | 运行时产物 |
+| `source/agents/[AgentName]/references/` | 领域参考资源 |
+| `source/agents/[AgentName]/config/` | 平台变体配置 |
+| `source/agents/meta-skill-harness/` | 通用 Skill 测试壳 Agent |
+| `source/skills/[SkillName]/SKILL.md` | Skill 指令文档（迭代优化目标） |
+| `source/skills/[SkillName]/skill.json` | Skill 元数据 |
+| `source/skills/[SkillName]/testcases.yaml` | Skill 测试用例 |
+| `source/skills/[SkillName]/ideal_state.md` | Skill 理想态 |
+| `source/skills/[SkillName]/changelog.md` | Skill 变更日志 |
+| `source/skills/[SkillName]/scripts/` | Skill 脚本 |
+| `source/skills/[SkillName]/references/` | Skill 参考资料 |
 | `scripts/yaml_tool.py` | YAML 用例读写工具 |
-| `scripts/install.py` | Agent + Rules + Platform Skills 安装脚本 |
-| `scripts/scaffold.py` | 目录脚手架创建 |
-| `scripts/create_harness.py` | 🆕 Skill → Harness Agent 自动生成 |
-| `scripts/trigger_test.py` | 🆕 Skill 触发准确性测试 |
-| `scripts/artifact_checker.py` | 🆕 Skill 产物检查 |
+| `scripts/install.py` | Agent + Skill + Rules + Platform Skills 安装脚本 |
+| `scripts/scaffold.py` | Agent 目录脚手架创建 |

@@ -10,8 +10,8 @@ alwaysApply: false
 
 `meta-rubric-gen` 在以下场景中逐条调用（每条测试用例单独一次）：
 
-1. `create_agent` 步骤 6：为新测试用例逐条生成 Judge
-2. `create_testcases` 步骤 5：为补充用例逐条生成 Judge
+1. `create agent` 步骤 6：为新测试用例逐条生成 Judge
+2. `create testcases` 步骤 5：为补充用例逐条生成 Judge
 3. 方式 c（从 YAML 创建）步骤 5：为缺少 Judge 的用例生成
 
 ## 自动重试机制（强制执行）
@@ -72,7 +72,7 @@ print(f"❌ Case {id}: 所有尝试均失败", flush=True)
 ### 失败处理
 
 1. **不中断整体流程**：继续处理下一条
-2. **记录**：写入 `source/[AgentName]/tmp/rubric_gen_failures.log`
+2. **记录**：写入 `source/agents/[AgentName]/tmp/rubric_gen_failures.log`
 3. **占位符**：在 Judge 字段填入：
    ```yaml
    - criterion: "[自动生成失败] 请人工补充"

@@ -1,0 +1,4 @@
+{
+  "description": "通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。",
+  "tools": ["read", "write", "bash"]
+}

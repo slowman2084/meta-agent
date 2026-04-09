@@ -1,0 +1,53 @@
+# 平台 Agent 测试配置模板
+# ============================================================
+# 使用说明：
+#   占位符格式为 {{AgentName}}，AgentName 就是 source/ 下的文件夹名
+#   例如测试 cls-log-agent，就写 {{cls-log-agent}}
+#   编排器会在运行前将其替换为 source/cls-log-agent/prompt.md 的内容
+#   复制此文件为你的平台配置（如 observable_platform.yaml），填写实际的 LLM 和 MCP 配置
+# ============================================================
+
+# ============================================================
+# LLM Configuration
+# ============================================================
+llm:
+  model: "your-model-name"
+  api_key: "your-api-key"
+  base_url: "http://your-platform-url/v1"
+  temperature: 0.7
+
+# ============================================================
+# Custom System Prompt - 占位符 {{AgentName}} 在运行时被替换为对应 Agent 提示词
+# ============================================================
+prompts:
+  custom_system_prompt: |
+    {{你的AgentName}}
+
+# ============================================================
+# MCP Server Configuration - 根据平台实际工具配置
+# ============================================================
+mcp_servers: []
+# 示例：
+# mcp_servers:
+#   - url: "http://your-mcp-server/mcp"
+#     transport_type: "streamable_http"
+#     headers:
+#       secretid: "your-secret-id"
+#       secretkey: "your-secret-key"
+#     timeout: 30
+#     sse_read_timeout: 60
+#     allowed_tools:
+#       - "ToolName1"
+#       - "ToolName2"
+
+# ============================================================
+# Graph Configuration
+# ============================================================
+graph:
+  name: "platform_test_agent"
+  max_threshold_tokens: 70000
+  max_summary_tokens: 20000
+  recursion_limit: 256
+  enable_condense: true
+  enable_todolist: false
+  debug: false

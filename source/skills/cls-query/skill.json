@@ -1,0 +1,13 @@
+{
+  "type": "skill",
+  "name": "cls-query",
+  "description": "用于查询腾讯云 CLS (Cloud Log Service) 日志的 skill，基于腾讯云 SearchLog API 实现检索分析日志功能",
+  "trigger_keywords": ["cls", "日志查询", "日志检索", "CLS查询", "SearchLog", "日志分析"],
+  "tools": ["read", "write", "bash"],
+  "design_pattern": "tool_chain",
+  "evaluation": {
+    "trigger_test": true,
+    "baseline_comparison": true,
+    "artifact_check": true
+  }
+}

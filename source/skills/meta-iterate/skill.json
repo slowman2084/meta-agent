@@ -1,0 +1,9 @@
+{
+  "type": "skill",
+  "name": "meta-iterate",
+  "description": "Agent/Skill 迭代优化编排器。执行多轮 test→optimize→review→re-test 循环，支持 warmup、baseline、sampling、verify 四阶段策略。触发词：iterate、迭代优化、开始迭代。",
+  "trigger_keywords": ["iterate", "迭代优化", "开始迭代", "evo_looper"],
+  "tools": ["read", "write", "edit", "bash", "search"],
+  "design_pattern": "react_agent",
+  "install_to_ide": true
+}

@@ -1,38 +1,38 @@
 ---
-description: "Agent Factory - 共享测试-评估流程和 test_agent 测试模式。触发词：test_agent、测试 Agent、跑测试。evo_looper 和 calibrate 也依赖本规则。"
+description: "Agent Factory - 共享测试-评估流程和 test 测试模式。触发词：test、测试 Agent、跑测试。iterate 和 calibrate 也依赖本规则。"
 globs:
 alwaysApply: false
 ---
 
-# 共享测试-评估流程 & test_agent 测试模式
+# 共享测试-评估流程 & test 测试模式
 
 ## 一、共享测试-评估流程
 
-> 供 `test_agent` 和 `evo_looper` 共同引用。
+> 供 `test` 和 `iterate` 共同引用。
 
 ### 步骤 0：解析执行模式 & 加载 Platform Skill（强制首步）
 
 > ⚠️ **这是共享流程的第一步，必须在任何其他操作之前执行。**
 
-**0a. 解析 `@` 后缀确定执行模式**：
+**0a. 解析 `on` 关键词确定执行模式**：
 
 | 用户输入 | 解析结果 | 平台 Skill 名称 |
 |---------|---------|----------------|
-| `test_agent cls-log-agent` | Agent=`cls-log-agent` | `subagent`（无 `@` 默认） |
-| `test_agent cls-log-agent@codebuddycli` | Agent=`cls-log-agent` | `codebuddycli` |
-| `test_agent cls-log-agent@claude` | Agent=`cls-log-agent` | `claude` |
-| `test_agent cls-log-agent@tcop` | Agent=`cls-log-agent` | `tcop` |
+| `test cls-log-agent` | 目标=`cls-log-agent` | `subagent`（无 `on` 默认） |
+| `test cls-log-agent on codebuddycli` | 目标=`cls-log-agent` | `codebuddycli` |
+| `test cls-log-agent on claude` | 目标=`cls-log-agent` | `claude` |
+| `test cls-log-agent on tcop` | 目标=`cls-log-agent` | `tcop` |
 
-- `@` 前 = Agent 名称，对应 `source/[AgentName]/` 目录
-- `@` 后 = 平台 Skill 名称（无 `@` 等同于 `@subagent`）
+- `on` 前 = 目标名称（Agent 或 Skill），通过目录定位：先查 `source/agents/`，再查 `source/skills/`
+- `on` 后 = 平台 Skill 名称（无 `on` 等同于 `on subagent`）
 
 **0b. 立即调用 `use_skill` 加载对应的 Platform Skill**：
 
 ```
 # 必须执行！根据解析出的平台名调用：
-use_skill(command="subagent")       # 无 @ 或 @subagent
-use_skill(command="codebuddycli")   # @codebuddycli
-use_skill(command="claude")         # @claude
+use_skill(command="subagent")       # 无 on 或 on subagent
+use_skill(command="codebuddycli")   # on codebuddycli
+use_skill(command="claude")         # on claude
 ```
 
 - 调用 `use_skill` 后，IDE 会将该 Skill 的 `SKILL.md` 完整内容注入当前上下文
@@ -54,14 +54,14 @@ use_skill(command="claude")         # @claude
 - 若不在列表内，选择最接近的可用模型并告知用户
 
 **0.5b. 配置文件检查**（仅限需要外部配置的平台，如 TCOP）：
-1. 检查 `source/platform-skills/[platform]/config/` 下是否有该 Agent 的配置文件（匹配 `[AgentName]*.yaml`）
-2. 若不存在，引导用户从 `platform_template.yaml` 创建
+1. 检查 `source/agents/[AgentName]/config/` 下是否有该平台的配置文件（如 `[platform].yaml`）
+2. 若不存在，引导用户创建
 3. 若 Skill 支持 `--preflight` 参数，运行预检：
    ```bash
    ./venv/bin/python source/platform-skills/[platform]/scripts/run.py \
      --preflight \
      --config [config_path] \
-     --agent-prompt source/[AgentName]/prompt.md
+     --agent-prompt source/agents/[AgentName]/prompt.md
    ```
 4. 预检失败则暂停，提示用户修复配置问题后重试
 
@@ -75,15 +75,17 @@ use_skill(command="claude")         # @claude
 编排器在导出 `inputs.json` 时应使用 `--cases` 参数过滤：
 ```bash
 # top 3
-./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+./venv/bin/python scripts/yaml_tool.py export-inputs source/agents/[AgentName]/testcases.yaml \
   --output [output_dir]/inputs.json --cases 0-2
 
 # 指定序号
-./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+./venv/bin/python scripts/yaml_tool.py export-inputs source/agents/[AgentName]/testcases.yaml \
   --output [output_dir]/inputs.json --cases 0,3,7
 ```
 
-**统一输出目录**：`source/[AgentName]/tmp/[task]_[timestamp]_[mode]/`
+> 若目标为 Skill（`source/skills/[SkillName]/`），路径相应替换。
+
+**统一输出目录**：`source/agents/[AgentName]/tmp/[task]_[timestamp]_[mode]/`（Skill 则为 `source/skills/[SkillName]/tmp/...`）
 - `task` = `test` 或 `evalooper`（由调用方决定）
 - `mode` = `subagent` | `codebuddycli` | `claude` | 其他平台名
 
@@ -94,7 +96,7 @@ use_skill(command="claude")         # @claude
 
 ### 步骤 1.5：结果目录平台锁定（强制）
 
-> **一旦本轮执行模式确定为 `@tcop` / `@claude` / `@codebuddycli` / `@subagent`，对应输出目录只能接收同平台产物，严禁混入 fallback 结果。**
+> **一旦本轮执行模式确定为 `on tcop` / `on claude` / `on codebuddycli` / `on subagent`，对应输出目录只能接收同平台产物，严禁混入 fallback 结果。**
 
 强制规则：
 1. 目录名后缀必须与执行模式一致，例如 `*_tcop/` 只能接收 `tcop` 产物
@@ -103,10 +105,10 @@ use_skill(command="claude")         # @claude
 4. 判断依据以 `case_[N]_sharegpt.json` 中的 `metadata.platform` 为准
 5. 若发现目录中混入了不同平台的产物：
    - 当前目录仅可标记为 `mixed` / `diagnostic`
-   - **不得**继续作为正式 `test_agent` / `evo_looper` 评估依据
+   - **不得**继续作为正式 `test` / `iterate` 评估依据
    - 必须在正确平台的新目录中重跑缺失或受污染的 case
 
-#### 模式 A：subagent（无 @ 或 @subagent）
+#### 模式 A：subagent（无 on 或 on subagent）
 
 > 步骤 0 已通过 `use_skill(command="subagent")` 加载了 subagent Skill 说明。按 Skill 说明执行：
 
@@ -134,16 +136,18 @@ ShareGPT 构造规则：
 
 > **subagent 模式适用场景**：Agent 没有 MCP 调用需求，且不需要评估执行流程（工具调用序列）。
 
-#### 模式 B：Platform Skill（@codebuddycli / @claude / @tcop 等）
+#### 模式 B：Platform Skill（on codebuddycli / on claude / on tcop 等）
 
 > 步骤 0 已通过 `use_skill` 加载了对应 Platform Skill 的说明。此处直接按注入的 Skill 说明执行。
 
 **1. 导出用例 Input**：
 
 ```bash
-./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+./venv/bin/python scripts/yaml_tool.py export-inputs source/agents/[AgentName]/testcases.yaml \
   --output [output_dir]/inputs.json
 ```
+
+> 若目标为 Skill，路径为 `source/skills/[SkillName]/testcases.yaml`。
 
 **2. 分批并发执行（3 路 × ≤4 条/路）**：
 
@@ -216,22 +220,24 @@ Batch 2:
 
 ---
 
-## 二、`test_agent` 测试模式
+## 二、`test` 测试模式
 
-> 只测试 + 评估，不修改提示词。用于了解当前 Agent 的真实水平。
+> 只测试 + 评估，不修改提示词。用于了解当前 Agent/Skill 的真实水平。
 
 ### 流程
 
 1. **前置安装**：
    - subagent 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定 `model: xxx`，加 `--model xxx`）
-   - Platform Skill 模式（名称含 `@`）：确认 Platform Skill 已安装（若不在 available_skills 中，先运行 `./venv/bin/python scripts/install.py --platform-skills`）
-2. **执行共享流程步骤 0**：解析 `@` 后缀 → 立即调用 `use_skill` 加载 Platform Skill（详见第一节步骤 0）
-3. **初始化**：确定目标 Agent 名称、YAML 路径、执行模式
+   - Platform Skill 模式（含 `on` 关键词）：确认 Platform Skill 已安装（若不在 available_skills 中，先运行 `./venv/bin/python scripts/install.py --platform-skills`）
+2. **执行共享流程步骤 0**：解析 `on` 关键词 → 立即调用 `use_skill` 加载 Platform Skill（详见第一节步骤 0）
+3. **初始化**：确定目标名称（Agent 或 Skill）、YAML 路径、执行模式
+   - 目标类型识别：先查 `source/agents/`，再查 `source/skills/`
+   - 若目标在 `source/skills/` 下，自动套壳 `meta-skill-harness`
    - 若指定了 `model: xxx`，测试基于 `prompt_[model].md`
 4. **执行共享测试-评估流程步骤 1~4**（本规则第一节）
-   - 评估结果保存到 `source/[AgentName]/tmp/test_[时间戳]_[mode]/`
+   - 评估结果保存到 `source/agents/[AgentName]/tmp/test_[时间戳]_[mode]/`（Skill 为 `source/skills/[SkillName]/tmp/...`）
 5. **生成报告**：
-   - 汇总为 `source/[AgentName]/tmp/test_[时间戳]_[mode]/评估报告.md`
+   - 汇总为对应 `tmp/` 目录下的 `评估报告.md`
    - 展示汇总表格（序号 / Input 摘要 / 得分 / 主要不足）
    - 计算平均分、最高分、最低分、低于 80 分的用例列表
-6. **完成提示**：建议 `calibrate`（首次测试时）或 `evo_looper`
+6. **完成提示**：建议 `calibrate`（首次测试时）或 `iterate`

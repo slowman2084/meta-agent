@@ -1,0 +1,12 @@
+{
+  "type": "skill",
+  "name": "meta-rubric-gen",
+  "description": "专门为 LLM-as-a-Judge 生成任务专属、可判定、可去偏的评分标准（Rubric）。内部专用，不面向用户。",
+  "tools": [
+    "read",
+    "write",
+    "search"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}

@@ -53,7 +53,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-prompt-engineer/prompt.md`
+> 请参见 `source/agents/meta-prompt-engineer/prompt.md`
 
 ---
 
@@ -63,7 +63,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-testcase-gen/prompt.md`
+> 请参见 `source/agents/meta-testcase-gen/prompt.md`
 
 ---
 
@@ -73,7 +73,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-eval-judge/prompt.md`
+> 请参见 `source/agents/meta-eval-judge/prompt.md`
 
 ---
 
@@ -83,7 +83,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-retrospective/prompt.md`
+> 请参见 `source/agents/meta-retrospective/prompt.md`
 
 ---
 
@@ -93,7 +93,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-ideal-state/prompt.md`
+> 请参见 `source/agents/meta-ideal-state/prompt.md`
 
 ---
 
@@ -103,7 +103,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-rubric-gen/prompt.md`
+> 请参见 `source/agents/meta-rubric-gen/prompt.md`
 
 ---
 
@@ -113,7 +113,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-log-converter/prompt.md`
+> 请参见 `source/agents/meta-log-converter/prompt.md`
 
 ---
 
@@ -123,7 +123,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-debug/prompt.md`
+> 请参见 `source/agents/meta-debug/prompt.md`
 
 ---
 
@@ -135,7 +135,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/meta-reviewer/prompt.md`
+> 请参见 `source/agents/meta-reviewer/prompt.md`
 
 ---
 
@@ -145,7 +145,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/cls-log-agent/prompt.md`
+> 请参见 `source/agents/cls-log-agent/prompt.md`
 
 ---
 
@@ -155,7 +155,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/cls-log-agent@observable/prompt.md`
+> 请参见 `source/agents/cls-log-agent@observable/prompt.md`
 
 ---
 
@@ -165,7 +165,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/skill-harness-platform_react_runner/prompt.md`
+> 请参见 `source/agents/skill-harness-platform_react_runner/prompt.md`
 
 ---
 
@@ -175,7 +175,7 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/歌词生成系统/prompt.md`
+> 请参见 `source/agents/歌词生成系统/prompt.md`
 
 ---
 
@@ -185,6 +185,26 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 
 **提示词**：
 
-> 请参见 `source/说唱生成系统/prompt.md`
+> 请参见 `source/agents/说唱生成系统/prompt.md`
+
+---
+
+## Agent: skill-harness-cls-query
+
+**描述**：Skill Test Harness: cls-query — 用于查询腾讯云 CLS (Cloud Log Service) 日志的 skill，基于腾讯云 SearchLog API 实现检索分析日志功能
+
+**提示词**：
+
+> 请参见 `source/agents/skill-harness-cls-query/prompt.md`
+
+---
+
+## Agent: meta-skill-harness
+
+**描述**：通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。
+
+**提示词**：
+
+> 请参见 `source/agents/meta-skill-harness/prompt.md`
 
 ---

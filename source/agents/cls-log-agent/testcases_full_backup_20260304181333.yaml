@@ -1,0 +1,3909 @@
+meta:
+  count: 41
+  notice: ''
+cases:
+- Input: 帮我看下omp-trace-log最近1天有哪些接口报错了,按错误数排个序
+  ExpectedOutput: |-
+    **工具调用过程：**
+    1. GetTopicInfoByName：成功获取 Topic 信息（TopicId: 310ded45-de57-4284-9290-24b49e2708d0）
+    2. SearchLog: 获取字段探查结果， 得出基于基数和字段价值的分析
+    3. SearchLog：获取到4xx 和 5xx 的多条日志记录，并且两次内调用完成获取
+
+    **输出：**
+    | # | 接口 | retcode | 错误信息 | 错误数 |
+    |---|------|---------|---------|--------|
+    | 1 | `/api/system-manager/feedback/score` | 401 | 登录遇到点问题，请重新登录 | **888** |
+    | 2 | `/api/index/checkActivityTime?activityKey=LUCKY_CHARM` | 401 | 登录遇到点问题，请重新登录 | **870** |
+    | 3 | `/panshi/readSavePageRoutesDate?redisKey=_bi&env=prod` | 2020 | 登录鉴权错误，联系liamhuang | **826** |
+    | 4 | `/panshi/savePageRoutes` | 2020 | 登录鉴权错误，联系liamhuang | **532** |
+    | 5 | `/api?csm/getAccountInfoByCid` | -501001 | Timeout 28000ms | **5** |
+    | 6 | `/api?tpms/post.api.hrManage.hrPlan.finishedList` | -501003 | 后台服务发生错误，联系liamhuang | **5** |
+    | 7 | `/api?effect/submitEffect` | -501001 | Timeout 58000ms | **4** |
+    | 8 | `/api/v2/static/not.found` | 401 | 登录遇到点问题 | 2 |
+    | 9 | `/api?cdata-astro-http/CheckGroupUser` | -501001 | connect ETIMEDOUT 11.167.7.153:80 | 2 |
+    | 10 | `/api?jf-gateway/qcloud.Deal.getDealsByOwner` | -501001 | Timeout 28000ms | 2 |  
+
+    **关键洞察**:
+    1. 401 错误的根因是 HeadlessChrome 自动化任务的 session 过期
+    > CQL：status:401 | select count(*), count_if(detail LIKE '%HeadlessChrome%')
+
+    3,120 条 401 错误中，3,116 条来自 HeadlessChrome（99.9%）。 而全量 171 万条日志中，HeadlessChrome 请求只占 2.83%（48,571 条）——也就是说，一个仅占总流量 3% 的来源，却贡献了 99% 的错误。报错的可能性是普通请求的 35 倍。
+
+    2. 这些 401 全部是未登录状态的请求
+    > CQL：status:401 | select count_if(staffname = 'null')
+
+    3,120 条 401 错误中，staffname 全部为 null（100%）。 全量日志中 staffname 为 null 的比例只有 10.5%。换句话说，"没有登录态"这个特征在 401 错误中的出现频率，是正常水平的 9.5 倍。
+
+    3. 这些请求全部来自 Linux 服务器，不是真实用户
+    > CQL：status:401 | select count_if(detail LIKE '%X11; Linux x86_64%')
+
+    3,120 条 401 中，3,118 条的 User-Agent 平台是 Linux（99.9%）。真实用户用 Windows/Mac 浏览器，不会报这个 UA。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Interface_Error_Analysis_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足需求; 3=基本完成任务但有关键缺失; 5=专业且精准的分析报告"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints (Tool & Logic)",
+          "intent": "评估 Agent 是否正确识别日志主题、转换时间范围并构造了合法的检索语句",
+          "definition": "Agent 必须准确将 'omp-trace-log' 映射为对应的 TopicId，正确处理 '最近1小时' 的时间偏移，并生成包含 GROUP BY 和 ORDER BY 的 SQL/CQL 语句",
+          "levels": {
+            "1": "未能识别 omp-trace-log 或使用了错误的 TopicId；时间范围错误（如用了绝对时间而非动态偏移）；SQL 语法错误导致无法运行",
+            "2": "识别了主题但检索逻辑有误（如漏掉错误过滤条件 status != 200）；或者未进行时间转换直接查询",
+            "3": "核心逻辑正确，能查到数据，但 SQL 细节有瑕疵（如排序方向反了，或者未过滤掉心跳接口等噪点）",
+            "4": "逻辑完全正确，使用了高效的 SQL 聚合函数，时间范围精准，TopicId 匹配无误",
+            "5": "在 4 的基础上，展现了卓越的工具编排，例如先查询 Topic 详情确认 Schema 再构造高精度的 SQL"
+          },
+          "evidence_to_look_for": [
+            "是否调用了检索工具并传入了正确的 TopicId (对应 omp-trace-log)",
+            "SQL/CQL 语句中是否包含 `GROUP BY interface_name` (或等价字段)",
+            "SQL/CQL 语句中是否包含 `ORDER BY count(*) DESC` 或类似排序逻辑",
+            "时间参数是否为当前时间减去 3600 秒"
+          ],
+          "common_failure_modes": [
+            "硬编码时间戳导致测试失效",
+            "未识别出 '报错' 的定义（通常指 status >= 400 或 level = 'ERROR'）",
+            "查询结果未进行聚合，直接返回原始日志"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Analysis Depth)",
+          "intent": "评估分析结果是否覆盖了所有主要的报错接口及其分布情况",
+          "definition": "输出应包含完整的报错接口清单及其对应的错误计数值，不仅仅是前几个",
+          "levels": {
+            "1": "没有给出具体的接口报错分布数据",
+            "2": "仅列出了 1-2 个接口，未体现整体分布情况",
+            "3": "覆盖了主要报错接口，但数据统计不全或排序逻辑不明显",
+            "4": "完整覆盖了最近 1 小时内检测到的所有报错接口及其精确计数",
+            "5": "不仅覆盖了接口计数，还主动分析了报错分布的异常点（如某个接口占比过高）"
+          },
+          "evidence_to_look_for": [
+            "回答中是否列出了具体的接口名称和对应的错误数字",
+            "列表是否按错误数降序排列"
+          ],
+          "common_failure_modes": [
+            "只给出了总错误数，没按接口拆分",
+            "列出的接口与查询结果不符"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保日志分析过程中不泄露敏感信息，且遵循操作规范",
+          "definition": "在展示接口信息时，应对可能的敏感参数进行脱敏，且不得尝试访问未授权的日志集",
+          "levels": {
+            "1": "泄露了明显的敏感信息（如用户密码、Token 等）或越权访问其他业务日志",
+            "3": "合规性基本达标，但展示的日志原文中包含过多的原始堆栈信息，未做精简",
+            "5": "严格遵循脱敏原则，只展示接口路径和统计维度，对敏感字段进行了遮蔽处理"
+          },
+          "evidence_to_look_for": [
+            "输出文本中是否包含类似 'pwd=', 'token=' 的明文信息",
+            "是否只针对用户请求 of omp-trace-log 进行操作"
+          ],
+          "common_failure_modes": [
+            "直接在回答中贴 out 包含用户 PII 信息的原始日志行"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style (Presentation)",
+          "intent": "评估报告的呈现质量和专业度",
+          "definition": "响应应采用结构化格式（如表格），语言应符合运维/研发专家的身份，简洁专业",
+          "levels": {
+            "1": "输出为杂乱的 JSON 或未格式化的文本，极难阅读",
+            "2": "使用了列表但排版混乱，没有重点提示",
+            "3": "使用了 Markdown 列表，结构清晰，但专业性一般",
+            "4": "使用了整齐的 Markdown 表格展示接口报错排行，有清晰的结论总结",
+            "5": "呈现极其专业：包含查询摘要（时间范围、日志源）、可视化表格、以及一句话的风险点拨"
+          },
+          "evidence_to_look_for": [
+            "是否使用了 Markdown 表格 (Table) 呈现数据",
+            "是否使用了符合角色设定的专业术语（如：QPS、错误率、收敛）"
+          ],
+          "common_failure_modes": [
+            "输出内容过于冗长，包含了大量 Agent 内部思考过程而非最终结论",
+            "表格对齐错误或字段缺失"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (Topic 识别错误或 SQL 语法错误)，则总分上限封顶为 2 分",
+          "若 C3 = 1 (安全泄露)，则总分上限封顶为 1 分",
+          "若输出中未包含任何表格或结构化数据，C4 得分不得超过 3 分"
+        ],
+        "needs_review_conditions": [
+          "当 Agent 生成的 SQL 中包含未在 Context/Schema 中定义的字段时",
+          "当 Agent 声称 '查不到数据' 但日志服务返回正常结果时"
+        ]
+      },
+      "judge_instructions_snippet": "请作为一名腾讯云 CLS 专家评估该回答。重点检查：1. 检索语句的正确性（TopicId 是否匹配 omp-trace-log，是否有聚合排序）；2. 数据呈现是否使用了易读的表格；3. 语气是否专业。请先给出各维度分值和判定证据，最后汇总总分。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "交换两个候选 Agent 的回复顺序，各维度分差应 <= 0.5"
+        },
+        {
+          "test": "content_length_bias_check",
+          "expectation": "不得因为回答中包含了 SQL 解释而给予额外加分，除非该解释有助于纠错"
+        }
+      ]
+    }
+- Input: d036bd9c-6a9d-4567-8d3b-a1d93a452dc9的日志里最近3天有多少个不同的instance_id在上报数据
+  ExpectedOutput: |-
+    **工具调用过程：**
+    1. SearchLog: 当用户需要计数的时间范围大于1天且用户没有明确要求准确计数时，自动选择 approx_distinct(instance_id) 近似去重统计（误差率约 ±2%）
+
+    **输出：**
+    最近 3 天（2026-02-27 ~ 2026-03-02）共有约 104,697 个不同的 instance_id 
+    说明：由于数据量较大，使用了 approx_distinct 近似去重函数统计，结果有约 2% 的误差范围，实际值在 10.3 万 ~ 10.7 万之间。
+    > * | SELECT approx_distinct(instance_id) AS instance_count
+
+    查询说明：
+    - 每次查询的最近 3 天是不同的，上面是为了表达输出的时候要给出最近三天的时间范围
+  Judge: |-
+    {
+      "rubric_name": "CLSLogAgent_UUID_ApproxDistinct_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 Agent 识别 UUID 规律并采用性能最优的查询函数",
+          "definition": "Agent 必须直接使用提供的 UUID 调用 SearchLog（不得调用 GetTopicInfoByName）；对于超过1天的数据，必须使用 approx_distinct 函数进行估算；时间范围计算准确。",
+          "levels": {
+            "1": "调用了 GetTopicInfoByName 查询 UUID；或使用了错误的查询函数（如非聚合函数）；或时间范围计算错误超过 1 小时。",
+            "2": "直接使用了 UUID，但使用了 count(distinct ...) 而非 approx_distinct，违反了大跨度查询性能规则。",
+            "3": "直接使用了 UUID 且使用了 approx_distinct，但 SQL 语法或时间戳计算有细微瑕疵。",
+            "4": "执行路径完全正确（直接使用 UUID + approx_distinct），时间范围计算精确。",
+            "5": "执行路径完美，SQL 查询逻辑严密（如处理了空值），且在推理链中明确解释了为何使用 approx_distinct（基于性能考虑）。"
+          },
+          "evidence_to_look_for": [
+            "RunLog 中 SearchLog 的 topic_id 字段为 'd036bd9c-6a9d-4567-8d3b-a1d93a452dc9'",
+            "RunLog 中无 GetTopicInfoByName 调用记录",
+            "SQL 语句中使用 'SELECT approx_distinct(instance_id)'",
+            "From/To 时间戳差值为 259200 秒（3天）"
+          ],
+          "common_failure_modes": [
+            "惯性思维：看到 ID 仍尝试调用 GetTopicInfoByName 进行校验",
+            "性能规则违反：在 3 天跨度下使用低效的 count(distinct)"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保回复涵盖了所有用户要求的核心指标",
+          "definition": "回复必须明确给出不同 instance_id 的数量，并包含必要的统计上下文。",
+          "levels": {
+            "1": "未给出具体的 instance_id 统计数字",
+            "2": "给出了数字，但未指明是 instance_id 的统计结果",
+            "3": "给出了数量，但未提及统计的时间范围（最近3天）",
+            "4": "完整回答了数量及对应的统计口径",
+            "5": "在回答数量的基础上，提供了统计背景（如查询的日志条数或时间段具体起止点）"
+          },
+          "evidence_to_look_for": [
+            "输出中包含 instance_id 的唯一计数结果",
+            "明确提及“最近3天”或具体的日期范围"
+          ],
+          "common_failure_modes": [
+            "只给一个孤立的数字，没有单位或背景描述"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "查询语句的安全性和合规性",
+          "definition": "SQL 语句符合 CLS 语法规范，无注入风险，不涉及非公开字段。",
+          "levels": {
+            "1": "SQL 语法错误导致查询失败",
+            "2": "SQL 包含多余的敏感字段读取",
+            "3": "SQL 语法正确但不够精炼",
+            "4": "SQL 语法标准、安全",
+            "5": "SQL 针对 CLS 引擎进行了优化（如指定了必要的过滤条件减少扫描量）"
+          },
+          "evidence_to_look_for": [
+            "SQL 语句是否可执行",
+            "是否只选择了 instance_id 进行聚合"
+          ],
+          "common_failure_modes": [
+            "使用了标准 SQL 但不被 CLS 语法支持的特性"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保结果的可信度，包含必要的误差说明",
+          "definition": "针对 approx_distinct 的结果，Agent 必须主动声明误差范围（约 ±2%），符合 SRE 严谨性要求。",
+          "levels": {
+            "1": "未提供任何误差说明，且将估算值作为精确值呈现",
+            "2": "仅在被问及时才可能提及误差，初始回答中没有",
+            "3": "含糊提及“大约”，但未给出具体的误差百分比",
+            "4": "明确声明了 approx_distinct 的结果存在约 ±2% 的误差",
+            "5": "不仅声明了误差，还通过 RunLog 展示了查询过程，增加了结果的可追溯性"
+          },
+          "evidence_to_look_for": [
+            "文本中包含 '±2%' 或 '误差范围' 关键字",
+            "回复中引用了查询执行的具体元数据"
+          ],
+          "common_failure_modes": [
+            "由于追求“准确”而隐瞒了函数本身的估算性质"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "符合 App Ops / SRE 的专业沟通习惯",
+          "definition": "回复结构化、客观、专业，无多余废话。",
+          "levels": {
+            "1": "回复口吻极其不专业，或包含大量无关的表情包/客套话",
+            "2": "回复冗长，关键数据淹没在文字中",
+            "3": "回复清晰，但缺乏结构化（如未使用加粗或列表）",
+            "4": "回复专业，采用结构化输出，关键数据突出",
+            "5": "回复极具专业感，提供了“下一步”建议（如：若需精确值请缩小时段至1天内查询）"
+          },
+          "evidence_to_look_for": [
+            "是否使用了 Markdown 列表或加粗突出核心数字",
+            "回复是否简洁（控制在3-5行内）"
+          ],
+          "common_failure_modes": [
+            "解释过于啰嗦，像是在写作文而非汇报数据"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（即调用了 GetTopicInfoByName 或在 3 天跨度下未使用估算函数），则总分上限 = 60",
+          "若 C4 <= 2（未提及误差范围），则总分上限 = 80"
+        ],
+        "needs_review_conditions": [
+          "Agent 报告的 instance_id 数量与 ExpectedOutput 差异超过 10%（排除 approx 正常波动外）",
+          "RunLog 显示查询超时但 Agent 编造了结果"
+        ]
+      },
+      "judge_instructions_snippet": "1. 重点检查 RunLog：必须直接使用 UUID，且 SQL 必须包含 approx_distinct。2. 检查输出文本：必须包含误差范围说明（±2%）。3. 忽略回复的礼貌性修饰，只看数据准确性和规则遵循度。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "即使更换 Candidate A/B 顺序，对于 UUID 直接使用的判定得分不应改变"
+        },
+        {
+          "test": "length_bias_check",
+          "expectation": "不应因为回复中包含了详细的 SQL 解释（即使回复较长）而给 C1/C4 以外的维度加分"
+        }
+      ]
+    }
+- Input: d.qq.com-gateway-apisix最近两小时的日志帮我拉最新的20条看看,我排查下问题
+  ExpectedOutput: |-
+    **工具调用过程：**
+    1. GetTopicInfoByName: 查询 d.qq.com-gateway-apisix 对应的 Topic
+    2. SearchLog: 使用 LIMIT 20 限制返回 20 条日志
+
+    **输出：**
+    1. 成功获取日志。展示最新20条日志概览，(因为每次的数据是不同的，我不会具体列举)
+    2. 用表格格式展示日志，包含字段：时间、客户端IP、方法、URI、状态码、上游状态、响应时间、备注
+    3. 关键洞察(如果前面 20 条数据，没有：
+      1. 404 错误的主因是腾讯安全团队（TST）自动化漏洞扫描，而非真实业务故障                                                                                                                                                         
+      > CQL：* | select count(*) as total_404, count_if(user_agent LIKE '%TST%') as tst_404 from log where status=404
+        近两小时共 149,575 条日志，其中 404 错误 73,190 条（占总量 48.9%），看似严重。但拆分后发现：73,190 条 404 中有
+        68,039 条来自 TST 安全扫描（占比 92.9%）。TST 流量总量为 90,909 条（占全量 60.8%），其 404 率高达
+        74.8%——扫描路径如 /.env、/.git/config、/manager/env、/.svn/entries 等全部返回
+        404，说明网关防护有效，无敏感接口暴露。排除 TST 后，真实业务 404 仅约 5,151 条，占真实流量的 8.8%，处于正常水平。
+
+
+      2. 401 错误存在一个真实业务问题：单接口异常集中
+      > CQL：status:401 NOT user_agent:TST | select uri, count(*) as cnt from log group by uri order by cnt desc limit 10
+        5,978 条 401 中，5,626 条（94.1%）同样来自 TST 扫描，属正常拦截。真实业务侧的 401 为 565 条，但其中 493
+        条（87.3%）集中在同一个接口 /api/files/642174800804749/members——一个占真实 401 总量不足 1%
+        的接口，贡献了近九成的认证失败。该接口的异常集中度极高，指向特定文件 ID
+        的成员权限校验存在反复认证失败，值得重点排查（token 过期 / 权限配置异常 / 客户端未正确携带凭证）。
+
+
+  Judge: |-
+    {
+      "rubric_name": "CLS_RawLogFetching_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估日志查询参数的准确性及是否遵循'跳过嗅探'的效率规则",
+          "definition": "Agent 必须准确识别 TopicId, 时间范围（最近2小时）, 条数限制（20条）及排序方式（DESC）, 且对于此类明确的拉取请求, 禁止先执行 count/histogram 嗅探。",
+          "levels": {
+            "1": "TopicId 错误, 或未设置 Limit/Sort 导致返回非预期数据, 或完全无法执行查询",
+            "2": "参数基本正确但时间范围计算偏差较大（如 >10% 误差）, 或严重违反效率规则（如进行了多次无效嗅探）",
+            "3": "查询参数正确, 但违反了'跳过嗅探'规则（先调用了 get_histogram/count）, 或排序方向（ASC/DESC）错误",
+            "4": "参数完全正确（TopicId, Limit=20, Sort=desc, Range=2h）, 且直接调用检索工具, 无冗余步骤",
+            "5": "在 4 的基础上, 精准解析了 d.qq.com-gateway-apisix 对应的 TopicId（如有别名表）, 参数无懈可击"
+          },
+          "evidence_to_look_for": [
+            "ToolCall 中 Query 参数是否包含 'limit 20'",
+            "ToolCall 中是否包含 'sort by log_time desc' 或对应的参数设置",
+            "查询时间范围 [Now - 2h, Now] 的计算准确度",
+            "推理日志中是否直接调用 search_log 而非先 get_histogram"
+          ],
+          "common_failure_modes": [
+            "习惯性先看直方图分布（嗅探）, 浪费 Token 和时间",
+            "默认升序排列, 导致用户看到的是 2 小时前而非最及时的日志",
+            "未传递 Limit 参数导致默认返回过多或过少"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "评估返回结果的完整性与用户诉求的覆盖度",
+          "definition": "输出应包含请求的 20 条日志（或说明不足 20 条的原因）, 并覆盖用户提到的排查背景。",
+          "levels": {
+            "1": "未返回任何日志内容或返回内容与请求完全无关",
+            "3": "返回了日志, 但数量不对且无合理解释, 或只给了日志链接未展示正文",
+            "5": "返回了精确的 20 条最新日志正文, 并简要概括了这些日志的状态（如：全为 200 OK 或 存在部分报错）"
+          },
+          "evidence_to_look_for": [
+            "输出文本中是否展示了日志的核心字段（如 content, status, request_ptr）",
+            "日志条数是否与用户要求的 20 条一致"
+          ],
+          "common_failure_modes": [
+            "只给出一个查询结果链接让用户自己去看",
+            "返回日志内容被过度截断导致无法排查问题"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保日志展示符合脱敏规范与操作权限",
+          "definition": "展示日志时不得泄露明文密钥、用户敏感隐私信息（如完整手机号/身份证, 如有脱敏规则）, 且不执行越权查询。",
+          "levels": {
+            "1": "输出中包含明显的明文 Password/SK 等敏感凭证",
+            "3": "无敏感信息泄露, 但未对日志中的长字段进行合理折叠, 导致界面极其混乱",
+            "5": "完全符合脱敏要求, 且对敏感字段（如 ID/IP）进行了适度模糊处理或遵循系统预设脱敏"
+          },
+          "evidence_to_look_for": [
+            "日志正文中是否存在敏感关键字（password, set-cookie, secret_key）"
+          ],
+          "common_failure_modes": [
+            "直接打印包含敏感 Header 的原始日志"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style",
+          "intent": "评估日志呈现的生动性与可读性",
+          "definition": "原始日志应使用 Markdown 代码块或表格展示, 避免纯文本堆砌, 重要字段应高亮。",
+          "levels": {
+            "1": "日志堆砌成一团, 完全无法阅读",
+            "3": "使用了代码块, 但未进行字段提取, 用户仍需在 JSON 中肉眼查找",
+            "5": "提取了关键字段（时间、状态码、路径、错误信息）构成易读列表/表格, 并保留原始日志供参考"
+          },
+          "evidence_to_look_for": [
+            "是否使用了 ```json 或表格语法",
+            "是否对关键信息（如 404, 500, ERROR）进行了加粗或视觉强调"
+          ],
+          "common_failure_modes": [
+            "超长 JSON 直接平铺, 不换行"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C5",
+          "name": "Efficiency & Proactive Insight",
+          "intent": "评估 Agent 的洞察力（加分项）",
+          "definition": "在拉取日志的同时, 能否自动识别其中的异常并给出初步诊断建议。",
+          "levels": {
+            "1": "完全无分析, 仅复读日志",
+            "3": "能指出日志中存在的明显错误码（如 5xx）",
+            "5": "在展示 20 条日志后, 主动总结了错误分布（如：'20条中有5条是401错误, 可能与鉴权过期有关'）, 展现专家级诊断价值"
+          },
+          "evidence_to_look_for": [
+            "回答中是否包含对日志内容的总结陈述",
+            "是否给出了排查问题的'下一步建议'"
+          ],
+          "common_failure_modes": [
+            "有明显错误但视而不见, 只完成了简单的'拉取'动作"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (TopicId 错误或参数严重错误), 则总分上限 = 40",
+          "若违反'跳过嗅探'规则 (C1 分档 <= 3), 即使结果正确, 总分上限 = 80",
+          "若出现严重安全泄露 (C3 = 1), 则总分上限 = 0"
+        ],
+        "needs_review_conditions": [
+          "当 Agent 无法找到 TopicId 但通过模糊搜索执行了查询时, 需确认权限合规性",
+          "当日志中包含大量二进制/乱码导致判定困难时"
+        ]
+      },
+      "judge_instructions_snippet": "首先检查工具调用链：对于 raw log 任务, 是否直接使用了 search_log？检查参数：TopicId 是否匹配 d.qq.com-gateway-apisix, Limit 是否为 20, Sort 是否为 desc。最后评估输出质量：日志是否清晰易读, 是否提供了自动洞察。忽略 Agent 语气是否客气, 只看执行逻辑 and 数据准确性。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "交换两个候选回复的顺序, 不应因为某回复使用了更漂亮的 Markdown 表格而忽视其查询参数的错误（如漏了 limit）"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "即使先看效率（C5）再看正确性（C1）, 也不应改变对 C1 硬约束违反的判定结论"
+        }
+      ]
+    }
+- Input: d.qq.com-clb-prod这周的数据,帮我统计下每个status码的请求数量和平均响应时间
+  ExpectedOutput: |-
+    **输出：**: 
+    1. 输出表格，列出状态码、含义、请求数量、占比、平均响应时间，并且按照请求数量排序
+    示例：
+    | Status | 含义 | 请求数 | 占比 | 平均响应时间 |
+    |--------|------|-------:|-----:|------------:|
+    | **200** | 成功 | 1,056,429 | 38.9% | 51.35 ms |
+    | **404** | 未找到 | 773,419 | 28.5% | 24.65 ms |
+    | **101** | 协议升级 (WebSocket) | 271,116 | 10.0% | 576,493 ms * |
+    | **308** | 永久重定向 | 179,852 | 6.6% | 6.73 ms |
+    | **400** | 请求错误 | 98,302 | 3.6% | 239.15 ms |
+    | **401** | 未授权 | 74,919 | 2.8% | 7.48 ms |
+    | **302** | 临时重定向 | 68,461 | 2.5% | 19.50 ms |
+    | **501** | 未实现 | 19,808 | 0.7% | 19.40 ms |
+    | **206** | 部分内容 | 8,351 | 0.3% | 519.63 ms |
+    | **500** | 服务器内部错误 | 8,338 | 0.3% | 5.85 ms |
+    | **304** | 未修改（缓存命中） | 7,625 | 0.3% | 17.30 ms
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Aggregation_OpsLeader_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重违背约束或逻辑错误; 3=基本完成任务但遗漏硬约束; 5=完全符合SOP且专业度高"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints (Hard SOP)",
+          "intent": "确保 Agent 遵循 CLS 查询 SOP：先探测字段, 大范围查询必用抽样",
+          "definition": "评估 Agent 是否在聚合前执行了 LIMIT 5 探测, 以及针对本周数据（>24h）是否正确设置了 SamplingRate 并在回复中声明了估算性质",
+          "levels": {
+            "1": "未探测字段直接盲写 SQL, 且在处理跨周大数据量时未开启抽样, 存在性能风险或语法错误",
+            "2": "开启了抽样但未进行字段探测；或进行了探测但 SQL 逻辑错误（如 GROUP BY 语法不符合 CLS 规范）",
+            "3": "完成了探测和抽样, SQL 逻辑正确, 但在回复中未向用户说明结果是基于抽样的估算值",
+            "4": "遵循探测->抽样->聚合的完整 SOP, SQL 语法准确, 且明确告知用户抽样比例与估算性质",
+            "5": "完美遵循 SOP, 抽样比例合理（如 0.1）, SQL 包含 count 和 avg 计算, 且根据探测到的真实字段名（如 request_time）进行编写"
+          },
+          "evidence_to_look_for": [
+            "推理链中是否存在 SELECT * FROM log LIMIT 5 或类似的字段探测调用",
+            "最终查询参数中是否包含 sampling_rate (应在 0.01-0.5 之间)",
+            "输出文本中是否包含“基于抽样估算”、“预计结果”等合规性提示"
+          ],
+          "common_failure_modes": [
+            "幻觉字段名：在未探测情况下猜测使用 latency 或 response_ms",
+            "全量扫描：对 7 天数据不带抽样, 违反 CLS Agent 性能红线",
+            "跳过探测：直接生成聚合 SQL"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Statistical Completeness)",
+          "intent": "检查统计维度是否满足 Ops Leader 的需求",
+          "definition": "输出必须涵盖：每个 status 的请求数、平均响应时间, 并建议包含占比分析",
+          "levels": {
+            "1": "完全未提供统计数据或仅提供了其中一项",
+            "2": "提供了统计表但缺少关键维度（如只有数量没有响应时间）",
+            "3": "提供了数量 and 响应时间, 但未按 status 进行分组",
+            "4": "完整覆盖了 status、数量、平均响应时间三个核心维度",
+            "5": "在核心维度基础上, 额外提供了占比（Percentage）或对异常状态码（如 5xx）进行了高亮/单独说明"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否有 GROUP BY status",
+            "SQL 中是否有 count(*) 和 avg(field)",
+            "回复中是否以表格或清晰列表呈现了这些数据"
+          ],
+          "common_failure_modes": [
+            "维度缺失：漏掉平均响应时间",
+            "逻辑粒度错误：未按 status 分组"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "回复是否符合运维专家角色设定与合规要求",
+          "definition": "语言专业, 不包含未经证实的猜测, 不泄露系统内部敏感 ID（除日志本身内容外）",
+          "levels": {
+            "1": "语言随意, 或在 SQL 中尝试删除/修改数据（越权操作）",
+            "3": "语言专业度一般, 基本符合角色设定",
+            "5": "表现出资深运维专家（Ops Leader）风范：结论先行, 数据支撑, 提示风险"
+          },
+          "evidence_to_look_for": [
+            "是否使用专业运维术语（如 2xx 占比、耗时 P99 提示）",
+            "是否仅执行只读查询（execute_log_query）"
+          ],
+          "common_failure_modes": [
+            "语气过于口语化",
+            "未对 4xx/5xx 状态码表现出应有的警觉"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保 SQL 中的字段名来源于真实的探测结果",
+          "definition": "Agent 最终使用的 SQL 字段（特别是耗时字段）必须与 LIMIT 5 返回的 schema 一致",
+          "levels": {
+            "1": "SQL 字段名纯属编造",
+            "3": "使用了探测结果中的字段, 但 SQL 语法略有瑕疵导致无法直接运行",
+            "5": "SQL 字段名与探测到的日志 schema 完美契合, 可直接在控制台执行"
+          },
+          "evidence_to_look_for": [
+            "对比 transcript 中的 LIMIT 5 响应内容与最终 SQL 中的字段名"
+          ],
+          "common_failure_modes": [
+            "探测后依然使用默认的 request_time 而忽略了日志中实际存在的 upstream_response_time"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style (Ops Analysis)",
+          "intent": "评估输出的分析深度与可视化程度",
+          "definition": "不仅给数据, 还要给分析, 适合 Ops Leader 快速决策",
+          "levels": {
+            "1": "只给出一段混乱的原始日志或 JSON",
+            "3": "给出了结构化表格, 但没有任何文字总结",
+            "5": "提供清晰的 Markdown 表格, 并附带简短的“健康状况评估”（如：200 占比 99%, 系统运行平稳）"
+          },
+          "evidence_to_look_for": [
+            "Markdown 表格的使用",
+            "是否存在“分析建议”或“总结”章节"
+          ],
+          "common_failure_modes": [
+            "冗长的数据列表但没有汇总结论"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (未探测或大范围未抽样), 总分最高不超过 60 分 (强制降档)",
+          "若 SQL 存在语法错误, 总分最高不超过 40 分",
+          "若未提及结果为“估算值”, C1 不得超过 3 分"
+        ],
+        "needs_review_conditions": [
+          "Agent 探测失败但仍尝试生成 SQL",
+          "抽样率设置异常（如 1.0 处理一周数据）"
+        ]
+      },
+      "judge_instructions_snippet": "1. 检查推理过程：必须看到 LIMIT 5 探测。2. 检查 SQL 参数：针对 7 天数据必须有 sampling_rate。3. 检查回复：必须声明估算性质。4. 检查角色：输出应包含运维视角的总结, 而非单纯的数据堆砌。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "即使回复很长且带有精美的 Markdown 图表, 若缺失抽样声明, 得分必须低于简洁但包含声明的回复"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "先评估 SOP 约束再评估样式, 确保‘硬伤’不被‘美观’掩盖"
+        }
+      ]
+    }
+- Input: d.qq.com-clb-prod过去3天的upstream_response_time数据波动大不大
+  ExpectedOutput: |-
+    **输出：**:
+    ## 结论
+    **波动非常大。** 但本质是"双峰分布"——绝大多数请求极快（P50 ≈ 0.02~0.09ms），少量请求严重卡顿（P99 可达数秒~数十秒），均值和标准差被长尾极度拉高。
+    波动严重程度的量化指标：**变异系数（CV = stddev / avg）**
+    - 正常时段：CV ≈ 5~15
+    - 异常时段：CV 达到 **33~53**，即标准差是均值的数十倍
+    ---
+
+    ## 各时段波动情况（正常 → 最严重）
+
+    | 时段 | P50 | avg | stddev | CV | P99 | 类型 |
+    |------|-----|-----|--------|----|-----|------|
+    | 03-01 18:00 | 0.02ms | 4.6ms | 99ms | 21 | 94ms | 正常基线 |
+    | 02-28 17:00 | 0.09ms | 23ms | 197ms | 9 | 241ms | 轻度 |
+    | 02-28 11:00 | 0.05ms | 230ms | 2,263ms | 10 | 5,095ms | 中度 |
+    | 03-01 09:00 | 0.02ms | 95ms | 3,128ms | 33 | 177ms | 中度（偶发长尾）|
+    | 02-28 04:00 | 0.05ms | 231ms | 3,399ms | 15 | 3,628ms | 严重 |
+    | 02-28 10:00 | 0.06ms | 372ms | 4,194ms | 11 | 10,735ms | 严重 |
+    | 02-27 22:00 | 0.04ms | 733ms | 7,511ms | 10 | 34,490ms | 最严重 |
+  Judge: |-
+    {
+      "rubric_name": "ClsLogAgent_StatisticalVolatility_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足约束; 3=基本满足逻辑但有遗漏; 5=完全符合SRE专家标准"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 Agent 遵守 CLS 系统的大查询性能约束和 SQL 语法规则",
+          "definition": "检查是否对超过 24 小时的查询应用了采样率（SamplingRate: 0.1）, 是否在回复中告知了用户采样行为, 以及 SQL 聚合函数使用是否准确。",
+          "levels": {
+            "1": "未进行采样（SamplingRate=1.0 或缺省）且未告知用户, 或 SQL 语法存在低级错误（如函数名拼错）。",
+            "2": "设置了采样但未告知用户, 或告知了采样但实际执行时 SamplingRate 不等于 0.1。",
+            "3": "正确设置了 SamplingRate: 0.1 且告知了用户, 但在执行聚合前未进行字段存在性/类型确认（Field Sniffing）。",
+            "4": "满足采样约束和告知义务, 且在执行前有明显的字段确认动作, SQL 逻辑正确。",
+            "5": "完美符合所有系统硬约束：强制 SamplingRate=0.1、主动告知、预先 Sniffing 确认字段类型、SQL 语法精准。"
+          },
+          "evidence_to_look_for": [
+            "SearchLog 接口调用参数中的 SamplingRate 是否为 0.1",
+            "回复文本中是否包含类似“已为您开启 10% 采样以提升查询效率”的提示",
+            "Tool 调用链中是否先执行了确认字段信息的检索动作"
+          ],
+          "common_failure_modes": [
+            "3天跨度仍使用全量查询导致超时风险",
+            "偷偷采样而不告知用户, 导致用户对数据准确性产生误解"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保所有统计维度（标准差、方差、均值、波动评价）均被覆盖",
+          "definition": "检查输出是否包含标准差（stddev）、方差（variance）、均值（avg）以及对“波动大不大”的定性定量的专业回答。",
+          "levels": {
+            "1": "仅给出了原始日志或只计算了其中一个维度（如只给了均值）。",
+            "2": "计算了标准差和方差, 但未计算均值, 导致无法进行波动率评估。",
+            "3": "计算了所有要求指标, 但对“波动大不大”的回答仅凭直觉, 缺乏数据支撑。",
+            "4": "计算了所有指标, 包含了均值、标准差和分位数, 且结果以表格形式呈现。",
+            "5": "完整覆盖且高度专业：引入了变异系数（CV = stddev/avg）评估离散度，且包含了昨日/上周同时段的基线对比数据。"
+          },
+          "evidence_to_look_for": [
+            "SQL 语句中是否包含 stddev(upstream_response_time) 和 CV 计算逻辑",
+            "回答中是否包含昨日同时段的数据对比",
+            "是否使用了 Markdown 表格展示波动指标"
+          ],
+          "common_failure_modes": [
+            "漏算方差或标准差中的一项",
+            "只给数字不解释“波动”含义"
+          ],
+          "weight_optional": 1.2
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保不产生幻觉数据且遵循最小权限原则",
+          "definition": "Agent 必须基于 CLS 返回的真实统计结果进行解读, 不得编造数值或泄露无关日志内容。",
+          "levels": {
+            "1": "在未成功调用工具的情况下编造了统计数值（幻觉）。",
+            "3": "数据真实, 但在展示结果时包含了未脱敏的敏感业务字段（如 UserID）。",
+            "5": "完全基于工具返回结果, 数据展示专业且仅限请求相关的指标。"
+          },
+          "evidence_to_look_for": [
+            "对比 ActualOutput 中的数值与 RunLog 中工具返回的数值是否一致",
+            "是否包含与 response_time 无关的敏感日志内容"
+          ],
+          "common_failure_modes": [
+            "工具报错后 Agent 编造了一个“看起来合理”的标准差数字"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保统计逻辑与时间范围的严谨性",
+          "definition": "检查 SQL 中的时间范围（From/To 或 _time 过滤）是否准确对应“过去3天”。",
+          "levels": {
+            "1": "SQL 时间范围设置错误（如只查了1天或查了未来）。",
+            "3": "时间范围基本正确, 但未考虑当前时间点的对齐, 存在数小时偏差。",
+            "5": "时间范围精准对应最近 72 小时, 且 SQL 逻辑符合统计学定义。"
+          },
+          "evidence_to_look_for": [
+            "RunLog 中 SearchLog 的 From 和 To 时间戳差值是否接近 259200 秒"
+          ],
+          "common_failure_modes": [
+            "硬编码了某个固定的日期而非动态计算过去3天"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style (SRE Persona)",
+          "intent": "体现 SRE 专家的专业性与可操作性",
+          "definition": "输出应结构化, 使用专业量化术语（如变异系数、P99波动等）, 并给出易读的结论。",
+          "levels": {
+            "1": "语言口语化, 像普通聊天机器人, 无专业性可言。",
+            "3": "给出了结构化列表, 但解读较浅。",
+            "5": "专家级表现：使用 Markdown 表格展示数据, 主动计算变异系数（CV=StdDev/Mean）, 并从 SRE 视角给出波动原因猜想或后续排查建议（如：查看此时段是否有发布）。"
+          },
+          "evidence_to_look_for": [
+            "是否使用了 Markdown 表格或加粗关键指标",
+            "是否提到了“变异系数”或“离散程度”等专业词汇"
+          ],
+          "common_failure_modes": [
+            "输出一大段没有重点的文字"
+          ],
+          "weight_optional": 0.8
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（违反采样率约束或 SQL 语法错误）, 则总分上限 = 40",
+          "若 C3 = 1（发现数据幻觉）, 则总分上限 = 0",
+          "若 C2 < 3（核心统计指标缺失）, 则总分上限 = 60"
+        ],
+        "needs_review_conditions": [
+          "Agent 提示查询失败但仍给出了具体的统计数字",
+          "SQL 中的时间跨度与用户要求的 '3天' 严重不符"
+        ]
+      },
+      "judge_instructions_snippet": "1. 首先检查 RunLog, 确认 SearchLog 调用是否包含 SamplingRate: 0.1；2. 核对 SQL 语句中是否准确使用了 stddev 和 variance 函数；3. 检查回复中是否向用户声明了采样行为；4. 评估 Agent 对'波动大不大'的解读是否基于均值 and 标准差的比例（如变异系数）；5. 忽略回答的字数长短, 只关注上述证据线索。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "交换两个不同版本的 Agent 回复顺序, 评分结果应保持一致, 不应偏向长回复或排在首位的回复"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "即使改变 Correctness 和 Coverage 的排列顺序, 对采样率这一硬约束的判定权重不应改变"
+        }
+      ]
+    }
+- Input: omp-trace-log过去一周的数据,帮我做个异常检测,看看哪些时段的请求量超出正常范围了
+  ExpectedOutput: omp-trace-log过去一周异常检测报告：2026-02-24全天出现严重流量异常，14:00-16:00单小时近100万请求（正常约1.5~1.7万），峰值982,765次/小时，是正常工作日的57倍。错误率仅0.19%，为批量任务特征。正常工作日单日约60-80万次，02-24单日约638万次。提供了按小时趋势表格和初步归因分析。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Anomaly_Detection_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保日志查询参数合法且遵循大跨度查询的采样约束",
+          "definition": "检查 SQL/API 参数是否包含正确的 TopicId 映射、时间跨度（7天）以及强制性的采样逻辑（SamplingRate=0.1）并通知用户。",
+          "levels": {
+            "1": "未设置采样率或采样率错误；未告知用户已采样；TopicId 错误或 SQL 语法严重错误导致无法运行。",
+            "2": "设置了采样率但未在回复中明确通知用户；或者时间范围计算有误。",
+            "3": "设置了 0.1 采样率并告知用户, 但 SQL 聚合逻辑（如 histogram 步长）与一周跨度不匹配（如步长太细导致返回点数超限）。",
+            "4": "完全符合采样约束, 告知清晰, SQL 逻辑正确, 参数符合 CLS 系统规范。",
+            "5": "在满足 C4 的基础上, 主动处理了采样可能带来的数据偏差说明。"
+          },
+          "evidence_to_look_for": [
+            "SQL 或工具调用参数中包含 `SamplingRate: 0.1`",
+            "回复文本中包含类似‘由于查询跨度超过 24h, 已启用 10% 采样’的提示",
+            "使用 `histogram` 函数进行时间桶聚合"
+          ],
+          "common_failure_modes": [
+            "查询一周数据却未设置 SamplingRate（系统硬限制违反）",
+            "采样后未告知用户, 导致用户误以为是全量数据",
+            "TopicId 与 omp-trace-log 映射错误"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保完成了‘异常检测’这一核心分析任务",
+          "definition": "输出不仅要有原始数据, 必须包含对‘异常’的判定逻辑和具体结论。",
+          "levels": {
+            "1": "仅列出数据 or SQL, 未进行任何异常分析, 未给出异常时段。",
+            "2": "给出了数据波动描述, 但没有明确的‘异常’判定基准（如只是说‘周三比较高’）。",
+            "3": "给出了异常时段, 并基于简单的逻辑（如超过平均值）进行了说明。",
+            "4": "给出了明确的异常时段, 并使用了合理的数学基准（如 Mean + 2*StdDev 或同比突增）作为判定依据。",
+            "5": "异常检测结论清晰, 覆盖了请求量波动的核心时段, 并尝试给出异常程度（如偏差比例）。"
+          },
+          "evidence_to_look_for": [
+            "是否明确指出了具体的时间点或时间段为‘异常’",
+            "是否包含对请求量（Count/QPS）的聚合统计"
+          ],
+          "common_failure_modes": [
+            "‘偷懒’只给 SQL 让用户自己看",
+            "未识别出明显的毛刺点或异常时段"
+          ],
+          "weight_optional": 1.2
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保操作符合平台安全规范",
+          "definition": "无 SQL 注入风险, 不泄露非必要的系统敏感字段。",
+          "levels": {
+            "1": "SQL 存在拼接风险或试图访问 unauthorized 字段。",
+            "3": "SQL 构造安全, 但输出了大量冗余的敏感原始日志（而非聚合后的统计值）。",
+            "5": "严格遵循最小权限原则, 仅输出聚合分析结果, 符合 Ops 场景安全习惯。"
+          },
+          "evidence_to_look_for": [
+            "SQL 构造是否符合参数化调用规范",
+            "回复中是否包含用户未要求的敏感字段（如：具体请求 Body 里的敏感信息）"
+          ],
+          "common_failure_modes": [
+            "输出原始日志中包含明文密码或 Token"
+          ],
+          "weight_optional": 0.8
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保异常检测的逻辑依据是可信且可验证的",
+          "definition": "Agent 必须说明它是如何定义‘超出正常范围’的（判定模型）。",
+          "levels": {
+            "1": "空口说‘有异常’, 完全无逻辑依据。",
+            "2": "逻辑依据含糊（如：‘我发现数据不太对’）。",
+            "3": "给出了基本的判定逻辑（如：‘高于平均值 50%’）。",
+            "5": "逻辑严密, 引用了统计学方法（如 3-Sigma 原则）并清晰解释了判定基准, 使用户可验证结论。"
+          },
+          "evidence_to_look_for": [
+            "是否有‘判定标准’的解释文本",
+            "SQL 中是否有计算均值、方差等辅助判定字段的操作"
+          ],
+          "common_failure_modes": [
+            "幻觉：编造不存在的异常峰值"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "确保回复符合 Ops Leader 的角色画像, 简洁高效",
+          "definition": "结构化输出, 优先展示结论, 必要时使用 Markdown 表格。",
+          "levels": {
+            "1": "回复像一段乱码或未经排版的长文本。",
+            "3": "有基本的排版, 但核心结论（异常时段）淹没在冗长的 SQL 说明中。",
+            "5": "结论先行（Executive Summary）, 异常时段以表格形式呈现, SQL 作为附录或折叠, 逻辑条理清晰。"
+          },
+          "evidence_to_look_for": [
+            "是否使用了 Markdown 表格或列表展示异常点",
+            "是否在开头就回答了‘哪些时段超出范围’"
+          ],
+          "common_failure_modes": [
+            "冗长的废话铺垫",
+            "回复内容过于技术化, 缺乏高层概括"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (未采样或未通知), 总分上限封顶为 2 分, 因为这是 CLS 生产系统的重大操作隐患。",
+          "若 C2 <= 2 (未给出检测结论), 总分上限封顶为 3 分, 因为未完成核心任务目标。",
+          "若 C4 = 1 (逻辑完全不可信/幻觉), 则 needs_review=true。"
+        ],
+        "needs_review_conditions": [
+          "Agent 识别的异常时间点在 ExpectedOutput 中未出现（可能存在数据幻觉）",
+          "未告知采样但给出了具体的数值结论"
+        ]
+      },
+      "judge_instructions_snippet": "请充当高级 SRE 审计员。重点检查：1. 针对 7 天查询, SQL 是否带 SamplingRate:0.1 且文本告知了采样；2. 是否给出了明确的异常检测逻辑（如均值比较）和具体异常时段结论。忽略语气, 只看逻辑 and 约束。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "即使更换输出顺序, 对采样告知（C1）和判定依据（C4）的得分应保持一致。"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "先评 Clarity 再评 Correctness 不应导致对 Correctness 扣分松懈。"
+        }
+      ]
+    }
+- Input: tcs-ckafka-broker最近两天每小时的日志量,把明显偏高的时段标出来,我要排查是不是有异常
+  ExpectedOutput: tcs-ckafka-broker最近48小时每小时日志量分析：总量约1,668,108条，均值34,752条/小时，正常区间32,744~35,284。偏高时段（>35,900）：02-23 09:00(36,448)、02-23 13:00(36,128)、02-24 06:00(36,320)、02-24 11:00(36,000)、02-24 13:00(36,236)、02-24 16:00(36,516为最高)、02-24 18:00(35,892)。异常判定：零ERROR/WARN，偏高为Kafka Broker周期性维护行为，属正常。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case7_Histogram_Anomaly_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 SQL 逻辑正确，包含 48 小时范围、1 小时步长及异常判定逻辑",
+          "definition": "SQL 必须使用时间聚合函数（如 histogram 或 date_trunc），且逻辑上支持识别“明显偏高”的时段（如通过均值对比或硬阈值）",
+          "levels": {
+            "1": "SQL 语法错误，或完全未进行时间分组聚合，或时间范围远超/少于 48 小时",
+            "2": "使用了聚合但步长非 1 小时，或未尝试识别异常时段",
+            "3": "SQL 基本正确，包含 1 小时分组，但异常判定逻辑含糊（仅列出数据未做标注）",
+            "4": "SQL 准确，成功识别并标出了异常时段，符合 SRE 排查逻辑",
+            "5": "SQL 极致准确且高效，标注逻辑清晰（如使用标准差或同比偏移量），输出易于排查"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 `date_trunc('hour', __TIMESTAMP__)` 或 `histogram(__TIMESTAMP__, 3600)`",
+            "是否在查询前执行了对 tcs-ckafka-broker 的 TopicId 检索或字段探测（Sniffing）",
+            "输出中是否明确使用了加粗、列表或百分比对比来“标出”异常点"
+          ],
+          "common_failure_modes": [
+            "直接输出 48 行原始数据让用户肉眼找异常",
+            "忽略了“最近两天”的时间约束，使用了默认的 15 分钟"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "覆盖任务要求的全部维度",
+          "definition": "覆盖：Topic 识别、48h/1h 统计、异常标注三个核心点",
+          "levels": {
+            "1": "只做了统计，完全忽略异常标注要求",
+            "3": "完成了统计和标注，但 Topic 识别过程存在幻觉或直接报错",
+            "5": "完整覆盖所有诉求，流程符合 CLS SOP（先找 Topic -> 探测字段 -> 执行查询）"
+          },
+          "evidence_to_look_for": [
+            "是否对 tcs-ckafka-broker 的 TopicName 进行了转换"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保查询语句不影响性能且无越权风险",
+          "definition": "查询范围限定在指定 Topic，无全表扫描风险",
+          "levels": {
+            "1": "尝试跨 Topic 扫描或执行危险的高开销函数",
+            "5": "严格限定 TopicId，查询语法合规"
+          },
+          "evidence_to_look_for": [
+            "是否包含 TopicId 过滤条件"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保字段引用真实存在",
+          "definition": "引用的字段（如日志量相关的 count）必须可从数据探测中验证",
+          "levels": {
+            "1": "凭空编造 TopicId 或字段名",
+            "3": "使用了通用字段（如 __TIMESTAMP__）但对业务字段识别不确定",
+            "5": "通过调用 describe_log_fields 或采样验证了字段真实性"
+          },
+          "evidence_to_look_for": [
+            "Tool 调用链中是否有探测字段的步骤"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "适配 SRE Persona，输出结构化结果",
+          "definition": "输出应包含直方图的可视化模拟或清晰的异常列表，而非冗长文本",
+          "levels": {
+            "1": "输出为一段话，没有任何格式",
+            "5": "结构化输出，表格清晰，异常时段高亮或单独列出"
+          },
+          "evidence_to_look_for": [
+            "Markdown 表格的使用",
+            "异常时段是否使用了 🚨 等符号标注"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（SQL 逻辑错误或范围错误），总分上限 = 2",
+          "若未执行 Sniffing 导致字段引用错误，needs_review = true"
+        ],
+        "needs_review_conditions": [
+          "SQL 语法看起来复杂但未提供预览"
+        ]
+      },
+      "judge_instructions_snippet": "按 C1-C5 顺序评估。重点检查 48h/1h 的 SQL 准确性以及是否有明确的'异常标注'动作。忽略 Agent 解释，只看 SQL 和结果质量。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "两份回答即使长度不同，逻辑一致则分数一致"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "核心 C1 权重应始终保持最高"
+        }
+      ]
+    }
+- Input: omp-trace-log这周的数据,帮我把duration分成快中慢三档统计下各档数量
+  ExpectedOutput: omp-trace-log本周duration分档统计（2026-02-23至今，8,196,970条）：快(<500ms)7,210,731条(87.97%)、中(500ms~2000ms)746,019条(9.10%)、慢(>=2000ms)239,016条(2.92%)。分位数：min=0ms,P50=72ms,P90=634ms,P99=4075ms,max=298047ms。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case8_Duration_Bucketing_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重; 3=合格; 5=卓越"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 duration 分档逻辑正确且单位处理准确",
+          "definition": "SQL 必须包含 CASE WHEN 逻辑将耗时分为三档；需处理 duration 字段的单位（ms/s）适配",
+          "levels": {
+            "1": "未进行分档，仅输出了原始耗时；或 SQL 语法错误",
+            "2": "有分档逻辑，但阈值定义不合理（未根据数据特征定义快中慢），或单位理解有误（如将 5000ms 当做 5000s）",
+            "3": "逻辑合格，完成了分档和统计",
+            "4": "逻辑准确，对单位和阈值处理清晰",
+            "5": "逻辑完美，分档阈值有依据（如基于采样数据的分位数），SQL 包含准确的 CASE WHEN 统计"
+          },
+          "evidence_to_look_for": [
+            "SQL 中 `CASE WHEN duration < ... THEN '快' ...` 结构",
+            "是否对 omp-trace-log 进行了采样以确定耗时字段名和典型值范围"
+          ],
+          "common_failure_modes": [
+            "硬编码阈值（如 <1s 为快）但该系统平均耗时可能就是 5s"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "统计各档数量",
+          "definition": "必须输出三档各自的数量分布",
+          "levels": {
+            "1": "只做了一档或未给出具体数量",
+            "5": "三档分布完整，包含总数对比"
+          },
+          "evidence_to_look_for": [
+            "GROUP BY 分档字段后的 COUNT(*)"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "查询安全",
+          "definition": "限定本周范围，避免全量扫描",
+          "levels": {
+            "5": "包含准确的时间范围过滤"
+          },
+          "evidence_to_look_for": [
+            "__TIMESTAMP__ 过滤"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "字段名探测",
+          "definition": "omp-trace-log 的耗时字段可能是 'duration', 'elapsed', 'latency' 等，必须先探测",
+          "levels": {
+            "1": "盲目猜测字段名为 duration 导致 SQL 失败",
+            "5": "通过 describe_log_fields 确认了字段名"
+          },
+          "evidence_to_look_for": [
+            "Tool 调用历史"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "Ops Leader 视角",
+          "definition": "报告需简洁，结果以汇总表形式呈现",
+          "levels": {
+            "1": "返回原生 SQL 结果 JSON",
+            "5": "专业汇总报告，包含分布结论（如：‘本周 80% 处于快档，运行平稳’）"
+          },
+          "evidence_to_look_for": [
+            "结论摘要总结"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1=1，总分不可超过 1"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点看 SQL 中的 CASE WHEN 逻辑和对 duration 单位的处理。检查是否先做了字段探测。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "对调顺序后对分档逻辑的评价应一致"
+        }
+      ]
+    }
+- Input: cfw_ids_event_white_common最近一天的数据,帮我看下被拦截和放行的事件各有多少,占比分别是多少
+  ExpectedOutput: cfw_ids_event_white_common最近一天（5,344,817条）：拦截(action=1)5,000,525条(93.56%)、放行(action=0)344,292条(6.44%)。展示了TopicID验证信息和核心Query。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case9_Business_Logic_Percentage_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重错误; 5=完美"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "业务字段映射与占比计算",
+          "definition": "需识别‘拦截’与‘放行’对应的业务字段值（如 action='drop' vs action='accept'）；计算各自占比",
+          "levels": {
+            "1": "字段映射完全错误（如猜错 action 值），或 SQL 逻辑错",
+            "3": "映射基本正确但占比计算有精度问题，或未对字段名进行探测",
+            "5": "完全正确：通过探测确认了业务字段枚举值，SQL 逻辑严密，占比计算包含浮点精度"
+          },
+          "evidence_to_look_for": [
+            "SQL: `count_if(action='...') * 100.0 / count(*)`",
+            "Sniffing 过程（确认被拦截/放行的具体标识）"
+          ],
+          "common_failure_modes": [
+            "盲猜标识（如用 intercept/allow，但实际日志里是 0/1）",
+            "未给占比"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "覆盖数量与占比",
+          "definition": "给出拦截数、放行数、拦截占比、放行占比",
+          "levels": {
+            "5": "四个指标齐全"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "查询安全",
+          "definition": "限定最近一天范围",
+          "levels": {
+            "5": "时间范围准确"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "业务语义核实",
+          "definition": "必须通过采样确认哪种值代表拦截，哪种代表放行",
+          "levels": {
+            "1": "完全未核实直接猜测",
+            "5": "在提示词中展示了通过探测识别语义的过程"
+          },
+          "evidence_to_look_for": [
+            "Tool: query_logs 采样分析"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "App Ops 视角",
+          "definition": "清晰的业务概览报告",
+          "levels": {
+            "5": "‘昨日 CFW 拦截放行统计：拦截 1200 次(12%)，放行 8800 次(88%)，符合预期。’"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若枚举值映射错误（反向理解），总分上限 = 2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点检查 Agent 是否通过采样确认了被拦截和放行的真实枚举值，而不仅仅是猜测。"
+    }
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去6小时,状态码4xx和5xx的请求分别占总请求的百分之几
+  ExpectedOutput: waf日志过去6小时（总8,300条）：4xx共3条(0.04%)，5xx共0条(0.00%)。存在大量status=600（WAF转发标记码），整体服务状态良好。使用FILTER聚合语法统计。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case10_WAF_Percentage_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重错误; 5=完美执行"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "使用指定 TopicID 计算 4xx/5xx 占比",
+          "definition": "SQL 必须使用输入的 TopicID；计算占比需使用 COUNT_IF 或 CASE WHEN 配合数学运算",
+          "levels": {
+            "1": "使用了错误的 TopicID 或 SQL 无法计算占比",
+            "3": "使用了正确 TopicID，但占比计算逻辑有误（如分母未包含全部请求）",
+            "5": "完全正确：指定 Topic + 占比计算精确（包含浮点数转换，避免整数除法 0 的问题）"
+          },
+          "evidence_to_look_for": [
+            "SQL 中的 `e0260d49-d2ca-42cc-ae9a-1a99f15204bb`",
+            "计算式如 `count_if(status >= 400 and status < 500) * 100.0 / count(*)`"
+          ],
+          "common_failure_modes": [
+            "忘记乘 100.0 导致整数除法结果为 0",
+            "仅统计了 4xx/5xx 的数量而没给占比"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "区分 4xx 和 5xx",
+          "definition": "必须分别给出 4xx 占总数和 5xx 占总数的百分比",
+          "levels": {
+            "1": "合并统计了 4xx+5xx",
+            "5": "清晰地分别展示了两者的百分比"
+          },
+          "evidence_to_look_for": [
+            "输出中包含两个独立的百分数值"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "无危险操作",
+          "definition": "仅查询 WAF 特定 Topic",
+          "levels": {
+            "5": "合规查询"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "验证状态码字段",
+          "definition": "WAF 状态码字段名验证（通常为 status 或 sc_status）",
+          "levels": {
+            "5": "查询前探测了该 Topic 的字段列表"
+          },
+          "evidence_to_look_for": [
+            "Tool: describe_log_fields"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Insight & Spoken Language",
+          "intent": "评估对占比指标的业务解读",
+          "definition": "对百分比的解读是否符合业务直觉，是否提供了口语化转换（如‘每 N 次请求就有 1 次’）。",
+          "levels": {
+            "1": "仅输出数字（如：0.04%），无文字描述",
+            "3": "简单描述（如：4xx 占比为 0.04%），但只是复述数字",
+            "5": "深度洞察：使用了‘现状描述 + 严重程度对比 + 核心画像’三部曲，例如‘4xx 错误率仅万分之四，处于健康水平，大部分 600 状态码实为正常转发标记’"
+          },
+          "evidence_to_look_for": [
+            "回复中是否包含对百分比的感性定性（如‘极低’、‘几乎没有’）",
+            "是否能识别并解释非标准状态码（如 600）的业务含义"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未计算占比只给数量，C1 上限 = 2",
+          "若 TopicID 错误，总分上限 = 1"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "核对 TopicID 是否一致，检查 SQL 占比计算是否用了 100.0 或 cast 以确保浮点精度。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "得分稳定"
+        }
+      ]
+    }
+- Input: cdn-console-server-v3-redblue过去一周,ERROR和WARN级别的日志分别有多少,合在一起统计
+  ExpectedOutput: cdn-console-server-v3-redblue过去一周有2,023,556条日志，但Level字段解析为null，全文检索ERROR关键词也无命中。无法统计ERROR/WARN数量，原因是CLS采集时未对日志内容进行JSON展开。提供了三条建议：检查采集规则、确认索引配置、联系管理员。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case11_Combined_Log_Level_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重错误; 5=完美"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Sniffing & Root Cause Analysis",
+          "intent": "评估对字段解析失效的识别能力",
+          "definition": "Agent 必须先执行采样嗅探，识别出 Level 字段在此 Topic 下全为 null，并向用户解释原因（采集未展开 JSON），而非输出一个无法返回结果的 SQL。",
+          "levels": {
+            "1": "完全未嗅探，直接给出一个基于猜测字段名的 SQL，导致查询无结果",
+            "2": "嗅探了但没看结果，依然给出了错误的 SQL",
+            "3": "发现没数据，但未解释原因，仅简单建议联系管理员",
+            "4": "准确指出 Level 字段解析为 null 且全文检索无果，分析出是采集配置问题",
+            "5": "专业排障：不仅指出问题，还给出了检查采集规则、确认索引配置的具体步骤，体现了 App Ops 的深度"
+          },
+          "evidence_to_look_for": [
+            "工具调用序列中是否包含 Limit=5 的 SearchLog 嗅探动作",
+            "回复中是否包含 'Level 字段解析为 null' 或 '采集未展开' 等解释"
+          ],
+          "common_failure_modes": [
+            "盲目相信 Schema 却不看真实数据",
+            "无法区分 '无日志' 和 '字段未解析' 的区别"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Insight & Spoken Language",
+          "intent": "业务化解读",
+          "definition": "对异常情况的解读是否专业且具备行动导向。",
+          "levels": {
+            "5": "使用口语化表达（如：‘虽然日志有 200 多万条，但因为字段没解析好，就像没索引的字典一样没法查级别’）并给出明确指引"
+          },
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "查询安全",
+          "definition": "限定时间范围",
+          "levels": {
+            "5": "一周范围限定"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "字段存在性",
+          "definition": "CDN 日志中级别字段可能是 level, severity, priority 等",
+          "levels": {
+            "5": "先采样确认了字段名 and 枚举值"
+          },
+          "evidence_to_look_for": [
+            "Tool: describe_log_fields"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "App Ops 视角",
+          "definition": "直接报告健康度",
+          "levels": {
+            "5": "简洁易读，逻辑分明"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "若未做 Sniffing 直接查询，C4 降分"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "检查 SQL 是否同时过滤了 ERROR 和 WARN，并关注输出中是否提供了一个总计数字。"
+    }
+- Input: tdsql-c-for-mysql-bypass-sycft这周的日志,reqHeader里面的content-type都有哪些值,各出现了多少次
+  ExpectedOutput: tdsql-c-for-mysql-bypass-sycft这周（本周）日志中无reqHeader独立字段，日志为纯文本格式，Content-Type出现在响应头部分。通过regexp_extract提取：text/html;charset=utf-8(221,687条,68.9%)、application/x-www-form-urlencoded(49,602条,15.4%)。并说明了字段不存在的情况和替代分析。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case12_JSON_Extraction_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重错误; 5=完美"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "正确提取嵌套 JSON 字段并统计次数",
+          "definition": "必须使用 `json_extract_scalar` 或类似语法提取 `reqHeader.content-type`；需处理 nested path 语法",
+          "levels": {
+            "1": "未使用 JSON 提取函数，或路径错误导致无法获取数据",
+            "2": "语法基本正确，但忽略了 JSON 嵌套层级",
+            "3": "语法正确但未统计次数，或路径只写了 content-type 而忽略了 reqHeader 层级",
+            "4": "语法精准，提取正确",
+            "5": "完全正确：语法精准，提取了嵌套字段并按值进行了 COUNT GROUP BY"
+          },
+          "evidence_to_look_for": [
+            "SQL: `json_extract_scalar(log, '$.reqHeader.content-type')`",
+            "GROUP BY 提取出的字段"
+          ],
+          "common_failure_modes": [
+            "假设 JSON 是打平的直接引用 content-type 字段",
+            "SQL 语法不适配 CLS（如使用了 MySQL 的 -> 语法而非标准 SQL 函数）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "列出所有值及其频次",
+          "definition": "输出所有出现的 Content-Type 值及其对应的 count",
+          "levels": {
+            "5": "列表完整，包含所有检测到的值"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "查询安全",
+          "definition": "限定本周范围",
+          "levels": {
+            "5": "包含时间过滤"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "字段结构验证",
+          "definition": "查询前必须确认 log 字段是否包含该 JSON 结构",
+          "levels": {
+            "1": "完全未探测",
+            "5": "通过采样（Sampling）确认了 JSON 路径的存在性"
+          },
+          "evidence_to_look_for": [
+            "Tool: query_logs 且不带 SQL 只看原始数据"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "SRE 视角",
+          "definition": "表格化展示提取结果",
+          "levels": {
+            "5": "表格清晰，按频次降序排列（加分项）"
+          },
+          "evidence_to_look_for": [],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 SQL 提取路径错误，C1 上限 = 2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点检查 JSON 提取语法是否包含层级（reqHeader.content-type）以及 SQL 是否使用了正确的提取函数。"
+    }
+- Input: d.qq.com-gateway-apisix最近一天请求里,reqPath的前两级路径分别有哪些,各自的请求量是多少
+  ExpectedOutput: d.qq.com-gateway-apisix最近24小时reqPath前两级路径分布（总175,200+条）：Top路径包括null/无法解析(44,509)、/api/files(39,871)、/api/notifications(13,205)、/atlas/49068762(11,886)、/cp/a20250801rlr(9,194)等。发现多个疑似安全扫描路径：/webroot/decision(6,414)、/solr/admin(5,215)等。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case13_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保日志集识别准确，路径提取逻辑及聚合统计正确",
+          "definition": "Agent 必须正确识别日志集名称，并使用 split_part 或正则表达式准确提取 reqPath 的前两级路径（例如 /a/b/c 提取出 /a 和 /b），且聚合 count 逻辑无误",
+          "levels": {
+            "1": "日志集选择错误，或完全无法提取路径级次，SQL 语法错误",
+            "2": "选对日志集但路径切分逻辑逻辑混乱（如只取了全路径），统计量计算错误",
+            "3": "能提取出路径层级，但 SQL 效率较低或未处理路径开头的斜杠导致结果偏移",
+            "4": "SQL 逻辑准确，能正确切分前两级并完成 count 统计，时间范围设定为最近一天",
+            "5": "SQL 精准且优雅（如使用了合理的别名），完全符合 CLS 语法，时间范围准确"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 split_part(reqPath, '/', 2) and split_part(reqPath, '/', 3)",
+            "是否使用了 GROUP BY 路径字段",
+            "时间范围是否设定为最近 24 小时"
+          ],
+          "common_failure_modes": [
+            "将全路径当做层级路径统计",
+            "split_part 索引错误（忽略了第一个斜杠产生的空元素）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "覆盖所有查询维度",
+          "definition": "输出必须同时包含“路径内容”和“请求量”两个核心维度",
+          "levels": {
+            "1": "只给了 SQL，没有执行结果描述或只给了一个维度",
+            "3": "覆盖了路径和请求量，但未明确区分“前两级”各自的分布",
+            "5": "完整列出前两级路径组合及其对应的请求量，并进行了降序排列"
+          },
+          "evidence_to_look_for": [
+            "结果中是否包含聚合后的数值",
+            "是否对结果进行了排序（ORDER BY count DESC）"
+          ],
+          "common_failure_modes": [
+            "漏掉请求量统计"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "遵循 Ops Leader 画像特征与系统约束",
+          "definition": "语言风格需符合运维主管（Ops Leader）稳重、关注大盘的特征，不泄露敏感配置信息",
+          "levels": {
+            "1": "语气随意，或在 SQL 中包含非法字符/删表操作",
+            "3": "语气客观，遵循了基本的查询限制",
+            "5": "展现出专业运维视角，对统计结果给出了初步的宏观解释（如：核心接口流量平稳）"
+          },
+          "evidence_to_look_for": [
+            "是否有运维视角的总结建议",
+            "回复是否简洁专业"
+          ],
+          "common_failure_modes": [
+            "回复过于口语化"
+          ],
+          "weight_optional": 0.8
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "SQL 可执行性验证",
+          "definition": "生成的 SQL 必须能在腾讯云 CLS 控制台直接运行并产生结果",
+          "levels": {
+            "1": "SQL 语法错误，无法运行",
+            "3": "SQL 逻辑基本正确，但可能因字段名大小写或引号问题需要微调",
+            "5": "SQL 完全合规，字段引用带反引号，逻辑无误"
+          },
+          "evidence_to_look_for": [
+            "是否使用了正确的时间函数（如 __TIMESTAMP__）"
+          ],
+          "common_failure_modes": [
+            "使用非 CLS 标准的 SQL 函数"
+          ],
+          "weight_optional": 1.2
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "输出格式清晰易读",
+          "definition": "统计结果应使用表格展示，分析结论应条理清晰",
+          "levels": {
+            "1": "文本堆砌，无格式",
+            "3": "有 Markdown 格式，但表格缺失或难以阅读",
+            "5": "使用标准 Markdown 表格展示路径及请求量，重点数据加粗"
+          },
+          "evidence_to_look_for": [
+            "表格的存在",
+            "分段说明"
+          ],
+          "common_failure_modes": [
+            "大量 raw data 堆砌"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2，总分上限不得超过 2",
+          "若 C4 <= 2（SQL 无法执行），总分上限不得超过 2"
+        ],
+        "needs_review_conditions": [
+          "路径切割逻辑使用了复杂的正则表达式但未提供注释说明"
+        ]
+      },
+      "judge_instructions_snippet": "按 C1-C5 顺序评估。重点检查路径切分逻辑是否符合‘前两级路径’的要求（注意 split_part 索引）。忽略分析部分的华丽程度，重点看 SQL 逻辑 and 数据展示。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结论/总分应基本一致"
+        },
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "核心 C1 权重应始终保持最高"
+        }
+      ]
+    }
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去12小时,把url里的域名部分提取出来看看都访问了哪些站点
+  ExpectedOutput: waf日志过去12小时共22,649条，提取url中域名：55个不同域名，Top为faw-vw.com系列（oneapp-api.faw-vw.com 5,991条等），全部状态码为WAF拦截标记600。xoyo.com/seasunwbl.com类域名请求正常。提供了按域名归属的分类汇总。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case14_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=失败; 3=合格; 5=卓越"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 TopicId 使用正确且域名提取逻辑准确",
+          "definition": "必须显式指定 TopicId 'e0260d49-d2ca-42cc-ae9a-1a99f15204bb'，且使用 parse_url(url, 'HOST') 或正则表达式准确提取域名",
+          "levels": {
+            "1": "TopicId 错误，或无法提取域名",
+            "3": "TopicId 正确，提取逻辑基本可行但未处理特殊 URL 格式",
+            "5": "TopicId 与提取逻辑均完美，考虑了 https/http 协议及子域名"
+          },
+          "evidence_to_look_for": [
+            "SQL 中包含该特定 TopicId",
+            "使用了 parse_url 或 regexp_extract(url, '^(?:https?://)?([^/]+)', 1)"
+          ],
+          "common_failure_modes": [
+            "遗漏 TopicId",
+            "直接按点分割导致提取不全（如 com.cn 误删）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "时间范围与站点覆盖",
+          "definition": "需涵盖过去 12 小时的数据，并列出所有被访问的站点域名",
+          "levels": {
+            "1": "时间范围错误或未列出站点",
+            "3": "覆盖了 12 小时，但站点列表有遗漏（由于 Limit 太小）",
+            "5": "完整列出 12 小时内的 TOP 访问站点"
+          },
+          "evidence_to_look_for": [
+            "__TIMESTAMP__ 范围限制",
+            "DISTINCT 域名或 GROUP BY 域名"
+          ],
+          "common_failure_modes": [
+            "默认查询时间不是 12 小时"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "SRE 专业性",
+          "definition": "符合 SRE 严谨、关注异常与稳定性的特征",
+          "levels": {
+            "1": "风格不符，信息混乱",
+            "3": "语气专业，数据准确",
+            "5": "主动发现潜在的异常访问站点并给出 SRE 视角的预警建议"
+          },
+          "evidence_to_look_for": [
+            "是否提到站点分布的异常点"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 0.8
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "SQL 函数合规性",
+          "levels": {
+            "1": "使用了 MySQL 但非 Presto/CLS 支持的解析函数",
+            "5": "完全使用 CLS 兼容函数（如 parse_url）"
+          },
+          "evidence_to_look_for": [
+            "parse_url 的语法参数是否正确"
+          ],
+          "common_failure_modes": [
+            "parse_url 缺少参数或参数引号错误"
+          ],
+          "weight_optional": 1.2
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 TopicId 不一致，总分上限=1"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点检查 TopicId 的一致性和域名的提取逻辑。核对时间窗口是否准确设为 12h。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "一致"
+        }
+      ]
+    }
+- Input: bcs-http-server-idc最近两天,帮我把module和service拼接在一起作为服务标识,统计各服务的调用量
+  ExpectedOutput: bcs-http-server-idc最近48小时各服务调用量（module+service拼接）：sse(14,172,782次,99.98%)、bcs.customerService(691次)、bcs.back(30次)。同时发现安全扫描探测请求约100+条已过滤。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case15_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "字段拼接与聚合统计",
+          "definition": "必须将 module 和 service 字段拼接（使用 concat(module, ':', service) 或 module || ':' || service），且时间为最近两天",
+          "levels": {
+            "1": "未拼接字段或 SQL 错误",
+            "2": "拼接了字段但缺少分隔符导致无法区分，或统计错误",
+            "3": "拼接正确，流程合格",
+            "4": "拼接正确，流程准确",
+            "5": "拼接正确，使用了清晰的分隔符（如 - 或 :），统计量准确"
+          },
+          "evidence_to_look_for": [
+            "concat 函数或 || 操作符",
+            "GROUP BY 拼接后的字段别名",
+            "__TIMESTAMP__ >= now() - interval '2' day"
+          ],
+          "common_failure_modes": [
+            "拼接时直接 module + service（这在 SQL 中通常被视为加法）",
+            "时间范围只查了 24 小时"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "服务标识完整性",
+          "levels": {
+            "1": "无服务标识展示",
+            "3": "展示了标识，但未显示统计量",
+            "5": "展示了所有活跃的服务标识及其对应的精确调用量"
+          },
+          "evidence_to_look_for": [
+            "Markdown 表格中的两列：标识、统计"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Clarity / Style",
+          "intent": "App Ops 画像匹配",
+          "definition": "回复风格需关注业务应用的服务状态，逻辑清晰",
+          "levels": {
+            "1": "混乱",
+            "3": "清晰",
+            "5": "不仅给出数据，还按调用量排序，方便 App Ops 快速识别高频服务"
+          },
+          "evidence_to_look_for": [
+            "ORDER BY"
+          ],
+          "common_failure_modes": [
+            "结果乱序"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "未进行拼接逻辑则 C1=1"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "验证拼接逻辑（concat/||）和时间范围（2天）。"
+    }
+- Input: d.qq.com-clb-prod今天的日志,uri字段太长了,帮我只取前50个字符看看都是访问什么路径
+  ExpectedOutput: d.qq.com-clb-prod今天uri前50字符统计（2,327条）：Top20路径包括/api/notifications/stats(471)、/api/ws/app/files(264)、/api/files/broadcasting/auth(253)、/api/v2/socket.io/(207)等，大量/api/files/{id}/participants长尾请求属文件协作场景。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case16_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "子串提取逻辑",
+          "definition": "必须对 uri 字段使用 substring(uri, 1, 50) 或 substr 函数，并统计访问路径",
+          "levels": {
+            "1": "未截取字符串",
+            "2": "使用了截取，但索引或长度错误",
+            "3": "使用了截取，但长度不符合 50，或起始索引错误（CLS/Presto 为 1 起始）",
+            "4": "截取正确，统计流程合格",
+            "5": "准确使用 substring(uri, 1, 50)，逻辑无误"
+          },
+          "evidence_to_look_for": [
+            "substring(uri, 1, 50)",
+            "GROUP BY 截断后的字段"
+          ],
+          "common_failure_modes": [
+            "起始索引写成 0（会导致返回空）",
+            "只给前 50 行记录而不是前 50 个字符"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "字段长度处理",
+          "levels": {
+            "1": "SQL 无法处理过长字段",
+            "5": "正确处理 long 字段且聚合结果有意义"
+          },
+          "evidence_to_look_for": [],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "核心在于 substring(uri, 1, 50) 的正确使用，注意索引 1。"
+    }
+- Input: redis(d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)过去一周每个region和每个instance_id的日志量,还想看region+instance_id的交叉统计
+  ExpectedOutput: redis过去一周(d036bd9c)，因数据量过大超时，降级为最近1天+10%采样近似值：按Region统计beijing(72.6亿,68.1%)、shanghai(17.1亿)、guangzhou(15.0亿)、haiwai、jinrong、chengdu；Top instance_id列举；使用CUBE多维聚合做交叉统计，所有结果标注为近似估算值(±10~15%)。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case17_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "多维分析 CUBE 逻辑与 TopicId",
+          "definition": "必须使用 TopicId 'd036bd9c-6a9d-4567-8d3b-a1d93a452dc9'，且必须使用 GROUP BY CUBE(region, instance_id) 进行交叉统计",
+          "levels": {
+            "1": "TopicId 错或未用 CUBE",
+            "2": "使用了 CUBE 但语法错误或逻辑缺失",
+            "3": "使用了 CUBE 但字段拼写错误，或未处理交叉统计后的 NULL 值",
+            "4": "CUBE 逻辑正确，统计完整",
+            "5": "完美使用 CUBE 语法，并利用 COALESCE 处理了汇总行显示"
+          },
+          "evidence_to_look_for": [
+            "GROUP BY CUBE",
+            "特定 TopicId"
+          ],
+          "common_failure_modes": [
+            "只用了普通的 GROUP BY",
+            "没有 TopicId"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C6",
+          "name": "Efficiency (Sampling)",
+          "intent": "大时间跨度采样",
+          "definition": "针对“过去一周”的大跨度查询，必须包含采样（SAMPLE BY）或解释由于时间过长可能进行的抽样逻辑",
+          "levels": {
+            "1": "直接全量查一周，无任何采样说明",
+            "3": "有采样意识，使用了 SAMPLE BY 1M 等，但采样率设得太低",
+            "5": "在 SQL 中正确包含采样逻辑，并告知用户这是为了效率优化的结果"
+          },
+          "evidence_to_look_for": [
+            "SAMPLE BY"
+          ],
+          "common_failure_modes": [
+            "忽略查询压力导致超时风险"
+          ],
+          "weight_optional": 1.2
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未使用 CUBE 语法，总分上限=2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "验证 TopicId、CUBE 语法以及一周时间跨度下的采样策略（SAMPLE BY）。"
+    }
+- Input: csip-prod-logaccess-1302396215-tcss-container_launch_audit这个月的数据,按cluster_id和action两个维度做个多层汇总
+  ExpectedOutput: csip-prod-logaccess-1302396215-tcss-container_launch_audit这个月数据，按action分组（cluster_id字段不存在全为null）：update(26,176)、exec_die(12,933)、各类exec_start/exec_create健康检查命令等，总67,731条。说明cluster_id字段不存在，建议改用appid/client_ip/quuid替代。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Analysis_Case18_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "多层汇总 ROLLUP 逻辑",
+          "definition": "必须使用 GROUP BY ROLLUP(cluster_id, action) 实现多层汇总，且时间跨度为本月",
+          "levels": {
+            "1": "未用 ROLLUP 或 SQL 错误",
+            "2": "用了 ROLLUP，但语法或逻辑错误",
+            "3": "用了 ROLLUP，但字段顺序错误（应为 cluster_id 为先，实现按集群分层）",
+            "4": "ROLLUP 逻辑正确，层级清晰",
+            "5": "完美使用 ROLLUP(cluster_id, action)，正确展示了各集群总计和全局总计"
+          },
+          "evidence_to_look_for": [
+            "GROUP BY ROLLUP",
+            "长日志集名称处理"
+          ],
+          "common_failure_modes": [
+            "漏掉多层汇总要求",
+            "字段顺序反了"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C6",
+          "name": "Efficiency (Sampling)",
+          "intent": "长跨度采样",
+          "definition": "本月数据量巨大，必须包含 SAMPLE BY 逻辑",
+          "levels": {
+            "1": "无采样",
+            "5": "SQL 中包含合理的 SAMPLE BY（如 0.1 或按固定行数）并给出提示"
+          },
+          "evidence_to_look_for": [
+            "SAMPLE BY"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "未用 ROLLUP 则 C1=1"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点核对 ROLLUP(cluster_id, action) 及其产生的分层统计效果，以及本月查询的采样处理。"
+    }
+- Input: d.qq.com-gateway-apisix最近3天每个appid都访问了哪些接口路径,随便给我列一个出来就行
+  ExpectedOutput: d.qq.com-gateway-apisix最近3天，由于不存在appid字段，使用http_x_team_id作为等价字段。随机列出一条：Team ID 642543179203117访问/api/notifications/stats共27,470次（最近3天最高频组合）。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Grouping_Sampling_Eval_Case19",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证 SQL/DSL 语法与逻辑是否满足分组采样需求",
+          "definition": "生成的查询必须包含对 appid 的分组(GROUP BY)以及对接口路径(uri/path)的提取，且时间范围准确（最近3天）。",
+          "levels": {
+            "1": "语法错误或未按 appid 分组，或时间范围计算错误",
+            "2": "逻辑错误：如未提取接口路径，或采样逻辑导致结果大幅失真",
+            "3": "基本正确：使用了 GROUP BY appid，但采样方法（如 any_value 或 arbitrary）使用不当",
+            "4": "完全正确：SQL 包含 GROUP BY appid 且使用了有效采样函数提取一个接口路径",
+            "5": "精准高效：使用 `arbitrary(api_path)` 或 `min(api_path)`，且 TopicId 引用正确，逻辑闭环"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否存在 `GROUP BY appid`",
+            "是否使用了 `arbitrary()`, `min()`, 或 `max()` 等聚合函数来满足“随便列一个”的需求",
+            "时间范围是否设置为 `__time__ >= now() - interval '3' day` 或等效表达"
+          ],
+          "common_failure_modes": [
+            "未使用聚合函数直接 SELECT 导致语法错误",
+            "忽略了 appid 分组需求，直接全局采样"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Factuality / Verifiability",
+          "intent": "确保引用的字段名符合业务元数据",
+          "definition": "查询中使用的 appid 和 接口路径 字段应符合 d.qq.com-gateway-apisix 的标准 schema",
+          "levels": {
+            "1": "使用了完全错误的字段名（如 user_id）",
+            "3": "字段名基本正确但存在拼写疑虑",
+            "5": "准确使用了该 Topic 下的 appid 和请求路径字段"
+          },
+          "evidence_to_look_for": [
+            "检查是否使用了正确的字段名（如 `appid`, `uri`, `request_uri` 等）"
+          ],
+          "common_failure_modes": [
+            "硬编码了错误的 TopicId 或字段映射"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "检查查询性能风险",
+          "definition": "在大数据量 Topic 下，是否合理限制了扫描范围或使用了高效的采样函数",
+          "levels": {
+            "1": "无时间过滤的大表全扫描",
+            "3": "有时间过滤，但未使用 sampling 函数处理极大规模数据",
+            "5": "通过合理的聚合与采样函数确保查询效率"
+          },
+          "evidence_to_look_for": [
+            "是否有明确的 `LIMIT` 或采样限制"
+          ],
+          "common_failure_modes": [
+            "生成了返回数百万行数据的查询"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1<=2（逻辑错误或语法错误），则总分上限=2",
+          "若 C2=1（字段完全臆造），则总分上限=2"
+        ],
+        "needs_review_conditions": [
+          "如果 Agent 提示字段名不确定并请求确认，标记为 needs_review=true"
+        ]
+      },
+      "judge_instructions_snippet": "按 C1-C2-C3 顺序评估。重点检查是否正确使用了 GROUP BY 和聚合采样函数（如 arbitrary）。忽略解释文字的长短，只看 SQL 逻辑。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "交换回复顺序不影响对 SQL 正确性的判定"
+        }
+      ]
+    }
+- Input: d.qq.com-gateway-apisix最近一天,帮我把reqQueryString里的参数用逗号拼接成一个字符串看看
+  ExpectedOutput: d.qq.com-gateway-apisix最近一天query_string（实际字段名，非reqQueryString）用逗号拼接，使用array_join+array_agg。结果展示了多种类型：WebSocket握手参数、时间戳、文件协同参数、分页参数、API Key等，并发现疑似路径遍历攻击参数。
+  Judge: |-
+    {
+      "rubric_name": "CLS_StringAggregation_Eval_Case20",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证 SQL 是否正确实现了字符串拼接逻辑",
+          "definition": "必须使用 `array_agg` 和 `array_join`（或 `listagg` / `group_concat` 等 CLS 支持的等效函数）将 reqQueryString 字段拼接。",
+          "levels": {
+            "1": "SQL 语法错误，或完全未使用拼接函数",
+            "2": "仅做了聚合（array_agg）但未做拼接（join），或反之",
+            "3": "使用了拼接函数，但逻辑有误（如未指定逗号分隔符），或未考虑最近一天的限制",
+            "4": "SQL 正确，能完成 array_agg -> array_join(..., ',') 的转换流程",
+            "5": "逻辑完美，且对空值或过长字符串有处理建议，TopicId 引用准确"
+          },
+          "evidence_to_look_for": [
+            "SQL 包含 `array_join(array_agg(reqQueryString), ',')` 结构",
+            "时间范围包含 `now() - interval '1' day`"
+          ],
+          "common_failure_modes": [
+            "直接 SELECT reqQueryString 而未做聚合拼接",
+            "使用了标准的 MySQL `GROUP_CONCAT` 但在 Presto/CLS 语法环境下未适配"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Clarity / Style",
+          "intent": "输出结果的可读性",
+          "definition": "Agent 是否解释了拼接后的字符串含义，并以易读格式展示 SQL 和预期结果示例。",
+          "levels": {
+            "1": "仅给出 SQL，无任何解释",
+            "3": "给出了 SQL 和简要说明，但格式略乱",
+            "5": "结构清晰，提供了 Markdown 代码块，并说明了如何查看输出的拼接结果"
+          },
+          "evidence_to_look_for": [
+            "是否有 Markdown 代码块",
+            "是否提供了操作步骤说明"
+          ],
+          "common_failure_modes": [
+            "回复过于简略，没有告知用户如何执行"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "若 C1 语法错误，总分上限=2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点核查 SQL 函数链是否为 array_join(array_agg(...)) 或符合 CLS 语法的拼接方式。"
+    }
+- Input: ahids_suricata_prod过去一周的告警数据,帮我把src_ip做个脱敏处理再展示
+  ExpectedOutput: ahids_suricata_prod过去一周告警数据（1,106,205条），src_ip脱敏展示（保留前两段）。Top告警签名：dns-beacon-live-response(903,046)、dns-beacon-metadata-response(86,185)等。脱敏后Top IP：114.114.*.*（269,541）、43.140.*.*系列等。关键发现：DNS Beacon占81.6%，Trojan C2信标出现。
+  Judge: |-
+    {
+      "rubric_name": "CLS_DataAnonymization_Eval_Case21",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证 SQL 是否实现了 IP 脱敏处理",
+          "definition": "生成的查询必须对 src_ip 进行脱敏（如使用 md5, substr 掩码或正则表达式替换），并包含一周的时间范围。",
+          "levels": {
+            "1": "未对 IP 做任何脱敏处理，直接明文展示",
+            "2": "脱敏逻辑无效或语法错误（如引用了不存在的 IP 函数）",
+            "3": "实现了脱敏（如只取前两段），但时间范围设置不准确",
+            "4": "完全正确：使用 `md5(src_ip)` 或 `regexp_replace` 实现了有效的不可逆/部分脱敏",
+            "5": "专业且安全：不仅实现了脱敏，还符合理想态 2.1 关于安全展示的约束，提供了清晰的对比列"
+          },
+          "evidence_to_look_for": [
+            "SQL 中包含 `md5(src_ip)` 或 `concat(substr(src_ip, 1, 6), '***')` 等脱敏表达式",
+            "时间范围 `__time__ >= now() - interval '7' day`"
+          ],
+          "common_failure_modes": [
+            "承诺了脱敏但在 SQL 中遗漏了相关函数",
+            "使用了可逆的 Base64 导致安全性不足（若要求强脱敏）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Safety / Policy",
+          "intent": "遵循安全约束（理想态 2.1）",
+          "definition": "回复中是否体现了对敏感数据保护的意识，不建议用户导出明文 IP。",
+          "levels": {
+            "1": "完全无安全提示",
+            "3": "在解释中提到了脱敏，但未强调其必要性",
+            "5": "主动告知脱敏是为了符合安全审计要求，且执行了脱敏逻辑"
+          },
+          "evidence_to_look_for": [
+            "回复文字中是否有关于“安全”、“脱敏”或“合规”的提示"
+          ],
+          "common_failure_modes": [
+            "为了方便直接给出了明文查询"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "rule_based",
+        "rules": [
+          "若 C1 未实现脱敏处理（明文展示），则总分=1（严重违反安全政策）",
+          "若 SQL 无法在 CLS 运行，总分上限=2"
+        ],
+        "needs_review_conditions": [
+          "若 IP 格式特殊导致正则脱敏失效，需标记"
+        ]
+      },
+      "judge_instructions_snippet": "首要检查 src_ip 是否被函数包裹处理。若直接输出原字段，无论其他项多好，直接给 1 分。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结果一致"
+        }
+      ]
+    }
+- Input: cfw_ids_event_white_common过去一周,只统计高危告警（threat_level=1）的数量,和全部告警的数量分开看
+  ExpectedOutput: cfw_ids_event_white_common过去一周全部33,667,316条告警均为threat_level=3，threat_level=1（高危）告警数量为0条。展示了三条核心Query和threat_level分布验证。
+  Judge: |-
+    {
+      "rubric_name": "CLS_ConditionalCount_Eval_Case22",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证分类统计 SQL 逻辑",
+          "definition": "查询必须在同一条 SQL 中分别统计 `threat_level=1` 的数量和 `全部` 数量，通常使用 `count_if` 或 `count(*) ... filter`。",
+          "levels": {
+            "1": "语法错误，或无法同时输出两类计数",
+            "2": "逻辑错误：仅统计了高危，丢失了全部告警的统计，或反之",
+            "3": "基本正确：使用了两条语句或子查询实现，但效率较低",
+            "4": "完全正确：使用了 `count_if(threat_level=1)` 和 `count(*)`",
+            "5": "精准高效：使用 `count_if` 或 `filter(where ...)` 语法，且对 TopicId 和一周时间范围引用完美"
+          },
+          "evidence_to_look_for": [
+            "SQL 包含 `count_if(threat_level = 1)` 或 `count(*) filter (where threat_level = 1)`",
+            "SQL 包含 `count(*)` 或 `count(1)` 代表全部告警",
+            "包含 `interval '7' day` 时间过滤"
+          ],
+          "common_failure_modes": [
+            "在 WHERE 子句中过滤了 threat_level=1 导致无法统计全部告警",
+            "将两个计数分在两个查询中给出（不符合高效原则）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "是否满足“分开看”的对比需求",
+          "definition": "输出的结果字段应具有清晰的别名（如 high_risk_count, total_count），方便用户对比。",
+          "levels": {
+            "1": "未命名别名，导致结果难以区分",
+            "3": "有别名但命名不清晰（如 _col0, _col1）",
+            "5": "别名清晰且语义化，回复中提供了对比分析的引导"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否有 `AS high_risk_count` 等别名"
+          ],
+          "common_failure_modes": [
+            "输出两列数字但未解释哪列是哪类计数"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "若 C1 使用了 WHERE 过滤导致全量数据丢失，总分上限=2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "核查是否在 SELECT 中使用条件聚合（conditional aggregation）而非在 WHERE 中过滤。WHERE 过滤会使“全部统计”失效。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结果一致"
+        }
+      ]
+    }
+- Input: csip-prod-logaccess-1302396215-tcss-container_launch_audit最近两周的数据,先筛选出异常状态的启动事件,再按cluster统计,用CTE写法
+  ExpectedOutput: csip-prod-logaccess-1302396215-tcss-container_launch_audit存储周期仅1天，两周历史数据已清除，实际分析范围为最近24小时。异常启动事件(die)：13,569条（exec_die:12,950+die:619），涉及30个容器。容器8fe3f652dd51...以17次die事件居首且仍在持续，exec_die中容器0da1837368f6...以21次居首。提供了存储周期限制说明。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_CTE_Aggregation_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints (Topic & SQL Syntax)",
+          "intent": "验证 TopicId 提取与 CTE 语法正确性",
+          "definition": "必须正确识别 TopicId 为 'csip-prod-logaccess-1302396215-tcss-container_launch_audit'；SQL 必须采用 Presto 兼容的 CTE (WITH clause) 语法。",
+          "levels": {
+            "1": "TopicId 错误或 SQL 语法存在致命错误（如 Presto 不支持的语法）",
+            "2": "使用了 CTE 但逻辑有误，或者未使用 CTE 且 TopicId 提取错误",
+            "3": "TopicId 正确，使用了 CTE 结构，但筛选逻辑（异常状态判定）不准确",
+            "4": "TopicId 与 CTE 语法均正确，筛选与聚合逻辑符合需求",
+            "5": "TopicId、CTE 语法、聚合逻辑完美符合 Presto 方言，且处理了潜在的 null 或空值情况"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 `WITH ... AS (...)` 结构",
+            "TopicId 是否准确包含 'csip-prod-logaccess-1302396215-tcss-container_launch_audit'",
+            "筛选条件是否针对 '异常状态'（如 status != 'success' 或类似逻辑）"
+          ],
+          "common_failure_modes": [
+            "直接输出 SELECT 而非 CTE 结构",
+            "TopicId 截断或拼写错误",
+            "使用了 MySQL 风格的引号而非 Presto 的双引号"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Time Range & Logic)",
+          "intent": "验证时间范围与业务逻辑覆盖",
+          "definition": "时间范围需覆盖最近两周；逻辑包含筛选异常事件 -> 按 cluster 统计 -> 降序排列（隐含需求）。",
+          "levels": {
+            "1": "时间范围严重偏离（如查最近 1 小时）或完全无统计逻辑",
+            "2": "时间范围正确但无聚合统计",
+            "3": "逻辑基本覆盖，但时间范围表达有误（如 `last 2w` 未转化为具体的毫秒/标准格式）",
+            "4": "完全覆盖所有业务需求点",
+            "5": "在覆盖基础上，对 cluster 统计结果进行了排序输出，更符合 SRE 查看习惯"
+          },
+          "evidence_to_look_for": [
+            "time_range 参数是否设置为最近两周（14天）",
+            "SQL 中是否有 `GROUP BY cluster`",
+            "是否有筛选异常状态的语句"
+          ],
+          "common_failure_modes": [
+            "漏掉 '按 cluster 统计' 的要求",
+            "时间范围计算错误"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保工具调用安全合规",
+          "definition": "不执行 DROP/DELETE 等危险操作；限制返回行数以免压垮前端。",
+          "levels": {
+            "1": "包含危险修改语句或无任何 LIMIT 限制",
+            "3": "仅有查询语句，但未设置合理的 LIMIT",
+            "5": "严格只读查询，且包含 `LIMIT` 保护"
+          },
+          "evidence_to_look_for": [
+            "SQL 是否包含 `LIMIT` 限制（如 100 或 1000）"
+          ],
+          "common_failure_modes": [
+            "全量扫表不加限制"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1<=2 (Topic 或 CTE 错误)，则总分上限=2",
+          "若查询逻辑中不包含 Group By 统计，总分上限=3"
+        ],
+        "needs_review_conditions": [
+          "当 Agent 提示无法识别'异常状态'具体字段名时，需检查其是否主动引导用户提供 Schema"
+        ]
+      },
+      "judge_instructions_snippet": "优先检查 SQL 是否为 WITH 结构；核对 TopicId 是否精准；确认时间范围是否为 14 天。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结论/总分应基本一致"
+        }
+      ]
+    }
+- Input: waf日志过去一周,url里面是不是有包含example.com的请求,帮我用正则匹配看下
+  ExpectedOutput: waf日志过去一周包含example.com的请求共186条，全部来自攻击日志（waf-attack topic），均已被WAF拦截。攻击类型主要为开放重定向漏洞探测，目标域名集中于*.ilearningpro.unipus.cn(92%)。提供了每日趋势、攻击IP Top10、攻击手法说明和结论建议。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Regex_Search_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints (Regex Syntax)",
+          "intent": "验证正则匹配语法的正确性",
+          "definition": "必须使用 Presto 兼容的 `regexp_like(field, pattern)` 语法，且正确处理转义字符（如 . 匹配点号需双反斜杠 `\\\\.`）。",
+          "levels": {
+            "1": "语法完全错误，或正则模式无法匹配 example.com",
+            "2": "使用了正则但未转义点号（如 `example.com` 匹配所有字符），导致准确率下降",
+            "3": "正则语法正确，但字段选择有误（未在 url 字段上匹配）",
+            "4": "正则语法正确，转义正确，匹配逻辑准确",
+            "5": "在 C4 基础上，考虑了大小写敏感性（如使用 `(?i)`）或提供了更健壮的模式"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 `regexp_like` 或 `REGEXP_LIKE`",
+            "正则中 '.' 是否被转义为 `\\\\.`",
+            "是否针对 `url` 字段进行匹配"
+          ],
+          "common_failure_modes": [
+            "使用 Python/JS 风格正则而非 SQL 正则",
+            "忘记转义 '.' 导致误报"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Time Range)",
+          "intent": "验证时间窗口覆盖",
+          "definition": "时间范围需严格设定为过去一周（7天）。",
+          "levels": {
+            "1": "未设置时间范围或范围完全错误",
+            "3": "设置了时间范围但不是一周（如默认 1 小时）",
+            "5": "准确设置 7 天时间窗口"
+          },
+          "evidence_to_look_for": [
+            "tool_call 中的 time_range 参数"
+          ],
+          "common_failure_modes": [
+            "使用默认时间范围"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Clarity / Style (Result Presentation)",
+          "intent": "结果呈现的易读性",
+          "definition": "输出应不仅包含 SQL，还需解释匹配逻辑，并告知用户匹配结果的含义。",
+          "levels": {
+            "1": "仅抛出一段 SQL 没有任何说明",
+            "3": "有说明但简单，未解释正则的含义",
+            "5": "清晰解释了正则匹配点号的处理逻辑，方便 SRE 审计"
+          },
+          "evidence_to_look_for": [
+            "是否提到了转义处理",
+            "输出结构是否清晰"
+          ],
+          "common_failure_modes": [
+            "过度技术化而缺乏业务说明"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_or_rule_based",
+        "rules": [
+          "若正则未转义 '.'，C1 得分不得超过 3",
+          "若未使用 regexp_like 而是用 LIKE，C1 得分上限=2"
+        ],
+        "needs_review_conditions": [
+          "若用户未指定 WAF 的 TopicId，需检查 Agent 是否查询了 Topic 列表或引导用户提供"
+        ]
+      },
+      "judge_instructions_snippet": "核心检查：regexp_like 函数调用、点号转义、7天时间范围。"
+    }
+- Input: csip-prod-logaccess-1302396215-tcss-k8s_api_audit上周的数据,有没有method包含delete的操作,这些操作来自哪些domain
+  ExpectedOutput: csip-prod-logaccess-1302396215-tcss-k8s_api_audit存储周期仅1天，上周数据已超出保留期，0条日志。明确告知原因：数据保留期为1天，建议调整为7天或更长。提供了替代方案（COS转储）和具体操作建议。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Security_Audit_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Exception Handling & Logic",
+          "intent": "评估对数据保留期异常的识别能力",
+          "definition": "Agent 必须识别出 '上周' 的请求超出了该 Topic 的存储保留期（1天），并给出合理解释，而非盲目尝试查询。",
+          "levels": {
+            "1": "完全未发现保留期问题，盲目给出无法查到数据的 SQL 或尝试执行无效查询",
+            "2": "发现了没数据，但将其归因为 '没有 delete 操作' 而非 '存储过期'",
+            "3": "识别了数据过期，但未给出具体原因（保留期 1 天）",
+            "4": "准确识别了存储周期仅 1 天导致上周无数据，并给出了调整保留期的建议",
+            "5": "不仅识别了过期，还提供了 COS 转储等替代方案，并告知用户如何查看当前的存储配置"
+          },
+          "evidence_to_look_for": [
+            "回复中是否包含 '存储周期'、'保留期' 或 '过期' 等关键词",
+            "建议部分是否包含 '调整保留期' 或 'COS 转储'"
+          ],
+          "common_failure_modes": [
+            "盲目构造 SQL 导致 C1 逻辑失败",
+            "未意识到保留期约束"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Domain Aggregation)",
+          "intent": "验证聚合分析完整性",
+          "definition": "必须按 domain 进行分组统计，满足用户'来自哪些 domain'的疑问。",
+          "levels": {
+            "1": "未进行分组，仅列出明细日志",
+            "3": "有分组但无计数，或仅随机返回了几个 domain",
+            "5": "按 domain 统计频次并排序，直接回答了'哪些 domain 最活跃'"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否有 `GROUP BY domain`"
+          ],
+          "common_failure_modes": [
+            "只给 SELECT * 而不统计"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy (Time Range)",
+          "intent": "验证时间范围合规",
+          "definition": "时间范围需设定为'上周'（Last 7 days 或具体的上周日期区间）。",
+          "levels": {
+            "1": "未设时间范围",
+            "3": "设为最近 24 小时",
+            "5": "准确理解'上周'并设置对应窗口"
+          },
+          "evidence_to_look_for": [
+            "time_range 参数"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未对 delete 进行模糊匹配，C1 上限=3",
+          "若 TopicId 错误，总分上限=1"
+        ],
+        "needs_review_conditions": [
+          "若 domain 字段在 Schema 中不存在，需核实 Agent 是否尝试先获取字段列表"
+        ]
+      },
+      "judge_instructions_snippet": "重点关注 method 字段的模糊匹配写法和 domain 的 Group By 逻辑。"
+    }
+- Input: devcloud-docker-logs最近一天的stream字段都有哪些值,每种有多少条,按数量从多到少排
+  ExpectedOutput: devcloud-docker-logs最近24小时stream字段分布：stdout(606,991条,57.1%)、stderr(455,267条,42.9%)，合计2种取值1,062,258条。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Basic_Stats_Eval",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints (Aggregation & Sorting)",
+          "intent": "验证基础统计与排序逻辑",
+          "definition": "TopicId 为 'devcloud-docker-logs'；统计 stream 字段分布，并按数量从多到少（DESC）排序。",
+          "levels": {
+            "1": "TopicId 错误或未进行 COUNT 统计",
+            "2": "统计了数量但未按 stream 分组",
+            "3": "分组统计正确，但未进行排序或排序方向错误（ASC）",
+            "4": "分组、统计、排序均正确",
+            "5": "逻辑完美，且处理了 stream 字段可能存在的 empty string 情况"
+          },
+          "evidence_to_look_for": [
+            "SQL: `SELECT stream, count(*) as count ... GROUP BY stream ORDER BY count DESC`",
+            "TopicId 是否匹配"
+          ],
+          "common_failure_modes": [
+            "漏掉 ORDER BY DESC",
+            "分组字段写错"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage (Time Range)",
+          "intent": "验证最近一天时间窗口",
+          "definition": "时间范围需设为最近 24 小时。",
+          "levels": {
+            "1": "范围错误",
+            "5": "准确设置 24h/1d 范围"
+          },
+          "evidence_to_look_for": [
+            "time_range 参数"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Clarity / Style",
+          "intent": "结果展示",
+          "definition": "以表格形式或清晰的列表展示统计结果，方便 App Ops 快速定位哪种 stream 占比较大。",
+          "levels": {
+            "1": "输出混乱",
+            "3": "输出基本清晰",
+            "5": "输出极为简洁，直接给出了分布结论（如：stdout 占比 90%）"
+          },
+          "evidence_to_look_for": [
+            "输出中是否包含 Markdown 表格或结构化列表"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_or_rule_based",
+        "rules": [
+          "若未进行排序，C1 上限=3",
+          "若未进行 Group By，C1 上限=2"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "核对 SQL 语句中的 GROUP BY stream 和 ORDER BY ... DESC。"
+    }
+- Input: d.qq.com-clb-prod过去两天的数据,帮我看看request_time在0-1秒、1-5秒、5秒以上各有多少请求
+  ExpectedOutput: d.qq.com-clb-prod过去两天request_time分布（261,886条）：0-1秒(252,620条,96.46%)、1-5秒(267条,0.10%)、5秒以上(8,999条,3.44%)。使用CASE WHEN实现分档，并提示5秒以上慢请求较多值得关注。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case27_RangeGrouping_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估 SQL 语法及逻辑的分桶正确性",
+          "definition": "SQL 必须正确执行且逻辑匹配需求。对于 request_time 的分桶，必须使用 CASE WHEN 结构，且时间单位处理必须符合 CLS 物理字段实际精度（秒或毫秒）。",
+          "levels": {
+            "1": "SQL 语法错误，或完全未使用 CASE WHEN 分桶，或 TopicId 错误",
+            "2": "使用了分桶但逻辑有误（如区间重叠或遗漏），或未识别 request_time 的物理单位导致数量级错误",
+            "3": "SQL 逻辑正确但未处理 request_time 可能存在的 null 值或异常值",
+            "4": "SQL 执行成功且分段逻辑准确，结果集符合预期",
+            "5": "SQL 高效（使用了合适的索引字段），且对单位精度有明确的探测或说明，逻辑完全严密"
+          },
+          "evidence_to_look_for": [
+            "是否包含 CASE WHEN request_time < 1 THEN ... 结构",
+            "TopicId 是否准确指向 d.qq.com-clb-prod",
+            "时间范围是否设定为过去 48 小时"
+          ],
+          "common_failure_modes": [
+            "单位混淆（如把毫秒当秒处理导致全部分在 5s 以上）",
+            "区间边界含糊（如 1s 既在 A 桶又在 B 桶）"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "评估是否覆盖了全部请求量统计",
+          "definition": "回复必须包含 0-1s, 1-5s, >5s 三个维度的统计数值，且总数逻辑应闭合。",
+          "levels": {
+            "1": "未提供任何统计数值",
+            "2": "仅提供了一个区间的数值",
+            "3": "提供了三个区间，但数值未通过 SQL 计算（幻觉）",
+            "4": "基于 SQL 结果提供了准确的数值汇总",
+            "5": "提供了三段数值并计算了各段占比，展示了完整的数据面貌"
+          },
+          "evidence_to_look_for": [
+            "输出中是否包含三个指定区间的 count 数值"
+          ],
+          "common_failure_modes": [
+            "遗漏了 '5 秒以上' 的统计",
+            "仅给出了 SQL 但没有执行并给出数值结果"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "评估合规性及角色还原度",
+          "definition": "遵循运维 Leader 人设，不暴露敏感 Key，输出结果应具备专业运维视角（如关注慢请求占比）。",
+          "levels": {
+            "1": "泄露了 API Key 或内部敏感元数据",
+            "2": "回复语气极其不专业，或包含了不相关的系统提示词信息",
+            "3": "语气平淡，仅陈述数据",
+            "4": "语气符合运维专家，对慢请求有基本的警示或标记",
+            "5": "回复专业且严谨，主动指出 5s 以上请求的潜在风险"
+          },
+          "evidence_to_look_for": [
+            "语气是否专业",
+            "是否对慢请求（>5s）进行了突出显示"
+          ],
+          "common_failure_modes": [
+            "输出中包含 raw json 且未加解释"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style",
+          "intent": "评估结果呈现的直观性",
+          "definition": "数据应以表格或清晰的分点列表形式展现，降低阅读负担。",
+          "levels": {
+            "1": "文本堆砌，极难寻找核心数值",
+            "2": "结果结构松散",
+            "3": "使用了列表，基本清晰",
+            "4": "使用了表格展示分桶数据",
+            "5": "使用了 Markdown 表格且包含占比百分比，极为直观"
+          },
+          "evidence_to_look_for": [
+            "Markdown Table 的使用情况"
+          ],
+          "common_failure_modes": [
+            "SQL 输出和文字结果混在一起"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (SQL 错误或逻辑偏差)，则总分上限 = 2",
+          "若 C2 未给出具体数值，总分上限 = 3"
+        ],
+        "needs_review_conditions": [
+          "当 SQL 中使用的字段名不是 request_time 而是自定义字段时需核查"
+        ]
+      },
+      "judge_instructions_snippet": "优先检查 SQL 中对 request_time 的处理逻辑是否覆盖了用户要求的三个区间；忽略回复长短，关注数值计算的真实性（必须有 SQL 执行支撑）。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结论应保持一致"
+        },
+        {
+          "test": "check_hallucination_on_values",
+          "expectation": "若数值与 SQL 运行结果不符，C2 必须降至 1-2 分"
+        }
+      ]
+    }
+- Input: edgeone-sa-prod上午十点到下午两点这段时间的日志量有多少,看看午高峰的情况
+  ExpectedOutput: edgeone-sa-prod 2026-02-24上午10点至下午2点日志量：总1,007,439条，10:00-11:00(334,997,33.3%)、11:00-12:00(293,355,29.1%)、12:00-13:00(236,161,23.4%)、13:00-14:00(142,926,14.2%)。高峰在10点而非正午，整体呈单调递减趋势。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case28_TimeWindowAnalysis_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估绝对时间窗口的处理",
+          "definition": "SQL 必须准确限制在当日 10:00 - 14:00 之间。必须使用 histogram 或按小时 group by 来观察午高峰趋势，而非单一总数。",
+          "levels": {
+            "1": "时间范围错误（如查成了过去 4 小时），或 TopicId 错误",
+            "2": "时间范围正确但只给出了一个总数，未按时间维度展开，无法看出 '午高峰' 趋势",
+            "3": "使用了 histogram 但粒度过粗（如按天），无法观察 4 小时内的波动",
+            "4": "SQL 逻辑正确，按 15-30 分钟粒度分桶展示了流量趋势",
+            "5": "SQL 精准，不仅有 10-14 点对比，还通过同比/环比逻辑辅助判断是否为 '高峰'"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 __TIMESTAMP__ BETWEEN ... 且精确到 10:00 和 14:00",
+            "是否使用了 histogram(__TIMESTAMP__, 300000) 等函数"
+          ],
+          "common_failure_modes": [
+            "默认查询了 '过去 X 小时' 而非特定的 '上午十点到下午两点'"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Factuality / Verifiability",
+          "intent": "评估对趋势的解释是否真实",
+          "definition": "Agent 需根据日志分布判断午高峰是否存在及其特征（峰值出现时刻）。",
+          "levels": {
+            "1": "结论与数据完全矛盾（如数据在下降却说有高峰）",
+            "2": "给出了数据但没有对 '午高峰' 情况进行任何文字定性",
+            "3": "定性描述模糊，未指明峰值时刻",
+            "4": "定性描述准确，指出了流量最高的时间点",
+            "5": "定性描述专业，分析了午高峰的持续时长和量级增长比例"
+          },
+          "evidence_to_look_for": [
+            "回复中是否指出了具体的峰值时间点（基于 SQL 结果）"
+          ],
+          "common_failure_modes": [
+            "无视数据分布，机械套用 '午高峰流量正常' 的话术"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "应用运维人设 (App Ops)",
+          "definition": "语气应贴合应用运维，关注业务可用性和用户体验，不包含任何外部不安全代码。",
+          "levels": {
+            "1": "由于时间过滤不严导致扫描全表造成性能/成本风险",
+            "2": "语气冷冰冰，仅抛出 SQL 结果",
+            "3": "语气正常，符合助理角色",
+            "4": "语气专业，从业务高峰角度提醒关注系统负载",
+            "5": "回复极具洞察力，主动提出关于午高峰扩容或资源预热的专业建议"
+          },
+          "evidence_to_look_for": [
+            "是否对系统负载情况有顺带的专业评估"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style",
+          "intent": "可视化呈现",
+          "definition": "使用时序数据展示方式（列表或表格），让高峰趋势一目了然。",
+          "levels": {
+            "1": "仅输出单一行总计数字",
+            "2": "输出了一长串未经整理的 JSON 日志",
+            "3": "使用了分行展示时间点数据",
+            "4": "使用了表格展示时间段与对应的日志量",
+            "5": "使用了 Markdown 表格，并用符号或加粗标出了流量峰值行"
+          },
+          "evidence_to_look_for": [
+            "表格中是否有趋势标识"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_or_rule_based",
+        "rules": [
+          "若时间窗口未限制在 10:00-14:00 绝对值，总分不得超过 2",
+          "若未识别出具体的峰值时间，C2 不得超过 3"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点核查 SQL 的时间过滤条件是否使用了绝对时间（而非相对时间），以及是否通过聚合函数展示了时间维度的分布曲线。",
+      "anti_bias_tests": [
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "分数稳定"
+        }
+      ]
+    }
+- Input: d.qq.com-clb-prod和d.qq.com-gateway-apisix过去1小时的请求量对比,用JOIN把两个Topic关联起来看
+  ExpectedOutput: d.qq.com-clb-prod和d.qq.com-gateway-apisix过去1小时请求量对比：CLB总2,347条、APISIX总2,294条，差距2.3%。按5分钟粒度对比明细，提供了13个时间窗口的对比表格。说明CLS不支持跨Topic JOIN，采用分别查询后本地对齐合并的等效实现。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case29_CrossTopicJoin_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Strategy & Correctness",
+          "intent": "评估跨 Topic 关联对比的策略正确性",
+          "definition": "Agent 必须识别 CLS 不支持跨 Topic 直接 JOIN 的引擎限制，并采取‘分别检索 + 逻辑合并’的策略。",
+          "levels": {
+            "1": "盲目构造 JOIN 语法（CLS 不支持），或仅查询了一个 Topic 而忽略了对比需求",
+            "2": "虽然尝试对比，但直接在 SQL 层面写 JOIN 导致无法运行，且未给出替代方案",
+            "3": "意识到了引擎限制，分别查询了两个 Topic，但数据对齐逻辑混乱（如时间粒度不一致）",
+            "4": "分别查询两个 Topic，并在回复中通过本地计算完成了请求量对比，TopicId 映射准确",
+            "5": "策略完美：主动说明 CLS 暂不支持 JOIN，通过两次分时统计查询获取数据，并在回复中以口语化方式解读了对比差异"
+          },
+          "evidence_to_look_for": [
+            "工具调用序列中是否包含两次 SearchLog",
+            "回复中是否包含对 CLS 限制的风险提示"
+          ],
+          "common_failure_modes": [
+            "臆造 JOIN 语法",
+            "TopicId 写反"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Insight & Spoken Language",
+          "intent": "评估口语化业务解读的深度",
+          "definition": "对比结果必须使用‘说人话’的业务语言解读，包含现状、对比和趋势，而非仅展示表格。",
+          "levels": {
+            "1": "只展示了表格数据，完全没有解读文字",
+            "2": "解读文字仅是复述数字（如：CLB 是 2347 条，APISIX 是 2294 条）",
+            "3": "给出了简单的业务结论（如：两个服务请求量差距不大）",
+            "4": "使用了口语化转换（如：两者差距仅 2% 左右，流量在网关和负载均衡间传递平稳）",
+            "5": "深度洞察：不仅对比了总量，还指出了差异可能来自网关的心跳或聚合逻辑，表达生动易懂"
+          },
+          "evidence_to_look_for": [
+            "回复中是否使用了‘每...就...’、‘是...的 N 倍’等口语化句式"
+          ],
+          "common_failure_modes": [
+            "机械复述表格数值"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "处理 SQL 引擎局限性的合规性",
+          "definition": "若系统不支持跨 Topic JOIN，Agent 必须如实告知而非编造 SQL。必须检查 Topic 访问权限。",
+          "levels": {
+            "1": "明知系统不支持 JOIN 却编造无法运行的语句，误导用户",
+            "2": "强行执行可能导致 OOM 或超长耗时的 JOIN 查询而不加警告",
+            "3": "在执行前简单提示了多表查询的性能开销",
+            "4": "正确提示了查询约束，并给出了性能最优的关联方案",
+            "5": "不仅给出了方案，还针对 JOIN 的数据倾斜或空值处理提供了预防性建议"
+          },
+          "evidence_to_look_for": [
+            "回复中是否有关于性能或语法的提示"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style",
+          "intent": "对比呈现质量",
+          "definition": "对比数据必须通过左右排列或对比表格展现，方便运维 Leader 快速决策。",
+          "levels": {
+            "1": "数据完全散乱",
+            "2": "两段文字分别描述，无法一眼对比",
+            "3": "使用了简单的列表对比",
+            "4": "使用了对比表格，包含 [Topic A] [Topic B] [Diff] 三列",
+            "5": "表格中使用了百分比展示差异，并对异常差异（如 >10%）进行了视觉标记"
+          },
+          "evidence_to_look_for": [
+            "对比表格的设计"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（JOIN 逻辑错误 or TopicId 错误），总分上限 = 2",
+          "若未完成对比任务，总分上限 = 3"
+        ],
+        "needs_review_conditions": [
+          "查询耗时超过 10s 时，需审查 SQL 是否包含不合理的全表扫描"
+        ]
+      },
+      "judge_instructions_snippet": "核心看 JOIN 语法是否被正确运用以及 TopicId 对应关系；若环境不支持 JOIN，查看 Agent 是否提供了分步骤查询并合并的专业替代方案。"
+    }
+- Input: apigw_gz_monitor过去一天,每个pod的请求量和错误量,用LEFT JOIN看看哪些pod没有错误
+  ExpectedOutput: apigw_gz_monitor过去一天3个pod统计：monitor-0(16,822,148请求,33错误,253,442 warn)、monitor-1(15,842,890请求,5错误,0 warn)、monitor-2(254,876请求,0错误)。使用LEFT JOIN等价分析，monitor-2为无错误pod。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Agent_Case30_InstanceLevelStability_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估 Pod 级错误分析的逻辑准确性",
+          "definition": "SQL 必须按 pod 分组，并同时计算 count(*) 和 count_if(status >= 500) 或类似错误标记。对于 '哪些 pod 没有错误'，必须使用 LEFT JOIN 关联全量 pod 列表或使用 HAVING sum(is_error) = 0。",
+          "levels": {
+            "1": "SQL 未按 pod 分组，或未定义什么是 '错误'（如忽略了 HTTP 5xx）",
+            "2": "使用了 INNER JOIN 导致过滤掉了没有错误的 Pod（违反了查看 '无错误 pod' 的初衷）",
+            "3": "SQL 正确计算了错误量，但对于 '没有错误' 的 Pod 筛选逻辑不够直接（如让用户自己从表里找）",
+            "4": "SQL 逻辑严密，正确使用了 LEFT JOIN 或聚合过滤，展示了所有 Pod 的状态",
+            "5": "SQL 高效，不仅区分了有无错误，还按错误率进行了降序排列，重点突出"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否包含 GROUP BY pod",
+            "是否包含了 status 字段的判断（如 status >= 400 或 status >= 500）",
+            "是否体现了 'LEFT JOIN' 或 'HAVING sum(...) = 0' 的逻辑"
+          ],
+          "common_failure_modes": [
+            "只查了有错误的 pod，导致漏掉了用户要求的 '没有错误' 的 pod 观察"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "评估 Pod 覆盖面",
+          "definition": "输出必须涵盖：每个 Pod 的总请求量、错误量、以及明确列出哪些 Pod 是 0 错误的。",
+          "levels": {
+            "1": "只给出了总数，未下钻到 Pod 维度",
+            "2": "只列出了部分有问题的 Pod",
+            "3": "列出了所有 Pod 但未区分错误量，或未统计总请求量",
+            "4": "完整覆盖了 Pod 维度统计和无错误 Pod 列表",
+            "5": "在覆盖基础上，计算了每个 Pod 的错误率（Error Rate），并识别了异常 Pod"
+          },
+          "evidence_to_look_for": [
+            "输出中是否有一节专门列出 '无错误 Pod'"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "应用 SRE 人设",
+          "definition": "符合 SRE 稳定性优先的特质，关注错误分布是否集中在特定 Pod（判断是否为单实例故障）。",
+          "levels": {
+            "1": "SQL 执行计划及其低效（如在极大数据量上做无索引 JOIN）",
+            "2": "语气随意，未意识到错误 Pod 的严重性",
+            "3": "语气专业，提供了数据展示",
+            "4": "展现 SRE 洞察，主动分析错误是否集中（如：Pod-A 贡献了 90% 错误）",
+            "5": "提供完整的故障排查建议（如：建议重启异常 Pod-A，因其错误率远高于均值）"
+          },
+          "evidence_to_look_for": [
+            "是否对错误 Pod 进行了根因初步分析的尝试"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Clarity / Style",
+          "intent": "呈现质量",
+          "definition": "表格必须包含 Pod 名称、请求总数、错误数、错误率。",
+          "levels": {
+            "1": "无表格，纯文本堆砌",
+            "2": "表格缺少关键列（如只有错误数没有总数）",
+            "3": "表格结构完整",
+            "4": "表格清晰，并对 0 错误的行进行了绿色标记或特殊说明",
+            "5": "表格极佳，包含进度条式的错误率可视化，一眼定位故障 Pod"
+          },
+          "evidence_to_look_for": [
+            "Markdown 表格的完整性和可读性"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (SQL 无法查出无错误 Pod)，总分上限 = 2",
+          "若未对 Pod 进行分组统计，总分上限 = 1"
+        ],
+        "needs_review_conditions": [
+          "当 Pod 数量超过 100 时，审查 Agent 是否做了 TOP N 过滤或分页处理"
+        ]
+      },
+      "judge_instructions_snippet": "重点检查 SQL 是否实现了用户要求的 LEFT JOIN 或 0 错误筛选逻辑；确保错误定义（HTTP Status）符合常规 SRE 标准。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结果一致"
+        }
+      ]
+    }
+- Input: cfw_ids_event_white_common过去一周,帮我算下告警数量的P50、P95、P99分位数,看看分布情况
+  ExpectedOutput: cfw_ids_event_white_common过去一周按天统计告警量分位数：P50=4,841,646条/天、P95=P99=5,314,536条/天、均值4,208,019、最小值212,939（今日截断）。每日明细表格，分布集中，无异常峰值。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_31_Percentile_Distribution_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足(SQL语法错误或逻辑根本不对); 3=基本满足(逻辑正确但细节或格式欠缺); 5=完美执行(逻辑严密、满足SRE专业性)"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估查询逻辑是否符合“对告警数量求分位数”的要求",
+          "definition": "必须包含两层逻辑：1. 按时间窗口（如 bin）聚合 count；2. 对聚合后的 count 使用 approx_percentile 函数。直接对 count(*) 求分位数在 CLS 语法中是不合逻辑或无效的。",
+          "levels": {
+            "1": "直接对原始日志使用 approx_percentile(count(*)), 或未识别出需要先按时间分组, SQL语法错误。",
+            "2": "识别了分位数需求, 但未使用 approx_percentile 函数, 或时间范围参数（过去一周）设置错误。",
+            "3": "逻辑基本正确, 使用了子查询或嵌套聚合, 但 SQL 语法有细微瑕疵, 导致无法直接运行。",
+            "4": "SQL 语法完全正确, 逻辑清晰（先聚合 count 再求 P50/95/99）, 时间范围准确。",
+            "5": "在 4 的基础上, 主动选择了合理的时间粒度（如 bin(__TIMESTAMP__, 1h)）并解释了聚合逻辑, 符合 SRE 最佳实践。"
+          },
+          "evidence_to_look_for": [
+            "是否包含子查询 `from (select count(*) as cnt ... group by bin(...))`",
+            "是否正确使用 `approx_percentile(cnt, 0.5)` 等函数",
+            "时间参数是否为 7d 或从当前时间回溯一周"
+          ],
+          "common_failure_modes": [
+            "逻辑错误：直接对每一条日志求分位数而非对“数量”求分位数",
+            "语法错误：在没有 group by 的情况下直接在 select 理由使用聚合后的聚合"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保涵盖了所有请求的指标",
+          "definition": "必须同时提供 P50, P95, P99 三个指标, 缺一不可。",
+          "levels": {
+            "1": "未提供任何分位数指标",
+            "3": "提供了部分指标（如只给了 P50 和 P99）, 遗漏了关键项",
+            "5": "完整准确地提供了 P50, P95, P99 三个分位数"
+          },
+          "evidence_to_look_for": [
+            "检查 SQL 或回复中是否明确出现了 0.5, 0.95, 0.99 三个分位点"
+          ],
+          "common_failure_modes": [
+            "漏掉 P95, 这是 SRE 监控中最常用的指标"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "确保查询安全且符合只读原则",
+          "definition": "查询必须在指定的日志主题范围内, 不包含删改操作, 且查询语句不包含敏感信息泄露风险。",
+          "levels": {
+            "1": "尝试执行非查询类命令, 或查询了不相关的 Topic",
+            "3": "查询 Topic 正确, 但未对查询消耗进行初步预估（虽然 CLS 默认只读, 但大范围全量查询有风险）",
+            "5": "精准锁定 `cfw_ids_event_white_common` 对应的 TopicID, 查询语句安全合规"
+          },
+          "evidence_to_look_for": [
+            "是否通过检索工具确定了 TopicID 而非硬编码",
+            "查询是否仅限于 select 语句"
+          ],
+          "common_failure_modes": [
+            "未先获取 TopicID 就开始构造查询"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保提供的 SQL 语法是 CLS 真实支持的",
+          "definition": "函数名必须为 `approx_percentile`, 不能误用其他引擎（如 MySQL/Hive）的非标准分位数函数。",
+          "levels": {
+            "1": "使用了 CLS 不支持的函数名（如 `percentile_approx` 或 `median`）",
+            "3": "使用了正确函数, 但参数顺序错误（CLS 要求字段在前, 分位值在后）",
+            "5": "完全符合腾讯云 CLS SQL 语法规范"
+          },
+          "evidence_to_look_for": [
+            "函数签名是否为 `approx_percentile(column, percentage)`"
+          ],
+          "common_failure_modes": [
+            "参数顺序反了：`approx_percentile(0.95, cnt)`"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "评估回复的专业性和结果的可读性",
+          "definition": "输出应包含查询结果的专业解读, 使用 SRE 术语, 并提供进一步分析的建议。",
+          "levels": {
+            "1": "只给出一个分数或一段难懂的 JSON, 无解释",
+            "3": "给出了数据, 但排版混乱, 未说明数据代表的含义",
+            "5": "结果以表格或结构化文本呈现, 清晰标注了各分位数含义, 并简要评价了分布情况（如：P99 远高于 P95 表明存在严重尾部告警堆积）"
+          },
+          "evidence_to_look_for": [
+            "结果是否有对“分布情况”的描述性分析",
+            "是否使用了 Markdown 表格或代码块"
+          ],
+          "common_failure_modes": [
+            "机械回复数值, 完全不回应“看看分布情况”的软性需求"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (SQL 逻辑错误), 则总分上限 = 2",
+          "若 C4 <= 2 (语法不符合 CLS 规范), 则总分上限 = 3",
+          "若未获取 TopicID 导致查询失败, 总分上限 = 2"
+        ],
+        "needs_review_conditions": [
+          "Agent 无法找到 cfw_ids_event_white_common 对应的 TopicID",
+          "返回的分数值在逻辑上异常（如 P50 > P95）"
+        ]
+      },
+      "judge_instructions_snippet": "请严格对照 CLS 语法手册, 检查 approx_percentile 的参数顺序 and 嵌套聚合逻辑。忽略回复的长短, 重点关注 SQL 语句的生产可用性。先判定 C1-C4 的硬正确性, 再评估 C5 的分析深度。"
+    }
+- Input: waf日志(topic:e0260d49-d2ca-42cc-ae9a-1a99f15204bb)过去12小时,请求耗时的P90和P99分别是多少,看看尾部延迟
+  ExpectedOutput: waf日志过去12小时（22,157条）P90=9ms、P99=44ms，平均9.3ms。按小时趋势表格，夜间21:00-01:00 P99有规律性抬升至50-57ms。发现chatrobot2.xoyo.com单次超时50s、m.pvp.xoyo.com:18048三次超17s的高耗时接口。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_32_WAF_Latency_P99_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=失败; 3=合格; 5=专业且精准"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估对原始字段求分位数的正确性",
+          "definition": "不同于 Case 31，此任务是对日志中的指标字段（latency）直接求分位数。关键点在于：1. 使用指定的 TopicID；2. 识别出正确的延迟字段；3. 正确使用 approx_percentile。",
+          "levels": {
+            "1": "未使用指定的 TopicID (e0260d49-...), 或使用了 count(*) 而非延迟字段求分位数",
+            "2": "使用了正确的 TopicID, 但字段名猜测错误（如 WAF 日志中没有 latency 字段却使用了该名）, 且未尝试通过 get_fields 核实",
+            "3": "使用了正确的 TopicID 和常见的 WAF 延迟字段（如 `upstream_response_time`）, SQL 逻辑基本正确",
+            "4": "SQL 完全正确, 使用了 `approx_percentile(field, 0.9)`, 时间范围 12h 准确",
+            "5": "在 4 的基础上, 执行了 get_fields 确认字段存在, 或对 P90/P99 差值进行了 SRE 维度的“尾部延迟”专业解读"
+          },
+          "evidence_to_look_for": [
+            "查询语句中是否出现了 `e0260d49-d2ca-42cc-ae9a-1a99f15204bb`",
+            "字段是否为 WAF 标准字段（upstream_response_time, request_time 等）",
+            "分位值参数是否为 0.9 和 0.99"
+          ],
+          "common_failure_modes": [
+            "死记硬背 Case 31 的嵌套聚合逻辑, 导致在计算字段分位数时多此一举做了一次 count 聚合"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "指标完整性",
+          "definition": "必须涵盖 P90 和 P99 两个指标。",
+          "levels": {
+            "1": "遗漏任一指标",
+            "5": "P90 和 P99 均有体现"
+          },
+          "evidence_to_look_for": [
+            "SQL select 子句中的百分比参数"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "合规性",
+          "definition": "必须严格使用 Input 中提供的 Topic ID, 不得自行检索其他主题。",
+          "levels": {
+            "1": "忽略了指定的 Topic ID, 自作聪明检索了其他 WAF 主题",
+            "5": "全程基于指定的 Topic ID 操作"
+          },
+          "evidence_to_look_for": [
+            "Tool Call 中的 topic_id 参数"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "SQL 准确性",
+          "definition": "approx_percentile 函数使用符合 CLS 规范。",
+          "levels": {
+            "1": "函数名或语法错误",
+            "5": "函数签名完全准确"
+          },
+          "evidence_to_look_for": [
+            "approx_percentile(latency_field, 0.99)"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "SRE 尾部延迟分析",
+          "definition": "是否回应了“看看尾部延迟”的分析请求。",
+          "levels": {
+            "1": "未分析尾部延迟",
+            "3": "简单对比了 P90 和 P99",
+            "5": "通过 P99 远大于 P90 识别出长尾请求, 并给出了排障建议（如检查后端超时设置）"
+          },
+          "evidence_to_look_for": [
+            "回复中是否包含对“尾部延迟”现象的文字总结"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未利用指定的 TopicID, 总分上限 = 1",
+          "若延迟字段选择明显错误（如用 bytes 字段算 latency）, 总分上限 = 2"
+        ],
+        "needs_review_conditions": [
+          "Agent 在字段确认阶段因 API 错误导致失败"
+        ]
+      },
+      "judge_instructions_snippet": "重点检查 Topic ID 是否匹配, 以及是否正确识别了 WAF 日志中的耗时字段。对于 SRE 而言, P99 的准确性至关重要。"
+    }
+
+- Input: ahids_suricata_prod最近3天的告警,src_ip主要来自哪些国家,帮我统计下
+  ExpectedOutput: ahids_suricata_prod最近3天（1,109,046条）src_ip国家归属：中国大陆约96.8%（腾讯云43.140.x.x段、公共DNS等）、美国约0.4%、新加坡约0.2%、中国台湾约0.2%、荷兰、巴勒斯坦等。关键发现：告警高度集中于内部IP，可能为DNS Beacon规则误报。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_33_IP_Geo_Stats_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=失败; 3=合格; 5=专业且精准"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "评估 IP 地理位置映射逻辑",
+          "definition": "核心是使用 CLS 内置的地理位置函数 `ip_to_country`（或相似函数如 `ip_to_province` 根据需求，此处明确要求国家）对 `src_ip` 字段进行转换并聚合。",
+          "levels": {
+            "1": "未进行地理位置转换，仅按 IP 聚合，或 SQL 语法完全错误",
+            "2": "识别了需求，但使用了非 CLS 标准函数（如 `get_geo`），或未包含 `group by` 逻辑",
+            "3": "使用了 `ip_to_country(src_ip)`，逻辑正确，但未进行降序排序导致“主要来自”难以识别",
+            "4": "SQL 完全正确：`select ip_to_country(src_ip) as country, count(*) as cnt group by country order by cnt desc`，时间范围 3d 准确",
+            "5": "在 4 的基础上, 主动处理了 IP 库可能返回空值或‘内网IP’的情况，结果展示清晰"
+          },
+          "evidence_to_look_for": [
+            "SQL 中必须出现 `ip_to_country` 函数",
+            "必须包含 `group by` 和 `order by ... desc` 逻辑",
+            "时间范围是否设置为 3d"
+          ],
+          "common_failure_modes": [
+            "只统计了 IP 数量而没有映射到国家",
+            "没有排序，导致用户无法一眼看出“主要来自哪些国家”"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "统计覆盖面",
+          "definition": "必须涵盖所有 src_ip 对应的国家分布。",
+          "levels": {
+            "1": "无统计结果",
+            "5": "提供了完整的国家分布列表（或 Top N 列表）"
+          },
+          "evidence_to_look_for": [
+            "结果中是否包含国家名称及其对应的次数"
+          ],
+          "common_failure_modes": [],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "合规性",
+          "definition": "查询必须在 `ahids_suricata_prod` 范围内，且无越权。",
+          "levels": {
+            "1": "未检索 Topic 权限直接报错",
+            "5": "正确解析日志集/主题并执行查询"
+          },
+          "evidence_to_look_for": [
+            "TopicID 获取流程是否规范"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "函数准确性",
+          "definition": "必须使用 CLS 官方支持的 `ip_to_country` 函数。",
+          "levels": {
+            "1": "误用 MySQL 风格或自定义函数名",
+            "5": "函数用法完全符合腾讯云文档"
+          },
+          "evidence_to_look_for": [
+            "ip_to_country(src_ip)"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "分析深度",
+          "definition": "对统计结果进行安全维度分析。",
+          "levels": {
+            "1": "无分析",
+            "3": "简单列出国家列表",
+            "5": "指出了异常流量来源（如：发现大量来自某非业务国家的告警），建议检查 Suricata 规则"
+          },
+          "evidence_to_look_for": [
+            "是否使用了“攻击来源”、“地理分布”等 SRE/Security 专业术语"
+          ],
+          "weight_optional": 0.5
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未使用地理位置转换函数，总分上限 = 2",
+          "若未对结果进行排序，总分上限 = 3"
+        ],
+        "needs_review_conditions": [
+          "查询结果显示所有 IP 均为未知（需核查日志字段是否包含有效公网 IP）"
+        ]
+      },
+      "judge_instructions_snippet": "验证 SQL 中是否使用了 ip_to_country，并检查是否有排序逻辑。注意：Suricata 日志通常很大，检查时间范围是否严格限制在 3 天内。"
+    }
+- Input: cfw_ids_event_white_common过去一周,攻击者的src_ip主要分布在哪些省份,帮我统计下
+  ExpectedOutput: cfw_ids_event_white_common过去一周src_ip省份分布（ip_to_province函数）：浙江(5,465,496)、北京(5,367,887)、广东(3,484,475)、上海(2,592,773)、法国Ile-de-France(1,832,709)、湖北(1,180,076)等Top20。国内攻击来源集中于经济发达省市，境外有法国、荷兰、日本等。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_34_Province_Stats_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重错误; 3=基本可用但有瑕疵; 5=精准且符合SOP"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保SQL语法正确，且使用了关键的地理位置函数和正确的时间范围",
+          "definition": "判定SQL是否包含 ip_to_province(src_ip)，时间范围是否设置为 1w，以及 GROUP BY 逻辑是否正确",
+          "levels": {
+            "1": "SQL语法错误，或完全未使用 ip_to_province 函数",
+            "2": "使用了函数但参数错误（如拼错字段名），或时间范围严重不符",
+            "3": "SQL基本正确，但未包含聚合逻辑（如缺失 COUNT(*)），或时间范围微调有误（如用了 7d 没用 1w）",
+            "4": "SQL逻辑正确，包含分组统计，时间范围准确",
+            "5": "SQL完美符合需求：SELECT ip_to_province(src_ip) as province, count(*) as count ... GROUP BY province ORDER BY count DESC"
+          },
+          "evidence_to_look_for": [
+            "是否出现 ip_to_province 函数",
+            "时间范围（range/timerange）是否为过去一周",
+            "是否有 GROUP BY 和聚合函数"
+          ],
+          "common_failure_modes": [
+            "漏写 GROUP BY 导致无法统计",
+            "将 src_ip 误写为其他字段",
+            "未进行降序排列（虽非强制但属优选）"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保回复涵盖了所有用户诉求",
+          "definition": "回复是否不仅提供了SQL，还解释了统计逻辑，并确认了统计的目标是“省份分布”",
+          "levels": {
+            "1": "完全未提及省份分布统计",
+            "3": "提供了SQL，但未解释查询逻辑",
+            "5": "完整提供SQL并清晰告知用户：将通过ip_to_province将IP转为省份并进行计数汇总"
+          },
+          "evidence_to_look_for": [
+            "文本说明中是否提及“攻击者IP分布”"
+          ],
+          "common_failure_modes": [
+            "只给SQL不给任何说明文字"
+          ]
+        },
+        {
+          "id": "C3",
+          "name": "Clarity / Style",
+          "intent": "回复的结构化程度",
+          "definition": "SQL是否放在代码块中，解释是否简洁",
+          "levels": {
+            "1": "文字混乱，SQL未加格式化",
+            "3": "有代码块，但解释过于冗长",
+            "5": "代码块清晰，解释精炼，符合App Ops角色风格"
+          },
+          "evidence_to_look_for": [
+            "Markdown 代码块使用",
+            "信息密度"
+          ],
+          "common_failure_modes": [
+            "回复过于花哨（加分项误区）"
+          ]
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（SQL关键函数缺失或逻辑错误），则总分上限=2",
+          "若时间范围不是过去一周，C1 扣分"
+        ],
+        "needs_review_conditions": [
+          "SQL使用了非标准函数名"
+        ]
+      },
+      "judge_instructions_snippet": "优先检查 SQL 中是否包含 ip_to_province 且 group by 逻辑正确。忽略回答的长短，只看 SQL 的功能实现。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结论应保持一致"
+        }
+      ]
+    }
+- Input: cfw_ids_event_white_common最近一天有没有来自内网网段10.0.0.0/8的攻击事件
+  ExpectedOutput: cfw_ids_event_white_common最近24小时（5,363,917条）：来自10.0.0.0/8内网网段的攻击事件为0条。使用is_subnet_of函数和关键词检索双重验证，两种方式均无命中，结果相互印证。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_35_CIDR_Check_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=关键逻辑错误; 3=基本满足; 5=完全符合SOP"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证 CIDR 检查函数的使用及参数顺序",
+          "definition": "判定是否使用 is_subnet_of('10.0.0.0/8', src_ip)，特别注意参数顺序必须是 (CIDR, IP)",
+          "levels": {
+            "1": "未使用 is_subnet_of，或语法完全错误",
+            "2": "参数顺序颠倒（写成了 is_subnet_of(src_ip, '10.0.0.0/8')）",
+            "3": "函数和顺序正确，但时间范围不是“最近一天”",
+            "4": "逻辑完全正确，包含 WHERE 子句过滤",
+            "5": "精准实现：WHERE is_subnet_of('10.0.0.0/8', src_ip)，且时间范围为 1d"
+          },
+          "evidence_to_look_for": [
+            "is_subnet_of 函数名",
+            "参数顺序：'10.0.0.0/8' 在前，字段名在后",
+            "时间范围为 1d"
+          ],
+          "common_failure_modes": [
+            "参数顺序写反（常见错误）",
+            "使用了错误的函数如 ip_match"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "回答是否存在攻击事件",
+          "definition": "Agent 是否明确告知用户这是一个过滤查询，用于寻找符合条件的日志",
+          "levels": {
+            "1": "未针对内网攻击进行说明",
+            "5": "明确告知用户：将通过 SQL 过滤最近一天源 IP 属于 10.0.0.0/8 的事件"
+          },
+          "evidence_to_look_for": [
+            "是否对“内网网段”有对应逻辑说明"
+          ],
+          "common_failure_modes": []
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若参数顺序颠倒，C1 降至 2 分，总分上限为 2",
+          "若时间范围错误，C1 扣 1 分"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "重点检查 is_subnet_of 的参数顺序。这是 CLS SQL 的硬性语法要求，顺序错误将导致执行失败。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结果一致"
+        }
+      ]
+    }
+- Input: redis(TopicID:d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)最近一天,帮我把不同region和instance_id组成一个数组看看
+  ExpectedOutput: redis最近一天，instance_id总量约21,941个（6个region），数据量过大无法全部枚举成数组。提供了各region的instance数量概况（guangzhou约7,083、shanghai约5,656等），并请用户确认具体需求（特定region或范围）。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_36_Array_Agg_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=语法或核心逻辑错误; 3=基本满足; 5=符合SRE专业性"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证数组聚合函数及 TopicID 的使用",
+          "definition": "判定是否使用 ARRAY_AGG，是否包含 DISTINCT 去重，以及是否在 TopicID 指定的范围内查询",
+          "levels": {
+            "1": "未指定 TopicID，或未使用 ARRAY_AGG",
+            "2": "使用了 ARRAY_AGG 但缺少 DISTINCT，导致结果包含大量重复",
+            "3": "TopicID 和函数正确，但字段拼接逻辑有误（如未将 region 和 instance_id 组合）",
+            "4": "逻辑正确，包含 TopicID 锁定、DISTINCT 和 1d 时间范围",
+            "5": "专业实现：SELECT ARRAY_AGG(DISTINCT concat(region, ':', instance_id)) FROM log ... 且 TopicID 准确"
+          },
+          "evidence_to_look_for": [
+            "ARRAY_AGG(DISTINCT ...)",
+            "TopicID: d036bd9c-6a9d-4567-8d3b-a1d93a452dc9",
+            "concat 函数用于组合字段"
+          ],
+          "common_failure_modes": [
+            "漏写 DISTINCT 导致数组冗余",
+            "TopicID 复制错误",
+            "未进行 concat 拼接直接传了两个参数给 ARRAY_AGG"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "满足 SRE 角色的数组查看需求",
+          "definition": "是否提供了简洁的数组预览 SQL，并解释了这是 region 和 instance_id 的唯一组合",
+          "levels": {
+            "1": "未回应组合成数组的需求",
+            "5": "不仅提供 SQL，还明确说明是“不同 region 和 instance_id 的唯一组合数组”"
+          },
+          "evidence_to_look_for": [
+            "对数组输出形式的说明"
+          ],
+          "common_failure_modes": []
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若缺失 TopicID 或 ID 错误，C1 上限为 2",
+          "若 ARRAY_AGG 缺失 DISTINCT，C1 扣 1 分"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "检查 TopicID 的准确性和 ARRAY_AGG 内是否包含 DISTINCT。对于 SRE 任务，去重是关键素质。",
+      "anti_bias_tests": [
+        {
+          "test": "shuffle_rubric_order",
+          "expectation": "稳定给分"
+        }
+      ]
+    }
+- Input: d.qq.com-clb-prod过去1小时,把响应时间向上向下取整看看分布
+  ExpectedOutput: d.qq.com-clb-prod过去1小时（2,327条）响应时间取整分布：0s档(floor=0,<1s)1,991条(85.6%)，60s档异常聚集101条（疑似60s超时触发），100-200s段96条，3300-3900s超长请求12条。ceil=0(严格等于0s)224条说明缓存命中，提供了建议排查方向。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case_37_Rounding_Distribution_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=函数错误; 3=基本实现; 5=完美分布分析"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "验证取整函数及分布统计逻辑",
+          "definition": "判定是否使用了 CEIL 和 FLOOR 函数，并进行对应的 GROUP BY 统计",
+          "levels": {
+            "1": "未使用 CEIL/FLOOR 或 SQL 语法错误",
+            "2": "只用了其中一个函数，或参数错误",
+            "3": "使用了函数但未进行 GROUP BY（无法看分布），或时间范围不是 1h",
+            "4": "逻辑正确，包含取整和计数统计",
+            "5": "完美实现：分别对 CEIL(resp_time) 和 FLOOR(resp_time) 进行分组计数并排序"
+          },
+          "evidence_to_look_for": [
+            "CEIL 函数",
+            "FLOOR 函数",
+            "GROUP BY 统计分布",
+            "时间范围 1h"
+          ],
+          "common_failure_modes": [
+            "用 round 替代了 ceil/floor（不符合显式要求）",
+            "未指定统计分布所需的聚合函数"
+          ]
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "响应时间字段的准确性",
+          "definition": "是否使用了合理的响应时间字段名（如 resp_time, request_time）",
+          "levels": {
+            "1": "字段名完全臆造（如 aaaa）",
+            "5": "使用了常见的 CLB 响应时间字段名"
+          },
+          "evidence_to_look_for": [
+            "字段名是否符合日志特征"
+          ],
+          "common_failure_modes": []
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average",
+        "rules": [
+          "若 CEIL/FLOOR 缺失任一，C1 最高 3 分",
+          "若未体现分布统计（缺少 count+group by），C1 最高 2 分"
+        ],
+        "needs_review_conditions": []
+      },
+      "judge_instructions_snippet": "检查 SQL 是否同时包含 CEIL 和 FLOOR，并且具有 GROUP BY 逻辑以观察“分布”。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "结论一致"
+        }
+      ]
+    }
+- Input: redis(TopicID:d036bd9c-6a9d-4567-8d3b-a1d93a452dc9)过去一周的日志量,帮我算个对数值看看趋势
+  ExpectedOutput: redis过去7天日志量+log10对数值：02-18(1034亿,log10=11.0147)至02-24(1065亿,log10=11.0276)，峰值02-22(1074亿,11.0312)。整体稳定，02-21起小幅上升约4%，log10值域极窄(11.0146~11.0312)，无断崖式异常。
+  Judge: |-
+    {
+      "rubric_name": "CLSLogAgent_Case38_LogTrend_Rubric",
+      "version": "1.0",
+      "scale": {
+        "type": "1-5",
+        "meaning": "1=严重不满足; 3=基本满足但有缺陷; 5=完全满足且高质量"
+      },
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "intent": "确保 CLS SQL 语法及 TopicID 使用准确",
+          "definition": "SQL 必须包含对日志量进行对数处理（LOG/LOG10/LN）的逻辑，并使用 histogram 进行趋势统计。TopicID 必须与输入一致。",
+          "levels": {
+            "1": "SQL 语法错误，或完全未使用对数函数，或 TopicID 错误",
+            "2": "SQL 逻辑有误，对数处理位置不对（如对原始时间而非 count 结果取对数）",
+            "3": "SQL 正确，但 histogram 粒度设置不合理（如一周数据按分钟聚合），导致趋势不可见",
+            "4": "SQL 准确，对数处理正确，TopicID 正确，使用了合理的聚合粒度",
+            "5": "SQL 完美，涵盖了对数趋势的核心逻辑，且包含了对空值的处理或排序逻辑"
+          },
+          "evidence_to_look_for": [
+            "SQL 中是否存在 `LOG10(count(*))` 或类似对数计算",
+            "是否使用了 `histogram(__TIMESTAMP__, '...')` 函数",
+            "TopicID 是否为 d036bd9c-6a9d-4567-8d3b-a1d93a452dc9"
+          ],
+          "common_failure_modes": [
+            "混淆了 LOG（自然对数）和 LOG10（常用对数）",
+            "未进行分组聚合导致无法查看趋势"
+          ],
+          "weight_optional": 1.5
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "intent": "确保覆盖了“一周”和“趋势分析”的需求",
+          "definition": "查询范围必须锁定在过去 7 天，且输出需包含对趋势的简要解读",
+          "levels": {
+            "1": "时间范围错误或未提及趋势",
+            "3": "时间范围正确，但输出仅有 SQL 语句，无任何趋势说明",
+            "5": "时间范围准确，且在给出 SQL 的同时解释了对数变换对观察长尾趋势的意义"
+          },
+          "evidence_to_look_for": [
+            "查询参数中时间范围是否设为 7d 或相应时间戳",
+            "回复中是否包含对‘对数值看趋势’这一特殊要求的响应"
+          ],
+          "common_failure_modes": [
+            "默认查询最近 15 分钟",
+            "未解释为何要使用对数看趋势"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C3",
+          "name": "Safety / Policy",
+          "intent": "遵守数据查询安全约束",
+          "definition": "不暴露非必要的敏感信息，SQL 构造无注入风险，TopicID 调用合规",
+          "levels": {
+            "1": "尝试绕过 TopicID 限制查询全局，或包含注入字符",
+            "5": "完全符合腾讯云 CLS 查询安全规范"
+          },
+          "evidence_to_look_for": [
+            "SQL 是否严格限制在指定的 TopicID 内"
+          ],
+          "common_failure_modes": [
+            "SQL 拼写错误导致权限拒绝"
+          ],
+          "weight_optional": 0.5
+        },
+        {
+          "id": "C4",
+          "name": "Factuality / Verifiability",
+          "intent": "确保使用的函数在 CLS 环境中存在且合法",
+          "definition": "引用的数学函数（如 LOG10）必须是 CLS 分析 SQL 支持的标准函数",
+          "levels": {
+            "1": "使用了 CLS 不支持的自定义函数（如幻觉出的 NP.LOG）",
+            "5": "使用了标准 CLS SQL 数学函数"
+          },
+          "evidence_to_look_for": [
+            "参考 CLS 文档中关于分析函数的定义"
+          ],
+          "common_failure_modes": [
+            "误用其他数据库（如 MySQL）的特定方言函数"
+          ],
+          "weight_optional": 1.0
+        },
+        {
+          "id": "C5",
+          "name": "Clarity / Style",
+          "intent": "响应格式是否符合 SRE 专家画像",
+          "definition": "回复结构化，SQL 代码块清晰，解释专业且简洁",
+          "levels": {
+            "1": "回复混乱，SQL 混在正文中",
+            "5": "采用 Markdown 格式，区分查询语句与分析建议，展现专业 SRE 水准"
+          },
+          "evidence_to_look_for": [
+            "是否有 Markdown 代码块包裹 SQL",
+            "是否解释了查询结果的含义"
+          ],
+          "common_failure_modes": [
+            "过度冗长的礼貌语，缺乏实质技术细节"
+          ],
+          "weight_optional": 1.0
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2 (SQL 错误或 TopicID 错误)，则总分上限 = 2",
+          "若 C2 < 3 (时间范围严重偏差)，则总分上限 = 3"
+        ],
+        "needs_review_conditions": [
+          "Agent 声称某函数不支持但实际上支持时",
+          "SQL 语法处于灰度测试特性时"
+        ]
+      },
+      "judge_instructions_snippet": "请优先检查 SQL 语法中对数函数（LOG10）和时间聚合（histogram）的使用。忽略回答的开场白长度，只关注 SQL 的正确性和对时间范围（一周）的严格遵守。",
+      "anti_bias_tests": [
+        {
+          "test": "swap_candidate_order",
+          "expectation": "交换回复 A 和 B 的顺序不影响对 SQL 逻辑正确性的判定"
+        }
+      ]
+    }
+- Input: d.qq.com-clb-prod过去一天,把每个server_addr的请求量和错误数做行转列统计
+  ExpectedOutput: d.qq.com-clb-prod过去一天（209,374条，3个server_addr）行转列统计：109.244.129.235(128,649条,错误率67.32%,主因安全扫描)、14.18.202.224(45,301条,12.24%)、157.148.47.200(35,423条,9.20%)。使用CASE WHEN实现行转列。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case39_Pivot_Eval",
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "levels": {
+            "1": "TopicID 错误，或未使用 CASE WHEN，或 SQL 语法存在致命错误无法运行。",
+            "2": "TopicID 正确，但行转列逻辑错误，或错误数判定标准显著错误（如只计 500）。",
+            "3": "TopicID 正确，使用了 CASE WHEN，但 SQL 结构不完整（如缺少 GROUP BY 或聚合函数）。",
+            "4": "满足所有硬约束，SQL 逻辑正确，能在 CLS 环境中执行。",
+            "5": "逻辑完美，精准实现了 server_addr 的行转列统计，包含请求量和错误数双维度。"
+          },
+          "evidence_to_look_for": [
+            "TopicId: 5ff37130-109a-4934-8c88-e9f6920f065a",
+            "SQL 包含: CASE WHEN ... THEN ... END",
+            "错误统计包含: status >= 400 或 count_if(status >= 400)",
+            "分组包含: GROUP BY server_addr"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "levels": {
+            "1": "未进行任何有效统计。",
+            "3": "按 server_addr 分组了，但只统计了一个维度（请求量或错误数）。",
+            "5": "完整覆盖所有维度，结果清晰展示了每个 server_addr 的请求与错误详情。"
+          }
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2（TopicID 错误或 SQL 逻辑违反硬约束），则总分上限 = 2"
+        ]
+      },
+      "judge_instructions_snippet": "按 C1-C2 顺序判定。必须首选核对 TopicID 是否为 5ff37130-109a-4934-8c88-e9f6920f065a。忽略回答的长短，只看 SQL 逻辑是否包含 CASE WHEN 和指定的统计项。"
+    }
+- Input: TopicID:e0260d49-d2ca-42cc-ae9a-1a99f15204bb过去24小时,按域名分组统计每种状态码的数量,用CASE WHEN做列统计
+  ExpectedOutput: waf日志过去24小时按域名分组CASE WHEN列统计：50个域名，faw-vw.com系列100%为status=600(WAF透传标记)，trade-api.seasunwbl.com/m.pvp.xoyo.com等有正常HTTP状态码，Top20明细表格。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case40_DomainGroup_Eval",
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "levels": {
+            "1": "TopicID 错误，或未按域名分组，或未使用 CASE WHEN 统计状态码。",
+            "2": "TopicID 正确，但分组字段错误（如按时间分组而非域名），或 SQL 语法错误。",
+            "3": "TopicID 正确，按域名分组，但状态码统计不全（如漏掉 4xx 或 5xx）。",
+            "4": "完全符合硬约束，逻辑正确，能够区分 2xx, 4xx, 5xx。",
+            "5": "完美实现，SQL 高效，对状态码的区间判定逻辑准确。"
+          },
+          "evidence_to_look_for": [
+            "TopicID: e0260d49-d2ca-42cc-ae9a-1a99f15204bb",
+            "GROUP BY host (或 domain/http_host)",
+            "CASE WHEN status = 200",
+            "CASE WHEN status >= 400 AND status < 500"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Coverage",
+          "levels": {
+            "1": "未统计状态码数量。",
+            "3": "统计了状态码，但时间范围或状态码分类不完整。",
+            "5": "覆盖了 24 小时范围，且将状态码科学地分类为 200, 4xx, 5xx 并计数。"
+          }
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若 C1 <= 2，总分上限 = 2"
+        ]
+      },
+      "judge_instructions_snippet": "重点检查 TopicID e0260d49-d2ca-42cc-ae9a-1a99f15204bb 和 GROUP BY 域名的正确性。忽略花哨的排版，只看核心 SQL 算子。"
+    }
+- Input: d.qq.com-clb-prod过去1小时,帮我看看bytes_sent字段的数据类型并转成bigint求和
+  ExpectedOutput: d.qq.com-clb-prod过去1小时（2,321条）：bytes_sent字段typeof返回bigint，已是整型无需额外转换。CAST(bytes_sent AS bigint)求和=34,058,367字节(约32.48MB)。说明了与直接sum等价，以及varchar场景的CAST用法。
+  Judge: |-
+    {
+      "rubric_name": "CLS_Log_Agent_Case41_TypeCastSum_Eval",
+      "criteria": [
+        {
+          "id": "C1",
+          "name": "Correctness & Constraints",
+          "levels": {
+            "1": "TopicID 错误，或未转型直接求和导致可能报错，或无 typeof 探测过程。",
+            "2": "TopicID 正确，但转型语法错误（如 CAST 为不支持的类型），或未进行 typeof 探测。",
+            "3": "TopicID 正确，包含了 typeof 和转型，但 SQL 结构存在缺陷（如聚合函数使用位置错误）。",
+            "4": "符合所有约束：探测类型 -> 转型为 bigint -> 求和。",
+            "5": "完美。在分析过程中先确认 typeof 结果，再给出 CAST(bytes_sent AS bigint) 并求和的 SQL，解释清晰。"
+          },
+          "evidence_to_look_for": [
+            "TopicID: 5ff37130-109a-4934-8c88-e9f6920f065a",
+            "typeof(bytes_sent)",
+            "CAST(bytes_sent AS bigint)",
+            "sum(...)"
+          ]
+        },
+        {
+          "id": "C2",
+          "name": "Factuality / Verifiability",
+          "levels": {
+            "1": "TopicID 错误且完全忽略类型转换。",
+            "3": "TopicID 正确，执行了转换但未解释为什么要 typeof。",
+            "5": "准确应用 TopicID 且体现了严谨的“探测-确认-转换”逻辑。"
+          }
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_average_with_hard_cap",
+        "rules": [
+          "若未包含 CAST 转型逻辑且 bytes_sent 在需求中明确要求转换，C1 上限 = 2",
+          "若 TopicID 错误，总分上限 = 1"
+        ]
+      },
+      "judge_instructions_snippet": "验证 TopicID 5ff37130-109a-4934-8c88-e9f6920f065a。重点看是否有 typeof 探测和 CAST(... AS bigint) 逻辑。"
+    }

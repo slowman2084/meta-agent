@@ -1,0 +1,12 @@
+{
+  "type": "skill",
+  "name": "meta-debug",
+  "description": "评估体系调试专家（Debug/Calibrate）。诊断 rubric、理想态、提示词三元组的一致性问题，输出 calibration_report.json。内部专用，不面向用户。",
+  "tools": [
+    "read",
+    "write",
+    "bash"
+  ],
+  "design_pattern": "sequential_workflow",
+  "install_to_ide": false
+}
