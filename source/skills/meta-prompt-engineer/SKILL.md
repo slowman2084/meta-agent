@@ -6,6 +6,7 @@ description: "提示词工程专家，将理想态要求转化为运用 CoT、fe
 > **调用方式**：由 meta-plan 或 meta-iterate spawn 为独立 subagent。
 > **输入**：当前提示词 + 理想态(ideal_state.md) + 诊断摘要 + changelog.md。严禁传入 ExpectedOutput。
 > **输出产物**：优化后的提示词（===PROMPT=== 标记分隔）+ changelog 条目（===CHANGELOG=== 标记分隔）
+> **Skill 优化扩展**：当优化目标是 Skill（而非 Agent）时，除了 SKILL.md 文本优化，还可以建议新增/更新 references/、scripts/、assets/ 文件。在 changelog 中标注变更范围。
 
 # meta-prompt-engineer —— 提示词工程专家
 
