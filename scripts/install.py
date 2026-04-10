@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Agent & Rules & Platform Skills 安装脚本 — 将 source/ 中的资源同步到所有 IDE 目录
+Agent & Platform Skills 安装脚本 — 将 source/ 中的资源同步到所有 IDE 目录
 
 用法:
-    ./venv/bin/python scripts/install.py                              # 安装所有（Rules + Agent + Platform Skills）
-    ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent（不安装 Rules）
+    ./venv/bin/python scripts/install.py                              # 安装所有（Agent + Skill + Platform Skills）
+    ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent
     ./venv/bin/python scripts/install.py my-agent --model gpt-4       # 指定模型（使用 prompt_gpt-4.md）
-    ./venv/bin/python scripts/install.py --rules-only                 # 仅安装 Rules
     ./venv/bin/python scripts/install.py --platform-skills            # 安装所有 Platform Skills
     ./venv/bin/python scripts/install.py --platform-skill codebuddycli  # 安装指定 Platform Skill
 """
@@ -21,12 +20,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
 AGENTS_DIR = os.path.join(PROJECT_ROOT, "source/agents")
 SKILLS_DIR = os.path.join(PROJECT_ROOT, "source/skills")
-RULES_SOURCE_DIR = os.path.join(SOURCE_DIR, "rules")
 PLATFORM_SKILLS_DIR = os.path.join(SOURCE_DIR, "platform-skills")
 PLATFORMSKILL_CREATOR_DIR = os.path.join(SOURCE_DIR, "platformskill-creator")
 
 # source/ 下不作为 Agent 安装的目录名（旧模式回退用）
-NON_AGENT_DIRS = {"rules", "platform-skills", "platformskill-creator", "hooks", "skills", "agents"}
+NON_AGENT_DIRS = {"platform-skills", "platformskill-creator", "hooks", "skills", "agents"}
 
 TOOL_MAP = {
     "cursor": {
@@ -408,126 +406,6 @@ def install_platform_skills(specific_skill=None):
     return ok, fail
 
 
-# ── Rules install ────────────────────────────────────────────────────
-
-# .mdc 格式目标（Cursor / CodeBuddy IDE / Claude Code）
-IDE_RULES_TARGETS = [".cursor/rules", ".codebuddy/rules", ".claude/rules"]
-
-
-def convert_frontmatter_for_cli(content):
-    """将 .mdc frontmatter 转换为 CodeBuddy CLI 兼容的 .md frontmatter。
-
-    CLI 差异：
-    - 不支持 description / globs 字段
-    - 支持 alwaysApply + paths
-    - alwaysApply: false 且无 paths → 规则不加载
-    因此对于按需子规则（原 alwaysApply: false），CLI 中改为 alwaysApply: true
-    让 CLI 也能正常加载。
-    """
-    if not content.startswith("---"):
-        return content
-
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return content
-
-    fm_text = parts[1]
-    body = parts[2]
-
-    # 解析 frontmatter 字段
-    fm_lines = fm_text.strip().split("\n")
-    fm = {}
-    for line in fm_lines:
-        if ":" in line:
-            key, _, val = line.partition(":")
-            fm[key.strip()] = val.strip()
-
-    # CLI frontmatter：只保留 alwaysApply 和 paths（如果原来有 globs 映射为 paths）
-    cli_fm = {}
-
-    # alwaysApply：CLI 中按需规则也设为 true（CLI 无 read_rules 工具）
-    cli_fm["alwaysApply"] = "true"
-
-    # globs → paths 映射（如果原来用了 globs 做文件匹配）
-    if fm.get("globs"):
-        cli_fm["paths"] = fm["globs"]
-
-    # enabled 字段直通
-    if "enabled" in fm:
-        cli_fm["enabled"] = fm["enabled"]
-
-    cli_fm_str = "\n".join(f"{k}: {v}" for k, v in cli_fm.items())
-    return f"---\n{cli_fm_str}\n---{body}"
-
-
-def install_rules():
-    """将 source/rules/*.mdc 分发到各 IDE 的 rules 目录。
-    
-    对 CodeBuddy 目录额外生成 .md 文件（CLI 兼容格式）。
-    """
-    if not os.path.isdir(RULES_SOURCE_DIR):
-        print("⚠️  source/rules/ 不存在，跳过规则安装")
-        return 0
-
-    rule_files = [f for f in os.listdir(RULES_SOURCE_DIR) if f.endswith(".mdc")]
-    if not rule_files:
-        print("⚠️  source/rules/ 中无 .mdc 文件，跳过规则安装")
-        return 0
-
-    print(f"📋 安装 Rules（{len(rule_files)} 个规则文件）\n")
-
-    installed = 0
-    for rule_file in sorted(rule_files):
-        src = os.path.join(RULES_SOURCE_DIR, rule_file)
-        content = read_text(src)
-
-        # 1) 安装 .mdc 到各 IDE rules 目录
-        for ide_rules_dir in IDE_RULES_TARGETS:
-            target_dir = os.path.join(PROJECT_ROOT, ide_rules_dir)
-            os.makedirs(target_dir, exist_ok=True)
-            dst = os.path.join(target_dir, rule_file)
-            shutil.copy2(src, dst)
-            print(f"  ✅ {ide_rules_dir}/{rule_file}")
-
-        # 2) 为 CodeBuddy CLI 额外生成 .md 版本（转换 frontmatter）
-        cli_dir = os.path.join(PROJECT_ROOT, ".codebuddy", "rules")
-        os.makedirs(cli_dir, exist_ok=True)
-        md_name = rule_file.replace(".mdc", ".md")
-        cli_content = convert_frontmatter_for_cli(content)
-        cli_dst = os.path.join(cli_dir, md_name)
-        write_text(cli_dst, cli_content)
-        print(f"  ✅ .codebuddy/rules/{md_name} (CLI)")
-
-        installed += 1
-        print()
-
-    print(f"  共安装 {installed} 个规则到 {len(IDE_RULES_TARGETS)} IDE 目录 + CLI .md 格式\n")
-
-    # ── 清理 IDE 目录中已过时的规则文件 ──
-    # 将 source/rules/ 中不存在的规则文件从各 IDE 目录中删除
-    source_basenames = {f.replace(".mdc", "") for f in rule_files}  # e.g. {"agent-factory", "af-test", ...}
-    stale_count = 0
-
-    for ide_rules_dir in IDE_RULES_TARGETS:
-        target_dir = os.path.join(PROJECT_ROOT, ide_rules_dir)
-        if not os.path.isdir(target_dir):
-            continue
-        for existing in os.listdir(target_dir):
-            # 跳过非规则文件
-            if not (existing.endswith(".mdc") or existing.endswith(".md")):
-                continue
-            basename = existing.replace(".mdc", "").replace(".md", "")
-            if basename not in source_basenames:
-                stale_path = os.path.join(target_dir, existing)
-                os.remove(stale_path)
-                print(f"  🗑️  删除过时规则: {ide_rules_dir}/{existing}")
-                stale_count += 1
-
-    if stale_count > 0:
-        print(f"  共清理 {stale_count} 个过时规则文件\n")
-
-    return installed
-
 
 # ── CLAUDE.md ↔ CODEBUDDY.md sync ────────────────────────────────────
 
@@ -656,7 +534,7 @@ def install_agent(agent_name, model=None):
 # ── Install one Skill ─────────────────────────────────────────────────
 
 # 安装 Skill 时排除的文件/目录（测试产物和临时文件）
-_SKIP_INSTALL = {"bak", "tmp", "testcases.yaml", "ideal_state.md", "changelog.md", ".DS_Store"}
+_SKIP_INSTALL = {"bak", "tmp", "testcases.yaml", "ideal_state.md", "changelog.md", "learnings.jsonl", "status.json", ".DS_Store"}
 
 
 def install_skill(skill_name):
@@ -692,12 +570,10 @@ def install_skill(skill_name):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Agent & Rules & Platform Skills 安装脚本")
-    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Rules + Platform Skills）")
+    parser = argparse.ArgumentParser(description="Agent & Platform Skills 安装脚本")
+    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Skill + Platform Skills）")
     parser.add_argument("--model", "-m", default=None,
                         help="指定模型（使用 prompt_[model].md，不存在时自动从 prompt.md 复制）")
-    parser.add_argument("--rules-only", action="store_true",
-                        help="仅安装 Rules，不安装 Agent")
     parser.add_argument("--platform-skills", action="store_true",
                         help="安装所有 Platform Skills 到各 IDE skills 目录")
     parser.add_argument("--platform-skill", default=None, metavar="NAME",
@@ -709,20 +585,11 @@ def main():
         install_platform_skills(specific_skill=args.platform_skill)
         return 0
 
-    # ── Rules 安装 ──
-    # 无参数运行、或 --rules-only 时安装 rules
-    if not args.agents or args.rules_only:
-        install_rules()
-
     # ── CLAUDE.md ↔ CODEBUDDY.md 同步 ──
-    # 无参数运行、或 --rules-only 时同步
-    if not args.agents or args.rules_only:
-        print("📄 同步项目全局规则\n")
+    if not args.agents:
+        print("📄 同步项目全局配置\n")
         sync_project_memory()
         print()
-
-    if args.rules_only:
-        return 0
 
     # ── Agent / Skill 安装 ──
     if args.agents:

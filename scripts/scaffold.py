@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent 脚手架脚本 — 创建 source/[AgentName]/ 完整目录结构
+Agent 脚手架脚本 — 创建 source/agents/[AgentName]/ 完整目录结构
 
 用法:
     ./venv/bin/python scripts/scaffold.py <AgentName>
@@ -11,6 +11,8 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
+from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
@@ -36,22 +38,47 @@ def scaffold(agent_name, description="", tools=None):
             f.write(f"# {agent_name} Changelog\n")
         created.append("changelog.md")
 
+    mcp = os.path.join(agent_dir, ".mcp.json")
     if not os.path.exists(mcp):
         with open(mcp, "w", encoding="utf-8") as f:
             json.dump({}, f)
             f.write("\n")
         created.append(".mcp.json")
 
+    learnings = os.path.join(agent_dir, "learnings.jsonl")
+    if not os.path.exists(learnings):
+        Path(learnings).touch()
+        created.append("learnings.jsonl")
+
     agent_json = os.path.join(agent_dir, "agent.json")
     if not os.path.exists(agent_json):
         meta = {
             "description": description or f"{agent_name} 的简要描述（请修改）",
             "tools": tools or ["read"],
+            "benefits_from": [],
         }
         with open(agent_json, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
             f.write("\n")
         created.append("agent.json")
+
+    status_file = os.path.join(agent_dir, "status.json")
+    if not os.path.exists(status_file):
+        status = {
+            "name": agent_name,
+            "type": "agent",
+            "phase": "created",
+            "last_test_score": None,
+            "baseline_score": None,
+            "iterations_completed": 0,
+            "last_activity": datetime.now().astimezone().isoformat(),
+            "active_plan": None,
+            "total_learnings": 0,
+        }
+        with open(status_file, "w", encoding="utf-8") as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        created.append("status.json")
 
     for name in created:
         print(f"  ✅ {name}")
@@ -60,7 +87,7 @@ def scaffold(agent_name, description="", tools=None):
         print("  （所有文件已存在，无需创建）")
 
     print(f"\n📂 source/agents/{agent_name}/ 脚手架完成")
-    print(f"   待手动创建：prompt.md, ideal_state.md, testcases.csv")
+    print(f"   待手动创建：prompt.md, ideal_state.md, testcases.yaml")
 
 
 PLATFORM_YAML_TEMPLATE = """\
