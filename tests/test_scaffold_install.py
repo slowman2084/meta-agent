@@ -175,3 +175,28 @@ class TestInstallNoRules:
         """NON_AGENT_DIRS 不再包含 'rules'。"""
         from install import NON_AGENT_DIRS
         assert "rules" not in NON_AGENT_DIRS
+
+
+class TestWorkflowIntegrationDocs:
+    def test_meta_plan_mentions_recover_and_sync(self):
+        content = (PROJECT_ROOT / "source" / "skills" / "meta-plan" / "SKILL.md").read_text(encoding="utf-8")
+        assert "scripts/context_tool.py recover [target_dir] --json" in content
+        assert "scripts/status_tool.py sync [target_dir]" in content
+
+    def test_meta_iterate_mentions_recover_summary_learning_and_sync(self):
+        content = (PROJECT_ROOT / "source" / "skills" / "meta-iterate" / "SKILL.md").read_text(encoding="utf-8")
+        assert "scripts/context_tool.py recover [target_dir] --json" in content
+        assert "scripts/context_tool.py summary [target_dir]" in content
+        assert "scripts/learnings_tool.py log [target_dir]" in content
+        assert "scripts/status_tool.py sync [target_dir]" in content
+
+    def test_meta_retrospective_mentions_learning_writeback_and_sync(self):
+        content = (PROJECT_ROOT / "source" / "skills" / "meta-retrospective" / "SKILL.md").read_text(encoding="utf-8")
+        assert "scripts/learnings_tool.py log [target_dir]" in content
+        assert "scripts/status_tool.py sync [target_dir]" in content
+        assert "learnings.jsonl" in content
+
+    def test_readme_mentions_integrated_workflow(self):
+        content = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        assert "这三个脚本已经接入主流程" in content
+        assert "恢复上下文 → 执行 → 沉淀经验 → 刷新状态" in content

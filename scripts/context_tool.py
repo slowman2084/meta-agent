@@ -16,7 +16,6 @@
 """
 
 import sys
-import os
 import argparse
 import json
 import re
@@ -86,19 +85,25 @@ def _find_latest_plan(target_dir: Path) -> dict | None:
 
 
 def _find_baseline(target_dir: Path) -> dict | None:
-    """查找 baseline_scores.json。"""
-    tmp_dir = target_dir / "tmp"
-    if not tmp_dir.is_dir():
-        return None
+    """查找 baseline_scores.json。
 
-    # 直接在 tmp/ 下查找
-    baseline_path = tmp_dir / "baseline_scores.json"
-    if not baseline_path.exists():
-        # 在子目录中查找
-        candidates = list(tmp_dir.glob("**/baseline_scores.json"))
-        if not candidates:
-            return None
-        baseline_path = candidates[0]
+    兼容真实产物位置：
+    1. [target_dir]/baseline_scores.json
+    2. [target_dir]/tmp/baseline_scores.json
+    3. [target_dir]/tmp/**/baseline_scores.json
+    """
+    candidates = [
+        target_dir / "baseline_scores.json",
+        target_dir / "tmp" / "baseline_scores.json",
+    ]
+
+    tmp_dir = target_dir / "tmp"
+    if tmp_dir.is_dir():
+        candidates.extend(sorted(tmp_dir.glob("**/baseline_scores.json")))
+
+    baseline_path = next((p for p in candidates if p.exists()), None)
+    if baseline_path is None:
+        return None
 
     try:
         data = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -118,6 +123,29 @@ def _find_baseline(target_dir: Path) -> dict | None:
         return None
 
 
+def _extract_avg_score(text: str) -> float | None:
+    """从评估报告文本中提取平均分。"""
+    patterns = [
+        r"平均分\s*[：:|]\s*(\d+\.?\d*)",
+        r"平均分\s+(\d+\.?\d*)",
+        r"avg(?:_score)?\s*[：:=]\s*(\d+\.?\d*)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def _count_case_outputs(run_dir: Path) -> int:
+    """统计真实输出文件数，兼容 actual_result / actual_output 两种命名。"""
+    count = 0
+    patterns = ["case_*_actual_result.txt", "case_*_actual_output.txt"]
+    for pattern in patterns:
+        count += len(list(run_dir.glob(pattern)))
+    return count
+
+
 def _find_latest_test(target_dir: Path) -> dict | None:
     """找到最近的测试结果目录，提取平均分。"""
     tmp_dir = target_dir / "tmp"
@@ -127,26 +155,26 @@ def _find_latest_test(target_dir: Path) -> dict | None:
     # 查找 test_* 或 evalooper_* 目录
     test_dirs = []
     for pattern in ("test_*", "evalooper_*"):
-        test_dirs.extend(
-            d for d in tmp_dir.glob(pattern) if d.is_dir()
-        )
+        test_dirs.extend(d for d in tmp_dir.glob(pattern) if d.is_dir())
 
     if not test_dirs:
         return None
 
     # 按名称排序取最新
     latest = sorted(test_dirs, key=lambda d: d.name, reverse=True)[0]
-    result = {"dir": str(latest.relative_to(target_dir))}
+    result = {
+        "dir": str(latest.relative_to(target_dir)),
+        "case_output_count": _count_case_outputs(latest),
+    }
 
     # 尝试读取评估报告
     report = latest / "评估报告.md"
     if report.exists():
         try:
             text = report.read_text(encoding="utf-8")
-            # 提取平均分（常见格式: "平均分: 82.3" 或 "平均分 | 82.3"）
-            avg_match = re.search(r"平均分[：:\s|]+(\d+\.?\d*)", text)
-            if avg_match:
-                result["avg_score"] = float(avg_match.group(1))
+            avg_score = _extract_avg_score(text)
+            if avg_score is not None:
+                result["avg_score"] = avg_score
         except Exception:
             pass
 

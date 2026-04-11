@@ -12,7 +12,7 @@ import hashlib
 import hmac
 import base64
 import requests
-from datetime import datetime
+from datetime import datetime, UTC
 from urllib.parse import urlencode
 
 
@@ -54,7 +54,7 @@ class CLSClient:
         """发送 API 请求"""
         # 时间戳
         timestamp = int(time.time())
-        date = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+        date = datetime.fromtimestamp(timestamp, UTC).strftime("%Y-%m-%d")
 
         # 请求参数
         payload = self._build_payload(params)

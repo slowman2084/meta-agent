@@ -222,6 +222,27 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
  meta-eval-judge          agent   created         —      —      0     0  2026-02-28
 ```
 
+### 这三个脚本已经接入主流程
+
+现在不只是“可以手动调用工具”，而是已经写进主编排 Skill：
+
+- `meta-plan`
+  - 在 `test` / `calibrate` 前自动执行 `context_tool.py recover`
+  - 在 `评估报告.md` 生成后自动执行 `status_tool.py sync`
+- `meta-iterate`
+  - 启动时自动恢复最近上下文
+  - 每轮 / 每阶段后自动执行 `context_tool.py summary`
+  - 将关键收敛结论、退化信号写入 `learnings.jsonl`
+  - 在 warmup / baseline / sampling / verify 后自动执行 `status_tool.py sync`
+- `meta-retrospective`
+  - 复盘结束后把高价值反模式 / 优化方向沉淀到 `learnings.jsonl`
+  - 随后自动同步 `status.json`
+
+这意味着：
+- 新会话直接 `test xxx` / `iterate xxx`，会自动带上最近状态
+- 迭代过程中产生的经验，不再只停留在报告里
+- `status.json` 会随着流程推进持续刷新，而不是依赖手工维护
+
 ---
 
 ## 使用场景
@@ -252,6 +273,10 @@ test cls-log-agent top 3
 test cls-log-agent on codebuddycli
 ```
 
+现在这条链路会自动做两件事：
+1. 开始前执行 `context_tool.py recover`，优先续跑未完成 plan，并带上最近 baseline / test / changelog / learnings
+2. `评估报告.md` 生成后执行 `status_tool.py sync`，把最新分数和计划状态写入 `status.json`
+
 ### 场景 3：自动迭代优化直到达标
 
 ```
@@ -265,19 +290,33 @@ iterate cls-log-agent  # 默认目标 98 分
 iterate cls-log-agent
 ```
 
+现在 iterate 主流程内建了这套闭环：
+1. 启动先 `recover`
+2. 每轮 test / compare 后跑 `summary`
+3. 将有效方向、退化信号、反模式写入 `learnings.jsonl`
+4. 每个阶段结束后 `status_tool.py sync`
+
+所以一次 `iterate xxx` 已经不只是“跑分”，而是“恢复上下文 → 执行 → 沉淀经验 → 刷新状态”的完整工作流。
+
 ### 场景 4：迭代过程中积累和使用经验
 
 ```bash
-# iterate 过程中，meta-retrospective 发现的问题会自动记录为 learning
+# 手动补记一条经验（可选）
 ./venv/bin/python scripts/learnings_tool.py log source/agents/cls-log-agent \
     --type pitfall --key "n-plus-one-api-calls" \
     --insight "Agent makes separate API calls for each topic instead of batching" \
     --confidence 9 --source observed --iteration 5
 
-# 下次 iterate 启动时，context_tool 自动加载相关 learnings
+# 查看下次启动时会恢复到什么上下文
 ./venv/bin/python scripts/context_tool.py recover source/agents/cls-log-agent --json
-# → learnings 字段包含历史经验，编排 Skill 可以利用这些经验指导优化方向
 ```
+
+但在默认工作流里，很多经验已经会自动沉淀：
+- `meta-iterate` 会把每轮关键收敛结论 / 退化信号写入 learning
+- `meta-retrospective` 会把高价值反模式和下一轮建议写入 learning
+- 下一次 `test` / `iterate` 启动时，`context_tool` 会自动把这些经验带回来
+
+手动 `log` 更适合补记用户明确偏好或流程外观察。
 
 ### 场景 5：校准评估体系
 
@@ -313,6 +352,11 @@ test cls-query-skill
 # 迭代优化 Skill（优化目标是 SKILL.md 而非 prompt.md）
 iterate cls-query-skill
 ```
+
+对 Skill 也一样适用：
+- `test cls-query-skill` 前会自动恢复上下文
+- `iterate cls-query-skill` 会自动把阶段状态和 learnings 写回 `source/skills/cls-query-skill/`
+- 优化目标仍然是 `SKILL.md`，但恢复 / 经验 / 状态链路与 Agent 已统一
 
 ---
 

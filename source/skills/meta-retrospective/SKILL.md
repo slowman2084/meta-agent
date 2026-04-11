@@ -5,7 +5,7 @@ description: "迭代优化全局复盘专家。分析多轮提示词迭代历史
 
 > **调用方式**：由 meta-iterate spawn 为独立 subagent（每 3 轮触发）。
 > **输入**：current_prompt_path + bak_dir（需>=2个备份）+ eval_dir + eval_results_dir。
-> **输出产物**：forced_new_directions.md（供下轮 meta-prompt-engineer 消费）
+> **输出产物**：forced_new_directions.md（供下轮 meta-prompt-engineer 消费），并将高价值结论沉淀到 `learnings.jsonl`，随后同步 `status.json`
 
 # 评估体系全局复盘专家 (Evaluation System Retrospective)
 
@@ -256,6 +256,50 @@ baseline 分数文件路径（首轮分数，用于相对提升对比）
   - [ ] 教训总结是否有数据支撑？
 ```
 
+### Phase 8：结果沉淀到 learnings / status
+
+在报告与 `forced_new_directions.md` 产出后，必须把高价值结论写回目标目录，而不是只停留在复盘报告中。
+
+1. **推导 target_dir**：
+   - Agent: `dirname(current_prompt_path)`
+   - Skill: `dirname(current_prompt_path)`
+2. **至少沉淀 3 类 learnings**：
+   - 高置信度反模式 → `pitfall`
+   - 被验证有效的稳定方法 → `pattern` 或 `optimization`
+   - 下一轮必须尝试的新方向 → `optimization`
+3. **每条 learning 必须可复用**：
+   - 不要写成“第 3 轮 bad”这种纯过程记录
+   - 要写成“当出现 X 信号时，应避免 Y 做法 / 优先尝试 Z 方向”
+4. **写入命令示例**：
+
+```bash
+./venv/bin/python scripts/learnings_tool.py log [target_dir] \
+  --type pitfall \
+  --key "retrospective-overfitting-to-cases" \
+  --insight "连续按单个失败 case 定向补规则会导致测试集过拟合，应回到通用能力约束。" \
+  --confidence 8 \
+  --source inferred \
+  --files "forced_new_directions.md,changelog.md" \
+  --tags "retrospective,anti-pattern"
+
+./venv/bin/python scripts/learnings_tool.py log [target_dir] \
+  --type optimization \
+  --key "retrospective-shift-to-tool-discipline" \
+  --insight "当 CoT/格式方向已连续多轮无明显收益时，下一轮应转向工具调用纪律或边界条件设计。" \
+  --confidence 7 \
+  --source inferred \
+  --files "forced_new_directions.md,迭代复盘报告.md" \
+  --tags "retrospective,next-direction"
+```
+
+5. **状态同步**：所有 learnings 写入后，执行：
+
+```bash
+./venv/bin/python scripts/status_tool.py sync [target_dir]
+```
+
+这样 `status.json` 会吸收最新的 active_plan、last_test_score、baseline_score、iterations_completed、total_learnings。
+
 ---
 
 ## 四、输出格式
@@ -475,6 +519,9 @@ baseline 分数文件路径（首轮分数，用于相对提升对比）
 ```
 JSON: source/[AgentName]/tmp/evalooper/iter_[N]/迭代复盘报告.json
 MD:   source/[AgentName]/tmp/evalooper/iter_[N]/迭代复盘报告.md
+方向沉淀: source/[AgentName]/forced_new_directions.md
+经验沉淀: source/[AgentName]/learnings.jsonl
+状态索引: source/[AgentName]/status.json
 ```
 
 ---

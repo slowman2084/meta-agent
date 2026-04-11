@@ -15,6 +15,21 @@ description: "Agent Factory 总控入口。根据用户意图（test/create agen
 
 **核心原则：规划文件是单一事实来源（Single Source of Truth）。** 所有状态都通过规划文件 + 产物文件体现在磁盘上，不依赖会话上下文。
 
+## 执行前上下文恢复
+
+在 `target_dir` 已存在时，生成新规划或恢复旧规划前，先运行：
+
+```bash
+./venv/bin/python scripts/context_tool.py recover [target_dir] --json
+```
+
+用途：
+- 读取最新 plan、baseline、最新测试结果、changelog 尾部、top learnings
+- 判断当前请求应该 **续跑已有流程** 还是 **新建规划**
+- 在进入 test / calibrate 前，先了解最近一次失败点、平均分和历史经验
+
+若目标尚不存在（如首次 `create agent` / `create skill`），可跳过此步骤。
+
 ---
 
 ## 触发与意图解析
@@ -101,15 +116,17 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 
 ### 断点续跑
 
-执行前，检查是否已有同 target + command 的规划文件：
+执行前，先恢复上下文，再检查是否已有同 target + command 的规划文件：
 
-1. 查找 `[target_dir]/tmp/plan_[command]_*.md`
-2. 若找到且 status != completed：
+1. 运行 `./venv/bin/python scripts/context_tool.py recover [target_dir] --json`（若 target_dir 已存在）
+2. 查找 `[target_dir]/tmp/plan_[command]_*.md`
+3. 若找到且 status != completed：
    - 读取规划文件
    - 扫描 output_dir 中已存在的产物文件
    - 将已有产物对应的步骤标记为 `[x]`
+   - 结合 recover 输出判断最近失败点、已有 baseline、最近测试分数
    - 从第一个未完成的步骤继续
-3. 若未找到或 status == completed：
+4. 若未找到或 status == completed：
    - 生成新的规划文件
 
 ---
@@ -184,6 +201,14 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 - 平均分、最高分、最低分
 - 低于 80 分的用例列表
 - 后续建议（calibrate / iterate）
+
+`评估报告.md` 写入完成后，立即同步状态：
+
+```bash
+./venv/bin/python scripts/status_tool.py sync [target_dir]
+```
+
+这样 `status.json` 会自动更新当前 phase、active_plan、last_test_score、baseline_score、iterations_completed、total_learnings。
 
 ---
 
@@ -315,3 +340,5 @@ iterate 需要多轮循环优化，将委托给 meta-iterate 执行。
 | `scripts/yaml_tool.py` | YAML 用例读写工具 |
 | `scripts/install.py` | 安装脚本 |
 | `scripts/scaffold.py` | 目录脚手架创建 |
+| `scripts/context_tool.py` | 恢复最新 plan / baseline / 测试结果 / changelog / learnings |
+| `scripts/status_tool.py` | 将产物同步到 `status.json` |
