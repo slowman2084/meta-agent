@@ -1,0 +1,44 @@
+# cls-log-agent@observable 平台配置模板
+# ============================================================
+# 使用方法：
+# 1. 复制此文件为 observable.yaml
+# 2. 填写你的实际 API 密钥和配置
+# 3. observable.yaml 已被 gitignore，不会提交
+# ============================================================
+
+llm:
+  model: "your-model-name"
+  api_key: "your-api-key-here"
+  base_url: "http://your-api-endpoint/v1"
+  temperature: 0.7
+
+prompts:
+  tool_responses_summary_prompt: |
+    # SRE 智能助手 - MCP 工具结果处理
+    # ... 提示词内容 ...
+
+  custom_system_prompt: |
+    {{PROMPT}}
+
+mcp_servers:
+  - url: "http://your-mcp-server/cls-mcp"
+    transport_type: "streamable_http"
+    headers:
+      secretid: "your-tencent-cloud-secret-id"
+      secretkey: "your-tencent-cloud-secret-key"
+    timeout: 30
+    sse_read_timeout: 60
+    allowed_tools:
+      - "SearchLog"
+      - "DescribeLogContext"
+      - "GetTopicInfoByName"
+      # ... 其他工具
+
+graph:
+  name: "observable_platform_agent"
+  max_threshold_tokens: 70000
+  max_summary_tokens: 20000
+  recursion_limit: 256
+  enable_condense: true
+  enable_todolist: false
+  debug: false

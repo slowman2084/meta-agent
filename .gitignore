@@ -153,6 +153,10 @@ source/*/.mcp.json
 **/observable_platform.yaml
 **/platform.yaml
 
+# cls-log-agent 配置文件（包含敏感密钥）
+source/agents/cls-log-agent/config/*.yaml
+!source/agents/cls-log-agent/config/*.example
+
 # ===================================
 # 其他
 # ===================================
