@@ -1,14 +1,14 @@
 ---
 name: meta-plan
-description: "Agent Factory 总控入口。根据用户意图（test/create agent/create skill/calibrate/iterate）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：test、create agent、create testcases、calibrate、iterate、创建 Agent、测试、迭代优化、校准。"
+description: "Agent & Skill Factory 总控入口。根据用户意图（plan / create / test / iterate / calibrate）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：/meta-plan、/meta-plan agent、/meta-plan skill、test、create、iterate、calibrate。"
 ---
 
-# meta-plan — Agent Factory 总控规划器
+# meta-plan — Agent & Skill Factory 总控规划器
 
 ## 角色
 
-你是 Agent Factory 的总控规划器。你的职责是：
-1. 解析用户意图（test / create / iterate / calibrate）
+你是 Agent & Skill Factory 的总控规划器（双轨入口）。你的职责是：
+1. 解析用户意图（plan / create / test / iterate / calibrate）
 2. 生成结构化的规划文件（plan file）
 3. 按规划文件逐步执行，调用对应的原子 meta-* Skills
 4. 通过磁盘上的产物文件判断当前进度，支持断点续跑
@@ -28,7 +28,7 @@ description: "Agent Factory 总控入口。根据用户意图（test/create agen
 - 判断当前请求应该 **续跑已有流程** 还是 **新建规划**
 - 在进入 test / calibrate 前，先了解最近一次失败点、平均分和历史经验
 
-若目标尚不存在（如首次 `create agent` / `create skill`），可跳过此步骤。
+若目标尚不存在（如首次 `create`），可跳过此步骤。
 
 ---
 
@@ -38,25 +38,32 @@ description: "Agent Factory 总控入口。根据用户意图（test/create agen
 
 | 用户输入模式 | 意图 | 处理方式 |
 |-------------|------|---------|
-| `test [target]` / `测试 [target]` / `跑测试 [target]` | 测试 | 生成 test plan → 执行 |
-| `create agent [name]` / `创建 Agent [name]` | 创建 Agent | 生成 create plan → 执行 |
-| `create skill [name]` / `创建 Skill [name]` | 创建 Skill | 生成 create-skill plan → 执行 |
+| `/meta-plan agent [name]` / `/meta-plan [name]`（已确定为 Agent） | Agent 规划 | 直接进入 Agent 规划流程 |
+| `/meta-plan skill [name]` | Skill 规划 | 直接进入 Skill 规划流程 |
+| `/meta-plan [name]`（类型未知） | 规划 | 自动识别 target 类型后进入规划 |
+| `test [target]` / `测试 [target]` | 测试 | 生成 test plan → 执行 |
+| `create [name]` / `创建 [name]` | 创建 | 自动识别类型，创建 Agent 或 Skill |
 | `create testcases [target]` / `生成用例 [target]` | 生成用例 | 生成 testcases plan → 执行 |
 | `iterate [target]` / `迭代优化 [target]` | 迭代 | 委托给 meta-iterate |
 | `calibrate [target]` / `校准 [target]` / `debug [target]` | 校准 | 生成 calibrate plan → 执行 |
 
+> **重要**：所有命令均可附加 `on [platform]` 指定平台模式，如 `test xxx on codebuddycli`。
+
 ### 解析规则
 
-1. 提取 **命令**（test/create/iterate/calibrate）和 **目标名称**
-2. 若有 `on [platform]` 后缀，提取 **平台模式**（subagent/codebuddycli/claude/tcop）
-3. 若有 `top N` / `case 0,3,7` / `range 5-10`，提取 **用例范围**
-4. 若有 `model: xxx`，提取 **模型指定**
+1. 提取 **命令**（plan/create/test/iterate/calibrate）和 **目标名称**
+2. 若触发词为 `/meta-plan agent` 或 `/meta-plan skill`，直接确定类型，无需再识别
+3. 若有 `on [platform]` 后缀，提取 **平台模式**（subagent/codebuddycli/claude/tcop）
+4. 若有 `top N` / `case 0,3,7` / `range 5-10`，提取 **用例范围**
+5. 若有 `model: xxx`，提取 **模型指定**
 
 ### 目标类型识别
 
-1. 先查 `source/agents/[target]/` — 存在则为 **Agent**（注意：meta-​* 系列已全部迁移到 `source/skills/`，不在此处查找）
+1. 先查 `source/agents/[target]/` — 存在则为 **Agent**
 2. 再查 `source/skills/[target]/` — 存在则为 **Skill**
 3. 都不存在 → 若命令是 `create`，将创建新目标；否则报错
+
+> **注意**：meta-\* 系列已全部迁移到 `source/skills/`，目标类型识别时不在 agents/ 下查找。
 
 ---
 
@@ -127,22 +134,30 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
    - 结合 recover 输出判断最近失败点、已有 baseline、最近测试分数
    - 从第一个未完成的步骤继续
 4. 若未找到或 status == completed：
-   - 生成新的规划文件
+   - **create 命令**：向用户确认是否继续新建规划（防止误触覆盖历史状态）
+     ```
+     ⚠️ 未找到执行记录。是创建新的规划，还是取消？
+     - 继续 [Y]：生成新规划文件
+     - 取消 [N]：停止操作
+     ```
+   - 其他命令：直接生成新的规划文件
 
 ---
 
 ## 命令流程：test
 
-读取 `references/plan-templates.md` 中的 test 模板，生成规划文件后按步骤执行：
+读取 `references/plan-templates.md` 中的 test 模板，生成规划文件后按步骤执行。
+
+> **类型已确定**：target_type 在规划文件头部已明确（Agent 或 Skill），后续执行时直接按类型执行，无需再区分"是 Agent 还是 Skill"。
 
 ### 步骤概览
 
 ```
-1. Install       → 确保目标已安装到 IDE
+1. Install        → 确保目标已安装到 IDE
 2. Export Inputs  → 导出 testcases.yaml 为 inputs.json
 3. Execute Cases  → 逐条/并发执行，生成 case_N_actual_result.txt
 4. Evaluate Cases → 逐条调用 meta-eval-judge，生成 case_N_eval_result.md
-5. Report        → 汇总评估报告
+5. Report         → 汇总评估报告
 ```
 
 ### 步骤 1: Install
@@ -155,6 +170,31 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 ```bash
 ./venv/bin/python scripts/install.py --platform-skills
 ```
+
+### 步骤 2: Export Inputs
+
+```bash
+./venv/bin/python scripts/yaml_tool.py export-inputs [target_dir]/testcases.yaml \
+  --output [output_dir]/inputs.json
+```
+
+若指定了用例范围（top N / case X,Y / range X-Y），加 `--cases` 参数。
+
+### 步骤 3: Execute Cases
+
+**subagent 模式**（目标为 Agent）：
+- 逐条调用 IDE Sub Agent（Agent tool），传入 Input
+- 每条完成后立即写入 `case_N_actual_result.txt` 和 `case_N_sharegpt.json`
+- 支持 3-4 条并发
+
+**Skill 模式**：
+- 通过 `use_skill(command="[skill_name]")` 加载 Skill
+- 按 Skill 说明执行每条 Input
+- 输出写入 `case_N_actual_result.txt`
+
+**平台模式时**（on codebuddycli 等）：
+- 通过 `use_skill(command="[platform]")` 加载 Platform Skill
+- 按 Platform Skill 的批量执行说明运行
 
 ### 步骤 2: Export Inputs
 
@@ -212,22 +252,24 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 
 ---
 
-## 命令流程：create agent
+## 命令流程：create
 
 读取 `references/plan-templates.md` 中的 create 模板。
 
-### 步骤概览
+> **类型已确定**：若由 `/meta-plan agent` 或 `/meta-plan skill` 触发，target_type 在规划文件头部已明确，后续步骤描述中不再重复"Agent"或"Skill"。
+
+### 步骤概览（类型已确定时）
 
 ```
-1. Gather Info   → 询问创建方式、基本信息
-2. Scaffold      → 创建目录脚手架
-3. Ideal State   → 生成/接收理想态 (→ ideal_state.md)
-4. Prompt        → 生成/接收提示词 (→ prompt.md)，可选 meta-prompt-engineer 优化
-5. References    → 引导用户补充领域参考资料
-6. Test Cases    → 调用 meta-testcase-gen (→ testcases.yaml)
-7. Rubric        → 调用 meta-rubric-gen 逐条生成 Judge
-8. Baseline Run  → 基线模型运行，填充 ExpectedOutput
-9. Install       → 安装到 IDE
+1. Gather Info   → 询问基本信息与创建方式
+2. Scaffold       → 创建目录脚手架
+3. Ideal State    → 生成/接收理想态 (→ ideal_state.md)
+4. Prompt         → 生成/接收提示词 (→ prompt.md/SKILL.md)，可选 meta-prompt-engineer 优化
+5. References      → 引导用户补充领域参考资料
+6. Test Cases     → 调用 meta-testcase-gen (→ testcases.yaml)
+7. Rubric         → 调用 meta-rubric-gen 逐条生成 Judge
+8. Baseline Run   → 基线模型运行，填充 ExpectedOutput
+9. Install        → 安装到 IDE
 ```
 
 每步完成后更新规划文件中的 checklist。

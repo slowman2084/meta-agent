@@ -1,9 +1,9 @@
 {
   "type": "skill",
   "name": "meta-plan",
-  "description": "Agent Factory 总控入口。根据用户意图（test/create agent/create skill/calibrate/iterate）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：test、create agent、create testcases、calibrate、iterate、创建 Agent、测试、迭代优化、校准。",
-  "trigger_keywords": ["test", "create agent", "create testcases", "create skill", "calibrate", "iterate", "创建 Agent", "新建 Agent", "生成用例", "测试 Agent", "跑测试", "迭代优化", "校准", "调试"],
-  "tools": ["read", "write", "edit", "bash", "search"],
+  "description": "Agent & Skill Factory 总控入口。根据用户意图（plan / create / test / iterate / calibrate）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：/meta-plan、/meta-plan agent、/meta-plan skill、test、create、iterate、calibrate。",
+  "trigger_keywords": ["/meta-plan", "/meta-plan agent", "/meta-plan skill", "test", "create", "create agent", "create skill", "create testcases", "iterate", "calibrate", "创建", "测试", "迭代", "校准"],
+  "tools": ["read", "write", "edit", "bash", "glob", "grep"],
   "design_pattern": "react_agent",
   "install_to_ide": true
 }
