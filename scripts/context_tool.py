@@ -43,7 +43,7 @@ from learnings_tool import (
 
 
 def _find_latest_plan(target_dir: Path) -> dict | None:
-    """找到 tmp/ 下最新的 plan_*.md，解析 YAML frontmatter。"""
+    """找到 tmp/ 下最新的 plan_*.md，解析 YAML frontmatter 或 Markdown 列表。"""
     tmp_dir = target_dir / "tmp"
     if not tmp_dir.is_dir():
         return None
@@ -54,10 +54,17 @@ def _find_latest_plan(target_dir: Path) -> dict | None:
 
     plan_path = plans[0]
     result = {"path": str(plan_path.relative_to(target_dir))}
+    
+    keys_to_extract = {
+        "status", "current_phase", "current_step",
+        "current_iteration", "target_score", "max_iterations",
+        "agent_name", "platform", "model"
+    }
 
     try:
         content = plan_path.read_text(encoding="utf-8")
-        # 解析 YAML frontmatter（简单解析，不依赖 pyyaml）
+        
+        # 1. 尝试解析 YAML frontmatter
         if content.startswith("---"):
             parts = content.split("---", 2)
             if len(parts) >= 3:
@@ -67,17 +74,50 @@ def _find_latest_plan(target_dir: Path) -> dict | None:
                         key, _, val = line.partition(":")
                         key = key.strip()
                         val = val.strip().strip('"').strip("'")
-                        if key in (
-                            "status", "current_phase", "current_step",
-                            "current_iteration", "target_score", "max_iterations",
-                            "agent_name", "platform", "model",
-                        ):
-                            # 尝试转换数字
+                        if key in keys_to_extract:
                             if val.isdigit():
                                 val = int(val)
                             elif val.replace(".", "").isdigit():
                                 val = float(val)
                             result[key] = val
+        
+        # 2. 尝试从 Markdown 列表和表格中解析 (兼容早期格式)
+        for key in keys_to_extract:
+            if key not in result:
+                # 匹配: - **current_phase**: phase3_sampling 或 | **目标分数** | 98 |
+                # 将常见的中文对应到 key
+                cn_keys = {
+                    "target_score": "目标分数",
+                    "max_iterations": "最大迭代轮数",
+                    "agent_name": "目标 Agent",
+                    "platform": "平台",
+                    "model": "模型"
+                }
+                
+                search_key = key
+                cn_key = cn_keys.get(key, "")
+                
+                # 匹配 Markdown 列表: - **key**: value 或 - key: value
+                pattern_list = rf"-\s*(?:\*\*)?(?:{key}|{cn_key})(?:\*\*)?\s*[:：]\s*(.+)$"
+                match_list = re.search(pattern_list, content, flags=re.MULTILINE | re.IGNORECASE)
+                
+                # 匹配 Markdown 表格: | **key** | value |
+                pattern_table = rf"\|\s*(?:\*\*)?(?:{key}|{cn_key})(?:\*\*)?\s*\|\s*([^|]+)\s*\|"
+                match_table = re.search(pattern_table, content, flags=re.IGNORECASE)
+                
+                val = None
+                if match_list:
+                    val = match_list.group(1).strip().strip('"').strip("'")
+                elif match_table:
+                    val = match_table.group(1).strip().strip('"').strip("'")
+                    
+                if val:
+                    if val.isdigit():
+                        val = int(val)
+                    elif val.replace(".", "", 1).isdigit() and val.count(".") <= 1:
+                        val = float(val)
+                    result[key] = val
+
     except Exception:
         pass
 
@@ -108,10 +148,20 @@ def _find_baseline(target_dir: Path) -> dict | None:
     try:
         data = json.loads(baseline_path.read_text(encoding="utf-8"))
         result = {"path": str(baseline_path.relative_to(target_dir))}
+        
+        # 兼容多种 baseline 的格式
         if "avg" in data:
             result["avg"] = data["avg"]
+        elif "average_score" in data:
+            result["avg"] = data["average_score"]
+        elif "warmup_results" in data and "average_score" in data["warmup_results"]:
+            result["avg"] = data["warmup_results"]["average_score"]
+
         if "cases" in data and isinstance(data["cases"], dict):
             result["case_count"] = len(data["cases"])
+        elif "meta" in data and "total_cases" in data["meta"]:
+            result["case_count"] = data["meta"]["total_cases"]
+            
         if "distribution" in data:
             dist = data["distribution"]
             result["distribution"] = {
@@ -126,9 +176,10 @@ def _find_baseline(target_dir: Path) -> dict | None:
 def _extract_avg_score(text: str) -> float | None:
     """从评估报告文本中提取平均分。"""
     patterns = [
-        r"平均分\s*[：:|]\s*(\d+\.?\d*)",
-        r"平均分\s+(\d+\.?\d*)",
-        r"avg(?:_score)?\s*[：:=]\s*(\d+\.?\d*)",
+        # 匹配: "平均分: 90", "平均得分: **92.5**", "**平均分**: 80", "**平均得分**: **92.5 / 100**"
+        r"平均(?:得)?分\s*[*]*\s*[：:|]\s*[*]*\s*(\d+\.?\d*)",
+        r"平均(?:得)?分\s+[*]*\s*(\d+\.?\d*)",
+        r"avg(?:_score)?\s*[*]*\s*[：:=]\s*[*]*\s*(\d+\.?\d*)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -160,8 +211,8 @@ def _find_latest_test(target_dir: Path) -> dict | None:
     if not test_dirs:
         return None
 
-    # 按名称排序取最新
-    latest = sorted(test_dirs, key=lambda d: d.name, reverse=True)[0]
+    # 按修改时间排序取最新 (而不是依赖名称字符串排序)
+    latest = sorted(test_dirs, key=lambda d: d.stat().st_mtime, reverse=True)[0]
     result = {
         "dir": str(latest.relative_to(target_dir)),
         "case_output_count": _count_case_outputs(latest),
