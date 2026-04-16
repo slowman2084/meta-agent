@@ -74,7 +74,7 @@ How it works:
 
 #### 🅱️ IDE Mode
 
-Open the project directly in your IDE (Cursor / CodeBuddy / Claude Code) and type trigger words (e.g., `create_agent`) in the chat. The IDE automatically loads rules and sub agent configurations.
+Open the project directly in your IDE (Cursor / CodeBuddy / Claude Code) and type trigger words (e.g., `create agent`) in the chat. The IDE automatically loads rules and sub agent configurations.
 
 #### 🅲 CLI Mode
 
@@ -260,7 +260,7 @@ Write initial creation record to `source/lyrics-golden-lines/changelog.md`.
 
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-Please execute the create_agent workflow:
+Please execute the create agent workflow:
 
 1. Creation method: c (create from YAML test cases)
 2. YAML file path: demo_testcases.yaml
@@ -271,7 +271,7 @@ Please execute the create_agent workflow:
 7. References: not needed, continue directly
 8. Need additional test cases: no
 
-Please follow the complete create_agent method c workflow, including: analyze cases to extract ideal state, call meta-prompt-engineer to generate prompt, call meta-rubric-gen to generate Judge for each case, run baseline model to fill ExpectedOutput, save to source/lyrics-golden-lines/testcases.yaml, run install.py to distribute.
+Please follow the complete create agent method c workflow, including: analyze cases to extract ideal state, call meta-prompt-engineer to generate prompt, call meta-rubric-gen to generate Judge for each case, run baseline model to fill ExpectedOutput, save to source/lyrics-golden-lines/testcases.yaml, run install.py to distribute.
 
 Note: The core scoring logic for Judge is that the Agent must originate 10 candidate golden lines (strictly no copying existing lyrics). Scoring dimensions are originality, imagery alignment, and literary quality. ExpectedOutput is a style benchmark — text reproduction is not required.
 "
@@ -360,7 +360,7 @@ Show the user each case's golden line creation results and scores.
 
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-test_agent lyrics-golden-lines
+test lyrics-golden-lines
 "
 ```
 
@@ -528,7 +528,7 @@ Show the user:
 
 ### 🅱️🅲 CLI / IDE
 
-> `evo_looper` is a multi-round loop task (each round: 5 tests + 5 evaluations + prompt optimization) — a single `-p` call would cause context explosion.
+> `iterate` is a multi-round loop task (each round: 5 tests + 5 evaluations + prompt optimization) — a single `-p` call would cause context explosion.
 >
 > **Solution**: Split into independent steps, each as a separate `-p` call. The benefit is that after each step, you can read artifacts and show the user exactly what changed.
 
@@ -542,7 +542,7 @@ cp source/lyrics-golden-lines/prompt.md source/lyrics-golden-lines/bak/prompt_in
 **4.2 Test + Evaluate + Generate Feedback**:
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-test_agent lyrics-golden-lines
+test lyrics-golden-lines
 
 After testing, please:
 1. Summarize the evaluation report
@@ -709,8 +709,8 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 |------|---------|-------------------|-------------|
 | 0 | git clone + SETUP.md | verify_setup.py | Environment ✅ |
 | 1 | Create demo_testcases.yaml | — | 5 golden-line test cases (10 original candidates each) |
-| 2 | `-p "create_agent ... method c"` | `prompt.md` + `ideal_state.md` | AI-written prompt and ideal state |
-| 3 | `-p "test_agent ..."` | `case_N_actual_result.txt` + evaluation report | **10 original candidate golden lines for each of 5 queries** + scores |
+| 2 | `-p "create agent ... method c"` | `prompt.md` + `ideal_state.md` | AI-written prompt and ideal state |
+| 3 | `-p "test ..."` | `case_N_actual_result.txt` + evaluation report | **10 original candidate golden lines for each of 5 queries** + scores |
 | 4 | Loop: test → feedback → optimize | `iter_feedback.md` + `diff` + `changelog.md` | Score changes per round + prompt modifications |
 | 5 | `-p "compare bak/initial vs prompt.md"` | `optimization_summary.md` | Initial vs. final panoramic comparison |
 
@@ -741,9 +741,9 @@ The **step-by-step `-p` + read files** approach is better:
 | Use Cases | Pure text-generation Agents (e.g., lyrics golden lines) | All Agents (including log analysis, code review, etc. requiring MCP) |
 | Completeness | ⭐⭐⭐⭐⭐ (core workflow complete, artifacts persisted) | ⭐⭐⭐⭐⭐ (full features) |
 
-### Q: Why split `evo_looper` into manual steps?
+### Q: Why split `iterate` into manual steps?
 
-`evo_looper` is a multi-round loop: each round has 5 tests (each requiring 10 original candidate golden lines) + 5 evaluations + prompt optimization. A single `-p` call would cause context explosion.
+`iterate` is a multi-round loop: each round has 5 tests (each requiring 10 original candidate golden lines) + 5 evaluations + prompt optimization. A single `-p` call would cause context explosion.
 
 Benefits of splitting into independent steps:
 1. Clean context for each round
@@ -801,5 +801,5 @@ Core idea: **Use AI to solve AI's problems.** You set the standard, AI evolves i
 1. **Create Your Own Agent** — Swap in different test cases, follow the same workflow
 2. **Upgrade to CLI / IDE** — If you used OpenClaw, installing CLI tools unlocks MCP tool calling and shell command execution for more complex Agents (like log analysis)
 3. **Deep-Dive into Evaluation** — `calibrate` to diagnose triplet consistency (CLI / IDE)
-4. **Multi-Platform Testing** — `test_agent lyrics-golden-lines@codebuddycli` (CLI / IDE)
+4. **Multi-Platform Testing** — `test lyrics-golden-lines on codebuddycli` (CLI / IDE)
 5. **Read Full Documentation** — [README.md](README.md), [SETUP.md](SETUP.md)

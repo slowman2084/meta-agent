@@ -1,4 +1,0 @@
-{
-  "description": "迭代优化全局复盘专家。分析多轮提示词迭代历史，识别反模式和劣化主线，输出 forced_new_directions 供 evo_looper 步骤 C 消费。需要 bak_dir（≥2个备份文件）。",
-  "tools": ["read", "write", "search", "bash"]
-}

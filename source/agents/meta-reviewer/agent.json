@@ -1,6 +1,0 @@
-{
-  "description": "提示词反作弊审查专家，独立审查 meta-prompt-engineer 生成的提示词是否存在作弊（抄袭 ExpectedOutput）、过拟合或泛化性不足的问题",
-  "tools": [
-    "read"
-  ]
-}

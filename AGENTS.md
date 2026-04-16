@@ -208,3 +208,13 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 > 请参见 `source/agents/meta-skill-harness/prompt.md`
 
 ---
+
+## Agent: 塑普歌词生成器
+
+**描述**：将普通话歌曲歌词转换为湖南塑料普通话（湘式塑普）风格，保留原歌词的韵律和节奏
+
+**提示词**：
+
+> 请参见 `source/agents/塑普歌词生成器/prompt.md`
+
+---

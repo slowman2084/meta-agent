@@ -60,39 +60,31 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 
 **用 AI 来解决 AI 的问题。** 这也是项目命名"Meta-Agent"（元 Agent）的原因。
 
-利用自指性（Self-reference），我们用一组 Meta Agent 构建了从**初始化 → 测评 → 调优**的完整闭环：
+利用自指性（Self-reference），我们用一组核心 Meta Skills 和 Sub Agents 构建了从**初始化 → 测评 → 调优**的完整闭环。**核心编排器是 `meta-plan`**，它充当所有命令（`test`、`create`、`iterate` 等）的路由入口，负责协调其他 Meta Skills：
 
 ```
-                            初始化阶段
-  ┌─────────────────────────────────────────────────────────┐
-  │                                                         │
-  │  理想态/提示词/用例    meta-ideal-state    生成理想态    │
-  │        │                    │                           │
-  │        ▼                    ▼                           │
-  │   meta-prompt-engineer  →  生成提示词                   │
-  │        │                                                │
-  │        ▼                                                │
-  │   meta-testcase-gen  →  生成测试用例                    │
-  │        │                                                │
-  │        ▼                                                │
-  │   meta-rubric-gen  →  生成评分标准                      │
-  │                                                         │
-  └───────────────┬─────────────────────────────────────────┘
-                  │
-                  ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │              迭代优化阶段（iterate）                      │
-  │                                                         │
-  │   测试 Agent  →  meta-eval-judge 评分  →  达标？        │
-  │       ▲                                    │            │
-  │       │              NO                    │ YES        │
-  │       │◄───────────────────────────────────┘            │
-  │       │                                    │            │
-  │  meta-prompt-engineer 优化提示词           ▼            │
-  │  meta-retrospective 复盘分析          完成/上线         │
-  │                                                         │
-  └─────────────────────────────────────────────────────────┘
+                       编排层（meta-plan 路由）
+                              │
+                ┌─────────────┼─────────────┐
+                │             │             │
+                ▼             ▼             ▼
+            初始化阶段      测试阶段      迭代优化阶段
+                │             │             │
+                ├─meta-ideal-state         │
+                ├─meta-prompt-engineer     │
+                ├─meta-testcase-gen        ├─meta-eval-judge
+                ├─meta-rubric-gen          ├─meta-prompt-engineer
+                │                          ├─meta-iterate
+                │                          └─meta-retrospective
+                │
+                └─meta-reviewer
+                └─meta-debug（校准诊断）
 ```
+
+**工作流特点**：
+- **中心路由**：`meta-plan` 接收用户命令，生成任务计划，协调下游组件
+- **分阶段执行**：初始化（定义理想态、生成提示词、测试用例、评分标准）→ 测试 → 优化 → 复盘
+- **自动化工具集成**：`context_tool.py`、`learnings_tool.py`、`status_tool.py` 已内置于编排流程中，无需手动调用
 
 ---
 
@@ -222,9 +214,9 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
  meta-eval-judge          agent   created         —      —      0     0  2026-02-28
 ```
 
-### 这三个脚本已经接入主流程
+### 工具自动化集成
 
-现在不只是“可以手动调用工具”，而是已经写进主编排 Skill：
+这三个脚本已经内建于编排流程中，**在 `meta-plan` 和 `meta-iterate` 的生命周期内自动运行**：
 
 - `meta-plan`
   - 在 `test` / `calibrate` 前自动执行 `context_tool.py recover`
@@ -238,10 +230,11 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
   - 复盘结束后把高价值反模式 / 优化方向沉淀到 `learnings.jsonl`
   - 随后自动同步 `status.json`
 
-这意味着：
+**这意味着**：
 - 新会话直接 `test xxx` / `iterate xxx`，会自动带上最近状态
 - 迭代过程中产生的经验，不再只停留在报告里
 - `status.json` 会随着流程推进持续刷新，而不是依赖手工维护
+- **大多数情况下，用户无需手动调用这些工具**（除非调试或补记特殊经验）
 
 ---
 
@@ -296,12 +289,12 @@ iterate cls-log-agent
 3. 将有效方向、退化信号、反模式写入 `learnings.jsonl`
 4. 每个阶段结束后 `status_tool.py sync`
 
-所以一次 `iterate xxx` 已经不只是“跑分”，而是“恢复上下文 → 执行 → 沉淀经验 → 刷新状态”的完整工作流。
+所以一次 `iterate xxx` 已经不只是"跑分"，而是"恢复上下文 → 执行 → 沉淀经验 → 刷新状态"的完整工作流。
 
 ### 场景 4：迭代过程中积累和使用经验
 
 ```bash
-# 手动补记一条经验（可选）
+# 手动补记一条经验（可选，大多数情况下不需要）
 ./venv/bin/python scripts/learnings_tool.py log source/agents/cls-log-agent \
     --type pitfall --key "n-plus-one-api-calls" \
     --insight "Agent makes separate API calls for each topic instead of batching" \
@@ -311,7 +304,7 @@ iterate cls-log-agent
 ./venv/bin/python scripts/context_tool.py recover source/agents/cls-log-agent --json
 ```
 
-但在默认工作流里，很多经验已经会自动沉淀：
+在默认工作流里，很多经验已经会自动沉淀：
 - `meta-iterate` 会把每轮关键收敛结论 / 退化信号写入 learning
 - `meta-retrospective` 会把高价值反模式和下一轮建议写入 learning
 - 下一次 `test` / `iterate` 启动时，`context_tool` 会自动把这些经验带回来
@@ -360,20 +353,47 @@ iterate cls-query-skill
 
 ---
 
-## 八个 Meta Agent 的协作
+## 11 个核心 Meta Skills
 
-Meta-Agent 由 8 个专职 Sub Agent 组成，形成完整的流水线：
+Meta-Agent 由 11 个核心 Meta Skills 和专职编排器组成，共同形成完整的流水线：
 
-| Agent | 职责 | 在流程中的位置 |
-|-------|------|--------------|
+| Skill 名称 | 职责 | 在流程中的位置 |
+|-----------|------|--------------|
+| `meta-plan` | 中心路由器，接收用户命令，生成任务计划，协调下游组件 | 最核心：所有 `test`/`create`/`iterate` 命令的入口 |
 | `meta-ideal-state` | 将业务描述转化为结构化理想态文档 | 初始化：定义"什么是好" |
 | `meta-prompt-engineer` | 将理想态转化为可执行的 Agent 提示词，运用 CoT、few-shot 等工程技法 | 初始化 + 迭代优化 |
 | `meta-testcase-gen` | 推断用户画像，生成覆盖多场景的 YAML 测试用例 | 初始化 |
 | `meta-rubric-gen` | 为每条用例生成原子化、可判定的评分标准 | 初始化 |
 | `meta-eval-judge` | 根据评分标准对 Agent 输出进行严格评分（0-100） | 测试 + 迭代 |
+| `meta-iterate` | 执行 4 阶段分层优化策略（热身→基线→抽样→验证），管理收敛性和退化信号 | 迭代优化核心 |
 | `meta-reviewer` | 独立审查提示词是否存在作弊（抄袭 ExpectedOutput）或过拟合 | 迭代优化（生成与审查分离） |
 | `meta-retrospective` | 分析多轮迭代历史，识别劣化模式，提出新优化方向 | 迭代复盘 |
 | `meta-debug` | 诊断三元组一致性问题，输出 calibration_report.json | 校准调试 |
+| `meta-log-converter` | 将 LLM 对话记录转化为结构化测试用例 | 初始化辅助 |
+
+**关键特点**：
+- **meta-plan** 是所有命令的入口点和编排器
+- **meta-iterate** 管理优化的生命周期和状态跟踪
+- 所有 Skills 位于 `source/skills/meta-*/`，而不是 `source/agents/`
+
+---
+
+## Skill Harness 模式
+
+`meta-skill-harness` 是一个通用壳 Agent，用于测试和迭代优化 Skills。当你使用 `test` 或 `iterate` 命令测试 Skill 时：
+
+1. **自动套壳**：系统自动为 Skill 创建一个对应的测试壳 Agent
+2. **SKILL.md 作为优化目标**：迭代优化的对象是 Skill 的 `SKILL.md`，而不是 prompt.md
+3. **统一工作流**：Skill 复用所有 Agent 的工作流（恢复、测试、迭代、状态同步）
+4. **无需手动创建**：你无需手动创建壳 Agent，系统自动处理
+
+例如：
+```
+test cls-query-skill           # 自动套壳 meta-skill-harness 来测试
+iterate cls-query-skill        # 自动优化 SKILL.md，产生优化历史
+```
+
+这种模式让 Skill 的测试和优化与 Agent 完全一致，降低了学习成本。
 
 ---
 
@@ -382,7 +402,7 @@ Meta-Agent 由 8 个专职 Sub Agent 组成，形成完整的流水线：
 ```
 meta-agent/
 ├── source/                       # 唯一真相来源（Source of Truth）
-│   ├── agents/                   #   Agent 源文件目录
+│   ├── agents/                   #   业务 Agent 源文件目录
 │   │   └── [AgentName]/          #     每个 Agent 的完整源文件
 │   │       ├── prompt.md         #       提示词
 │   │       ├── ideal_state.md    #       理想态描述
@@ -397,12 +417,20 @@ meta-agent/
 │   │       ├── bak/              #       历史备份
 │   │       └── tmp/              #       运行时产物（plan / test results / baseline）
 │   │
-│   ├── skills/                   #   Skill 源文件目录
-│   │   └── [SkillName]/          #     每个 Skill 的完整源文件
-│   │       ├── SKILL.md          #       Skill 指令文档（迭代优化目标）
-│   │       ├── skill.json        #       元数据（trigger_keywords + tools）
-│   │       ├── scripts/          #       实现脚本
-│   │       └── ...               #       （其余同 Agent 结构）
+│   ├── skills/                   #   Skills 源文件目录（包括所有 meta-* Skills）
+│   │   ├── meta-plan/            #     中心编排器 Skill
+│   │   │   ├── SKILL.md          #       Skill 指令文档
+│   │   │   ├── skill.json        #       元数据
+│   │   │   └── ...
+│   │   ├── meta-iterate/         #     4 阶段迭代优化 Skill
+│   │   ├── meta-prompt-engineer/ #     提示词生成和优化 Skill
+│   │   ├── meta-eval-judge/      #     评分判定 Skill
+│   │   ├── [SkillName]/          #     业务 Skill 源文件
+│   │   │   ├── SKILL.md          #       Skill 指令文档（迭代优化目标）
+│   │   │   ├── skill.json        #       元数据（trigger_keywords + tools）
+│   │   │   ├── scripts/          #       实现脚本
+│   │   │   └── ...               #       （其余同 Agent 结构）
+│   │   └── ...
 │   │
 │   └── platform-skills/          #   平台 Skill 源目录（执行环境封装）
 │
@@ -430,7 +458,12 @@ meta-agent/
 └── CODEBUDDY.md                  # CodeBuddy 项目配置
 ```
 
-**核心原则**：`source/` 是唯一真相来源，所有修改在此进行，通过 `scripts/install.py` 一键同步到 Cursor / CodeBuddy / Claude Code / Codex 四个平台。
+**核心原则**：
+- `source/` 是唯一真相来源，所有修改在此进行
+- **所有 meta-* 组件位于 `source/skills/meta-*/` 中**，而不是 `source/agents/`
+- `source/agents/` 用于业务 Agent（target/business agents）
+- `source/skills/` 包含所有 Skills，包括 meta-skills 和业务 Skills
+- 通过 `scripts/install.py` 一键同步到 Cursor / CodeBuddy / Claude Code / Codex 四个平台
 
 ---
 

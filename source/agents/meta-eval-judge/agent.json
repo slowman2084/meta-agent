@@ -1,4 +1,0 @@
-{
-  "description": "评估 Sub Agent 输出质量的评分专家，根据评分标准和参考答案对实际输出进行打分",
-  "tools": ["read"]
-}

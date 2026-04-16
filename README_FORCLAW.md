@@ -260,7 +260,7 @@ Input: [cases[i].Input]
 
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-请执行 create_agent 流程：
+请执行 create agent 流程：
 
 1. 创建方式：c（从 YAML 测试用例创建）
 2. YAML 文件路径：demo_testcases.yaml
@@ -271,7 +271,7 @@ CodeBuddy --dangerously-skip-permissions -p "
 7. references：不需要，直接继续
 8. 是否需要额外补充更多测试用例：否
 
-请按 create_agent 方式 c 的完整流程执行，包括：分析用例提炼理想态、调用 meta-prompt-engineer 生成提示词、调用 meta-rubric-gen 逐条生成 Judge、用基线模型运行填入 ExpectedOutput、保存到 source/lyrics-golden-lines/testcases.yaml、运行 install.py 分发。
+请按 create agent 方式 c 的完整流程执行，包括：分析用例提炼理想态、调用 meta-prompt-engineer 生成提示词、调用 meta-rubric-gen 逐条生成 Judge、用基线模型运行填入 ExpectedOutput、保存到 source/lyrics-golden-lines/testcases.yaml、运行 install.py 分发。
 
 注意：Judge 的核心评分逻辑是 Agent 需原创 10 句候选金句（严禁照搬已有歌词），评分维度为原创性、意境契合度和文学质量。ExpectedOutput 是风格标杆，不要求文字复现。
 "
@@ -360,7 +360,7 @@ cat source/lyrics-golden-lines/ideal_state.md
 
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-test_agent lyrics-golden-lines
+test lyrics-golden-lines
 "
 ```
 
@@ -528,7 +528,7 @@ Spawn `meta-prompt-engineer`（用 `file_read` 读取其 prompt.md 作为 system
 
 ### 🅱️🅲 CLI / IDE 方式
 
-> `evo_looper` 是多轮循环任务（每轮：5 条测试 + 5 次评估 + 优化提示词），单次 `-p` 调用会上下文爆炸。
+> `iterate` 是多轮循环任务（每轮：5 条测试 + 5 次评估 + 优化提示词），单次 `-p` 调用会上下文爆炸。
 >
 > **解决方案**：拆成独立的步骤，每步一个 `-p` 调用。好处是每步完成后都能读取产物，给用户展示具体改了什么。
 
@@ -542,7 +542,7 @@ cp source/lyrics-golden-lines/prompt.md source/lyrics-golden-lines/bak/prompt_in
 **4.2 测试 + 评估 + 生成反馈**：
 ```bash
 CodeBuddy --dangerously-skip-permissions -p "
-test_agent lyrics-golden-lines
+test lyrics-golden-lines
 
 测试完成后，请：
 1. 汇总评估报告
@@ -709,8 +709,8 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 |------|------|-------------|---------|
 | 0 | git clone + SETUP.md | verify_setup.py | 环境 ✅ |
 | 1 | 创建 demo_testcases.yaml | — | 5 条金句用例（每条要求原创 10 句候选） |
-| 2 | `-p "create_agent ... 方式 c"` | `prompt.md` + `ideal_state.md` | AI 写的提示词和理想态 |
-| 3 | `-p "test_agent ..."` | `case_N_actual_result.txt` + `评估报告.md` | **5 条需求各原创 10 句候选金句** + 分数 |
+| 2 | `-p "create agent ... 方式 c"` | `prompt.md` + `ideal_state.md` | AI 写的提示词和理想态 |
+| 3 | `-p "test ..."` | `case_N_actual_result.txt` + `评估报告.md` | **5 条需求各原创 10 句候选金句** + 分数 |
 | 4 | 循环：test → feedback → optimize | `iter_feedback.md` + `diff` + `changelog.md` | 每轮分数变化 + 提示词改动 |
 | 5 | `-p "对比 bak/初始 vs prompt.md"` | `optimization_summary.md` | 初始 vs 最终全景对比 |
 
@@ -741,9 +741,9 @@ cat source/lyrics-golden-lines/tmp/optimization_summary.md
 | 适用场景 | 纯文本生成类 Agent（如歌词金句） | 所有 Agent（含日志分析、代码审查等需要 MCP 的） |
 | 体验完整度 | ⭐⭐⭐⭐⭐（核心流程完整，产物持久化） | ⭐⭐⭐⭐⭐（全功能） |
 
-### Q: 为什么 `evo_looper` 要拆成手动步骤？
+### Q: 为什么 `iterate` 要拆成手动步骤？
 
-`evo_looper` 是多轮循环：每轮 5 条测试（每条原创 10 句候选金句）+ 5 次评估 + 优化提示词。单次 `-p` 调用会上下文爆炸。
+`iterate` 是多轮循环：每轮 5 条测试（每条原创 10 句候选金句）+ 5 次评估 + 优化提示词。单次 `-p` 调用会上下文爆炸。
 
 拆成独立步骤的好处：
 1. 每轮上下文都是干净的
@@ -801,5 +801,5 @@ meta-retrospective ──→ 每 3 轮全局复盘，防止优化方向跑偏
 1. **创建自己的 Agent** —— 换一组测试用例，走同样的流程
 2. **升级到 CLI / IDE** —— 如果你用的是 OpenClaw 方式，安装 CLI 工具可以解锁 MCP 工具调用和 Shell 命令执行能力，支持更复杂的 Agent（如日志分析）
 3. **深入评估体系** —— `calibrate` 诊断三元组一致性（CLI / IDE）
-4. **多平台测试** —— `test_agent lyrics-golden-lines@codebuddycli`（CLI / IDE）
+4. **多平台测试** —— `test lyrics-golden-lines on codebuddycli`（CLI / IDE）
 5. **阅读完整文档** —— [README.md](README.md)、[SETUP.md](SETUP.md)

@@ -54,7 +54,7 @@ description: "Agent Factory 总控入口。根据用户意图（test/create agen
 
 ### 目标类型识别
 
-1. 先查 `source/agents/[target]/` — 存在则为 **Agent**
+1. 先查 `source/agents/[target]/` — 存在则为 **Agent**（注意：meta-​* 系列已全部迁移到 `source/skills/`，不在此处查找）
 2. 再查 `source/skills/[target]/` — 存在则为 **Skill**
 3. 都不存在 → 若命令是 `create`，将创建新目标；否则报错
 
@@ -332,7 +332,7 @@ iterate 需要多轮循环优化，将委托给 meta-iterate 执行。
 
 | 路径 | 用途 |
 |------|------|
-| `source/agents/[name]/` | Agent 源文件（prompt.md, agent.json, testcases.yaml, ideal_state.md） |
+- `source/agents/[name]/` | 业务 Agent 源文件（prompt.md, agent.json, testcases.yaml, ideal_state.md）<br/>**注意：meta-​* 系列已全部迁移到 `source/skills/meta-*/`，此处仅存放非 meta 的业务 Agent。** |
 | `source/skills/[name]/` | Skill 源文件（SKILL.md, skill.json, testcases.yaml, scripts/） |
 | `source/skills/meta-*/` | 原子 meta-* Skills（内部专用，不安装到 IDE） |
 | `[target_dir]/tmp/` | 运行时产物 + 规划文件 |
