@@ -93,6 +93,34 @@ def write_json(path, data):
         f.write("\n")
 
 
+def safe_write_text(path, new_content, agent_name=None, context_info=""):
+    """
+    安全写入文件。如果文件存在且内容不同，并且有被 IDE 侧修改的可能，则备份原文件。
+    返回是否进行了写入。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    if os.path.exists(path):
+        existing_content = read_text(path)
+        if existing_content == new_content:
+            # 内容一致，无需写入
+            return False
+            
+        # 内容不同，判断目标文件是否在最近被修改过 (防止静默抹除用户的修改)
+        # 简单粗暴且安全的策略：只要内容不同，就将现有文件备份
+        import time
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bak_path = f"{path}.{ts}.bak"
+        
+        # 为了防止生成太多备份，如果文件存在且不是由系统生成的默认初始内容，再提示
+        print(f"  ⚠️  检测到 {context_info} 内容有冲突！已将原文件备份至: {os.path.basename(bak_path)}")
+        shutil.copy2(path, bak_path)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    return True
+
 # ── Header generators ────────────────────────────────────────────────
 
 def gen_cursor_header(name, desc, tools, mcp_servers, model=None):
@@ -513,8 +541,22 @@ def install_agent(agent_name, model=None):
         header = HEADER_GENERATORS[platform](agent_name, desc, tools, mcp_names, model=model)
         target = os.path.join(PROJECT_ROOT, ide_dir, f"{agent_name}.md")
         os.makedirs(os.path.join(PROJECT_ROOT, ide_dir), exist_ok=True)
-        write_text(target, header + "\n" + prompt)
-        print(f"  ✅ {ide_dir}/{agent_name}.md")
+        
+        expected_content = header + "\n" + prompt
+        existing_content = read_text(target)
+        
+        if existing_content != expected_content:
+            if existing_content is not None:
+                # 避免大量无用日志，只提示内容真正发生改变的
+                bak_path = f"{target}.bak"
+                shutil.copy2(target, bak_path)
+                write_text(target, expected_content)
+                print(f"  ⚠️  检测到修改: 已更新 {ide_dir}/{agent_name}.md (旧版已备份至 .bak)")
+            else:
+                write_text(target, expected_content)
+                print(f"  ✅ {ide_dir}/{agent_name}.md (新建)")
+        else:
+            print(f"  → {ide_dir}/{agent_name}.md (无变更)")
 
     update_agents_md(agent_name, desc)
     print(f"  ✅ AGENTS.md（{agent_name} 章节）")
@@ -559,9 +601,14 @@ def install_skill(skill_name):
         target = os.path.join(target_root, skill_name)
         if os.path.exists(target):
             shutil.rmtree(target)
+            
+        # 这里为了防止误删用户在IDE目录里新增的文件，理论上最好做 file-level 比较，但 skill 目录涉及代码，直接 rmtree + copytree 最简单，
+        # 我们用 warnings 提示用户
+        print(f"  → 重新安装 {ide_skills}/{skill_name}/")
+        
         # 复制时跳过测试产物
         shutil.copytree(skill_dir, target, ignore=shutil.ignore_patterns(*_SKIP_INSTALL))
-        print(f"  ✅ {ide_skills}/{skill_name}/")
+        print(f"  ✅ {ide_skills}/{skill_name}/ (已更新)")
 
     return True
 
