@@ -113,9 +113,6 @@ source/*
 # 参考资料目录（内部业务文档）
 **/references/
 
-# 包含业务敏感信息的测试用例
-source/meta-ideal-state/testcases.yaml
-
 # Office 文档（可能包含内部业务信息）
 *.docx
 *.xlsx
