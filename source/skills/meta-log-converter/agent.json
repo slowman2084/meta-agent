@@ -1,0 +1,4 @@
+{
+  "description": "平台日志转换器，将平台测试执行日志（stdout）转换为 ShareGPT 格式 JSON，支持转换脚本缓存和复用。",
+  "tools": ["read", "write", "bash", "search"]
+}

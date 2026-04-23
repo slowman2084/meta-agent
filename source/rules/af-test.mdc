@@ -1,0 +1,240 @@
+---
+description: "Agent Factory - 共享测试-评估流程和 test_agent 测试模式。触发词：test_agent、测试 Agent、跑测试。evo_looper 和 calibrate 也依赖本规则。"
+globs:
+alwaysApply: false
+---
+
+# 共享测试-评估流程 & test_agent 测试模式
+
+## 一、共享测试-评估流程
+
+> 供 `test_agent` 和 `evo_looper` 共同引用。
+
+### 步骤 0：解析执行模式 & 加载 Platform Skill（强制首步）
+
+> ⚠️ **这是共享流程的第一步，必须在任何其他操作之前执行。**
+
+**0a. 解析 `@` 后缀确定执行模式**：
+
+| 用户输入 | 解析结果 | 平台 Skill 名称 |
+|---------|---------|----------------|
+| `test_agent cls-log-agent` | Agent=`cls-log-agent` | `subagent`（无 `@` 默认） |
+| `test_agent cls-log-agent@codebuddycli` | Agent=`cls-log-agent` | `codebuddycli` |
+| `test_agent cls-log-agent@claude` | Agent=`cls-log-agent` | `claude` |
+| `test_agent cls-log-agent@tcop` | Agent=`cls-log-agent` | `tcop` |
+
+- `@` 前 = Agent 名称，对应 `source/[AgentName]/` 目录
+- `@` 后 = 平台 Skill 名称（无 `@` 等同于 `@subagent`）
+
+**0b. 立即调用 `use_skill` 加载对应的 Platform Skill**：
+
+```
+# 必须执行！根据解析出的平台名调用：
+use_skill(command="subagent")       # 无 @ 或 @subagent
+use_skill(command="codebuddycli")   # @codebuddycli
+use_skill(command="claude")         # @claude
+```
+
+- 调用 `use_skill` 后，IDE 会将该 Skill 的 `SKILL.md` 完整内容注入当前上下文
+- 注入的内容包含：该平台的使用说明、脚本调用方式、适用场景、输出规范
+- **后续步骤必须严格按照注入的 Skill 说明执行**
+
+**0c. 若 `use_skill` 失败**（Skill 不在 available_skills 列表中）：
+- 说明 Platform Skill 未安装
+- 执行 `./venv/bin/python scripts/install.py --platform-skills` 安装
+- 安装成功后重新调用 `use_skill`
+
+### 步骤 0.5：配置验证与模型匹配（Platform Skill 模式专用）
+
+> 加载 Skill 说明后、执行测试前，确保平台配置就绪。
+
+**0.5a. 模型匹配**：
+- 读取 SKILL.md 中的「支持的模型」表格
+- 若用户指定的模型在支持列表内，直接使用
+- 若不在列表内，选择最接近的可用模型并告知用户
+
+**0.5b. 配置文件检查**（仅限需要外部配置的平台，如 TCOP）：
+1. 检查 `source/platform-skills/[platform]/config/` 下是否有该 Agent 的配置文件（匹配 `[AgentName]*.yaml`）
+2. 若不存在，引导用户从 `platform_template.yaml` 创建
+3. 若 Skill 支持 `--preflight` 参数，运行预检：
+   ```bash
+   ./venv/bin/python source/platform-skills/[platform]/scripts/run.py \
+     --preflight \
+     --config [config_path] \
+     --agent-prompt source/[AgentName]/prompt.md
+   ```
+4. 预检失败则暂停，提示用户修复配置问题后重试
+
+### 步骤 1：调用被测 Agent 获取实际输出
+
+**部分用例执行**：用户可通过以下方式指定执行范围（默认执行全部）：
+- `top N`：只执行前 N 条（如 `top 3`）
+- `case 0,3,7`：执行指定序号
+- `range 5-10`：执行范围
+
+编排器在导出 `inputs.json` 时应使用 `--cases` 参数过滤：
+```bash
+# top 3
+./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+  --output [output_dir]/inputs.json --cases 0-2
+
+# 指定序号
+./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+  --output [output_dir]/inputs.json --cases 0,3,7
+```
+
+**统一输出目录**：`source/[AgentName]/tmp/[task]_[timestamp]_[mode]/`
+- `task` = `test` 或 `evalooper`（由调用方决定）
+- `mode` = `subagent` | `codebuddycli` | `claude` | 其他平台名
+
+**统一输出文件命名**：
+- `case_[N]_actual_result.txt` — 实际输出（纯文本）
+- `case_[N]_sharegpt.json` — 运行日志（ShareGPT 格式）
+- `case_[N]_eval_result.md` — 评估结果
+
+### 步骤 1.5：结果目录平台锁定（强制）
+
+> **一旦本轮执行模式确定为 `@tcop` / `@claude` / `@codebuddycli` / `@subagent`，对应输出目录只能接收同平台产物，严禁混入 fallback 结果。**
+
+强制规则：
+1. 目录名后缀必须与执行模式一致，例如 `*_tcop/` 只能接收 `tcop` 产物
+2. **严禁**把 `subagent` fallback 写回 `*_tcop/`、`*_claude/`、`*_codebuddycli/` 目录
+3. 若需要 shadow/fallback 诊断，必须写入独立目录（如 `*_subagent_shadow/`），不得污染正式目录
+4. 在进入评估、汇总、诊断摘要之前，必须先运行：
+   ```bash
+   ./venv/bin/python scripts/validate_platform_outputs.py [output_dir] --expected-platform [mode]
+   ```
+5. 若校验失败：
+   - 当前目录仅可标记为 `mixed` / `diagnostic`
+   - **不得**继续作为正式 `test_agent` / `evo_looper` 评估依据
+   - 必须在正确平台的新目录中重跑缺失或受污染的 case
+
+#### 模式 A：subagent（无 @ 或 @subagent）
+
+> 步骤 0 已通过 `use_skill(command="subagent")` 加载了 subagent Skill 说明。按 Skill 说明执行：
+
+1. 逐条调用 IDE Sub Agent（`task` 工具），传入 `Input`，获得实际输出。支持 3~4 条并发。
+2. 每条用例调用结束后，**必须立即**：
+   - 将实际输出写入 `case_[N]_actual_result.txt`
+   - 将 task 工具的调用过程构造为 ShareGPT 格式，写入 `case_[N]_sharegpt.json`
+
+ShareGPT 构造规则：
+```json
+{
+  "conversations": [
+    {"from": "system", "value": "[Agent 的 system prompt]"},
+    {"from": "human", "value": "[Input]"},
+    {"from": "gpt", "value": "[Agent 实际输出]"}
+  ],
+  "metadata": {
+    "agent_name": "[AgentName]",
+    "platform": "subagent",
+    "case_index": N,
+    "timestamp": "[ISO 时间]"
+  }
+}
+```
+
+> **subagent 模式适用场景**：Agent 没有 MCP 调用需求，且不需要评估执行流程（工具调用序列）。
+
+#### 模式 B：Platform Skill（@codebuddycli / @claude / @tcop 等）
+
+> 步骤 0 已通过 `use_skill` 加载了对应 Platform Skill 的说明。此处直接按注入的 Skill 说明执行。
+
+**1. 导出用例 Input**：
+
+```bash
+./venv/bin/python scripts/yaml_tool.py export-inputs source/[AgentName]/testcases.yaml \
+  --output [output_dir]/inputs.json
+```
+
+**2. 分批并发执行（3 路 × ≤4 条/路）**：
+
+将全部用例按顺序分为多个**批次（batch）**，每批最多 12 条（3 路 × 4 条）。分配规则：
+
+```
+总用例数 = N
+每路上限 = 4 条
+并发路数 = 3
+
+Batch 1:
+  路1: [case_0,  case_1,  case_2,  case_3 ]   ← run_batch.py --cases 0-3
+  路2: [case_4,  case_5,  case_6,  case_7 ]   ← run_batch.py --cases 4-7
+  路3: [case_8,  case_9,  case_10, case_11]   ← run_batch.py --cases 8-11
+
+Batch 2:
+  路1: [case_12, case_13, case_14, case_15]
+  路2: [case_16, case_17, case_18, case_19]
+  路3: [case_20, ...]（不足 4 条按实际数量）
+...
+```
+
+**执行方式**：每路调用一次 `run_batch.py`（或逐条调用 `run.py`），3 路**同时并发启动**（通过 3 个并行的 `execute_command` 调用）。等待当前批次的 3 路全部完成后，再启动下一批次。
+
+> **为什么限制每路 ≤4 条？** 控制单个 CLI 进程的负载和内存占用，避免超时或资源争抢，提升稳定性。
+>
+> **为什么限制 3 路并发？** 平衡系统资源（CPU、网络、API 配额）与执行速度。
+
+**3. 脚本自动生成 `case_[N]_actual_result.txt` + `case_[N]_sharegpt.json`**
+
+> **Platform Skill 模式适用场景**：Agent 有 MCP 调用、需要特定运行时环境、需要评估执行流程。
+
+### 步骤 2：评估准备
+
+- 若 `ExpectedOutput` 为空，将实际输出填充到 YAML
+- `case_[N]_sharegpt.json`（RunLog）对 `meta-eval-judge` 是**可选输入**，缺失时仅基于 actual_result 评估
+
+### 步骤 3：评估（流水线并发）
+
+**逐条调用约束（强制）**：
+- 每次调用 `meta-eval-judge` **只传一条用例**
+- **严禁**多条合并（上下文膨胀导致评分质量下降）
+- 返回后立即写入 `case_[N]_eval_result.md`
+
+**流水线并发策略（Platform Skill 模式专用）**：
+
+执行层和评估层采用**流水线（pipeline）**模式，两者重叠执行以缩短总耗时：
+
+```
+时间线 ──────────────────────────────────────────────►
+
+执行层:  [Batch 1: 3路并发执行]  [Batch 2: 3路并发执行]  [Batch 3: ...]
+                               ↘
+评估层:                         [Batch 1 评估: 多个 judge 并发]  [Batch 2 评估: ...]
+```
+
+具体规则：
+1. **Batch 1 执行完成后**，立即同时启动：
+   - Batch 2 的 3 路并发执行
+   - Batch 1 所有已完成用例的评估（多个 `meta-eval-judge` 并发调用，每个 judge 处理一条）
+2. **评估并发度**：每批评估时，最多同时调用 **3~4 个** `meta-eval-judge` Sub Agent
+3. **Batch N+1 执行** 与 **Batch N 评估** 同时进行，直到所有批次执行完毕
+4. 最后一个批次执行完成后，仅需评估该批次的用例即可
+
+**subagent 模式说明**：subagent 模式下（模式 A），由于 IDE Sub Agent 调用本身较轻量，维持原有的逐条并发策略（3~4 条同时调用），执行完毕后再统一评估。
+
+传参：Input + ExpectedOutput + Judge + ActualOutput（必选）；RunLog/ShareGPT（可选）
+
+### 步骤 4：记录结果
+
+---
+
+## 二、`test_agent` 测试模式
+
+> 只测试 + 评估，不修改提示词。用于了解当前 Agent 的真实水平。
+
+### 流程
+
+1. **前置安装**：
+   - subagent 模式：运行 `./venv/bin/python scripts/install.py [AgentName]`（若指定 `model: xxx`，加 `--model xxx`）
+   - Platform Skill 模式（名称含 `@`）：确认 Platform Skill 已安装（若不在 available_skills 中，先运行 `./venv/bin/python scripts/install.py --platform-skills`）
+2. **执行共享流程步骤 0**：解析 `@` 后缀 → 立即调用 `use_skill` 加载 Platform Skill（详见第一节步骤 0）
+3. **初始化**：确定目标 Agent 名称、YAML 路径、执行模式
+   - 若指定了 `model: xxx`，测试基于 `prompt_[model].md`
+4. **执行共享测试-评估流程步骤 1~4**（本规则第一节）
+   - 评估结果保存到 `source/[AgentName]/tmp/test_[时间戳]_[mode]/`
+5. **生成报告**：
+   - 汇总为 `source/[AgentName]/tmp/test_[时间戳]_[mode]/评估报告.md`
+   - 展示汇总表格（序号 / Input 摘要 / 得分 / 主要不足）
+   - 计算平均分、最高分、最低分、低于 80 分的用例列表
+6. **完成提示**：建议 `calibrate`（首次测试时）或 `evo_looper`

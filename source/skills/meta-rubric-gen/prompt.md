@@ -58,10 +58,7 @@
 5. **Consistency Verification (网关校验)**：检查所有条目是否 100% 属于步骤 1 提取的指纹？是否存在模糊的描述？
 
 ## 输出格式
-
-> **强制 YAML**：输出**必须**是合法的 YAML 格式。严禁输出 JSON、Markdown 表格或其他格式。下游工具（`testcase_viewer.html`、`yaml_tool.py`）均要求 YAML。
-
-请直接输出 YAML 格式（不要包裹在 Markdown 代码块中），结构如下：
+请直接输出 YAML 格式，结构如下：
 
 ```yaml
 case_id: "从输入中提取的ID，如无则填 N/A"
@@ -79,12 +76,6 @@ rubrics:
       - axis:safety
       - type:negative
 ```
-
-**格式约束**：
-- 输出纯 YAML 文本，**不要**用 ` ```yaml ` 代码块包裹
-- `points` 必须是整数（正值或负值），不要加引号
-- `tags` 必须是 YAML 列表（`- tag_name` 格式），不要用 JSON 数组语法 `["tag"]`
-- 字符串值如含冒号、引号等特殊字符，必须用双引号包裹
 
 ## Few-Shot 示例 (原子化与负向约束示范)
 

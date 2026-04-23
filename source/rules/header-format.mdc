@@ -1,0 +1,240 @@
+---
+description: "各 IDE 平台的 Sub Agent 文件头格式规范与工具名映射表。创建或同步 Agent 文件时必须遵守本规则。"
+globs:
+alwaysApply: true
+---
+
+# Sub Agent 文件头格式规范
+
+本文件定义各 IDE 平台的 Agent 文件头（frontmatter）格式，以及跨平台的工具名映射关系。
+
+**适用场景：**
+- 创建新 Agent（`#create_agent`）时生成各平台文件头
+- `#evalooper` 同步更新提示词后重新生成文件头
+- 手动修改任意平台文件头时作为参照
+
+---
+
+## 一、工具语义定义与跨平台映射
+
+Agent 的工具需求用以下**语义值**描述，同步时按平台转换为对应工具名：
+
+| 语义值 | 含义 | Cursor | CodeBuddy | Claude Code |
+|--------|------|--------|-----------|-------------|
+| `read` | 读取文件内容 | `Read` | `read_file` | `Read` |
+| `write` | 写入/创建文件 | `Write` | `write_to_file` | `Write` |
+| `edit` | 修改已有文件 | `Edit` | `replace_in_file` | `Edit` |
+| `search` | 搜索文件路径或内容 | `Glob, Grep` | `search_file, search_content` | `Glob, Grep` |
+| `bash` | 执行命令、列目录 | `Bash` | `execute_command, list_dir` | `Bash` |
+
+**展开示例**：语义工具 `[read, write, search]` →
+
+| 平台 | 生成的 tools 字段值 |
+|------|-------------------|
+| Cursor | `Read, Write, Glob, Grep` |
+| CodeBuddy | `read_file, write_to_file, search_file, search_content` |
+| Claude Code | `Read, Write, Glob, Grep` |
+
+---
+
+## 二、各平台文件头格式
+
+### 2.1 Cursor（`.cursor/agents/[AgentName].md`）
+
+```yaml
+---
+name: [AgentName]
+description: "[Agent 的简要描述]"
+model: 
+tools: [按映射表展开，逗号分隔]
+---
+```
+
+**注意：**
+- `model` 默认留空（跟随 IDE 默认模型），`install.py --model xxx` 时填入指定模型
+- 若 Agent 使用 MCP 服务，Cursor 不支持在文件头中声明，需在 Cursor 全局设置中单独配置，文件头中**忽略 mcpServers**
+
+---
+
+### 2.2 CodeBuddy（`.codebuddy/agents/[AgentName].md`）
+
+```yaml
+---
+name: [AgentName]
+description: "[Agent 的简要描述]"
+model: 
+tools: [按映射表展开，逗号分隔]
+agentMode: agentic
+enabled: true
+enabledAutoRun: true
+mcpTools: [MCP 服务名，逗号分隔；无 MCP 则省略此行]
+---
+```
+
+**注意：**
+- `model` 默认留空（跟随 IDE 默认模型），`install.py --model xxx` 时填入指定模型
+- `agentMode`、`enabled`、`enabledAutoRun` 三个字段固定值，每次都写入
+- 有 MCP 服务时写 `mcpTools: 服务名`；无 MCP 时整行省略
+
+---
+
+### 2.3 Claude Code（`.claude/agents/[AgentName].md`）
+
+```yaml
+---
+name: [AgentName]
+description: "[Agent 的简要描述]"
+model: 
+tools: [按映射表展开，逗号分隔]
+---
+```
+
+有 MCP 服务时：
+
+```yaml
+---
+name: [AgentName]
+description: "[Agent 的简要描述]"
+model: 
+mcpServers:
+  - [服务名]
+---
+```
+
+**注意：**
+- `model` 默认留空（跟随 IDE 默认模型），`install.py --model xxx` 时填入指定模型
+- 有 MCP 服务时：省略 `tools` 字段，改用 `mcpServers` YAML 列表
+- **严禁写入**：`agentMode`、`enabled`、`enabledAutoRun`、`mcpTools`（Claude Code 不识别这些字段）
+
+---
+
+### 2.4 Codex（`AGENTS.md`）
+
+Codex 无独立 agents 目录，无文件头，所有 Agent 以章节形式写入 `AGENTS.md`：
+
+```markdown
+## Agent: [AgentName]
+
+**描述**：[Agent 的简要描述]
+
+**提示词**：
+
+[prompt.md 内容]
+
+---
+```
+
+---
+
+## 三、完整示例对比
+
+以 `log-analyzer`（有 MCP，无普通工具）为例：
+
+**Cursor** `.cursor/agents/log-analyzer.md`：
+```yaml
+---
+name: log-analyzer
+description: 日志分析专家，支持日志查询、错误分析及问题排障。
+model: claude-sonnet-4-5
+tools: Read
+---
+```
+> Cursor 无法在文件头声明 MCP，`Read` 是占位的最小工具集
+
+**CodeBuddy** `.codebuddy/agents/log-analyzer.md`：
+```yaml
+---
+name: log-analyzer
+description: 日志分析专家，支持日志查询、错误分析及问题排障。
+model: minimax-m2.5
+tools: read_file
+agentMode: agentic
+enabled: true
+enabledAutoRun: true
+mcpTools: log-mcp-server
+---
+```
+
+**Claude Code** `.claude/agents/log-analyzer.md`：
+```yaml
+---
+name: log-analyzer
+description: 日志分析专家，支持日志查询、错误分析及问题排障。
+model: sonnet
+mcpServers:
+  - log-mcp-server
+---
+```
+
+以 `meta-agent`（无 MCP，工具语义为 `[read, write]`）为例：
+
+**Cursor**：
+```yaml
+---
+name: meta-agent
+description: 提示词工程专家，将理想态要求转化为运用 CoT、few-shot 等技法的高质量 Agent 提示词
+model: claude-sonnet-4-5
+tools: Read, Write
+---
+```
+
+**CodeBuddy**：
+```yaml
+---
+name: meta-agent
+description: 提示词工程专家，将理想态要求转化为运用 CoT、few-shot 等技法的高质量 Agent 提示词
+model: minimax-m2.5
+tools: read_file, write_to_file
+agentMode: agentic
+enabled: true
+enabledAutoRun: true
+---
+```
+
+**Claude Code**：
+```yaml
+---
+name: meta-agent
+description: 提示词工程专家，将理想态要求转化为运用 CoT、few-shot 等技法的高质量 Agent 提示词
+model: sonnet
+tools: Read, Write
+---
+```
+
+---
+
+## 四、MCP 配置来源
+
+Agent 的 MCP 配置存放在 `source/[AgentName]/.mcp.json` 中，安装子流程会从中提取 MCP 服务名，用于生成各平台文件头。
+
+### 4.1 提取规则
+
+从 `source/[AgentName]/.mcp.json` 中读取 `mcpServers` 对象的所有 key，作为该 Agent 的 MCP 服务名列表。
+
+示例：若 `.mcp.json` 内容为：
+```json
+{
+  "mcpServers": {
+    "cls-mcp-server": { ... }
+  }
+}
+```
+则 MCP 服务名列表为 `["cls-mcp-server"]`。
+
+若 `.mcp.json` 为 `{}` 或不含 `mcpServers`，则该 Agent 无 MCP 服务。
+
+### 4.2 各平台 MCP 映射
+
+| 平台 | MCP 处理方式 |
+|------|-------------|
+| Cursor | 文件头中**不写** MCP 信息（Cursor 不支持文件头声明 MCP，需在 Cursor 全局设置中单独配置） |
+| CodeBuddy | 文件头中写 `mcpTools: [MCP 服务名列表，逗号分隔]` |
+| Claude Code | 文件头中省略 `tools`，改用 `mcpServers:` YAML 列表 |
+| Codex | 无文件头，不涉及 MCP 声明 |
+
+### 4.3 合并到根 `.mcp.json`
+
+安装子流程还负责将 `source/[AgentName]/.mcp.json` 中的服务配置合并到项目根 `.mcp.json`：
+- 将 Agent 的 `mcpServers` 中每个服务合并到根文件的 `mcpServers` 中
+- 若同名 key 已存在，**跳过**（不覆盖）
+- 合并后写回根 `.mcp.json`

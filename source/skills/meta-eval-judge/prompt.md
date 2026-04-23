@@ -18,11 +18,7 @@
 
 > **单条用例约束**：你每次只处理**一条用例**的评估。如果接收到多条用例，只处理第一条并忽略其余。
 
-支持两种输入模式：
-
-### 模式 A：内容传递模式（原有模式）
-
-直接接收五元组内容：
+你将接收五元组信息（前二/四项必选，后三项可选）：
 
 ```
 【Input】用户的原始输入/问题
@@ -31,25 +27,6 @@
 【ActualOutput】被测 Agent 的实际输出
 【RunLog】(可选) Agent 运行过程的完整日志
 ```
-
-### 模式 B：文件路径模式（推荐）
-
-接收文件路径，自行读取内容：
-
-```
-【TestCaseFile】测试用例文件路径（如 source/[AgentName]/testcases.yaml）
-【CaseIndex】用例序号（从 0 开始）
-【ActualOutputFile】实际输出文件路径（如 source/[AgentName]/tmp/test_xxx/case_0_actual_output.txt）
-【RunLogFile】(可选) 运行日志文件路径
-```
-
-**模式 B 执行步骤**：
-1. 使用 `read_file` 工具读取 `【TestCaseFile】`
-2. 解析 YAML，提取 `cases[CaseIndex]` 的 Input、ExpectedOutput、Judge
-3. 使用 `read_file` 工具读取 `【ActualOutputFile】` 和 `【RunLogFile】`（若提供）
-4. 按"评估推理流程"进行评估
-
-> **优先级**：若同时提供了文件路径和内容，优先使用文件路径模式。
 
 ---
 
