@@ -132,6 +132,21 @@ source/agents/说唱生成系统/
 # 工作日志（本地迭代记录，不纳入版本控制）
 工作日志/
 
+# docs/ 目录（设计文档，本地参考，不纳入版本控制）
+docs/
+
+# 根目录多余的 markdown（只保留 README*.md、CONTRIBUTING.md、CLAUDE.md、CODEBUDDY.md、AGENTS.md、SETUP.md）
+ANALYSIS_SUMMARY*.md
+CODE_OF_CONDUCT.md
+DOCUMENTATION_AUDIT_INDEX*.md
+EVIDENCE_EXAMPLES*.md
+PROJECT_STRUCTURE.md
+README_GAP_ANALYSIS*.md
+case_*_eval_result.md
+
+# meta-skill-harness 的模型变种 prompt（本地使用，不纳入版本控制）
+source/agents/meta-skill-harness/prompt_*.md
+
 # 备份文件
 **/bak/
 **/*.bak

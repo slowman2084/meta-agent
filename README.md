@@ -689,8 +689,6 @@ iterate <target> --models claude-sonnet-4,gpt-4o,gemini-2.5-pro
 ──────────────────────────────────────────────────────
 ```
 
-详细设计方案参见 [docs/multimodel-design.md](docs/multimodel-design.md)。
-
 ---
 
 ## 关键设计约束
