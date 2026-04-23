@@ -2,19 +2,22 @@
 """
 状态索引工具 — 维护每个 Agent/Skill 的 status.json
 
-提供快速查询单个 Agent 状态、更新字段、从磁盘产物自动同步、全局概览。
+提供快速查询单个 Agent 状态、更新字段、从磁盘产物自动同步、全局概览、下一步建议。
 
 子命令:
   get      读取状态
   set      更新字段
   sync     从磁盘产物自动推断并更新状态
   summary  全局概览表
+  next     基于当前状态和规划文件，给出下一步建议
 
 用法:
   ./venv/bin/python scripts/status_tool.py get source/agents/cls-log-agent
   ./venv/bin/python scripts/status_tool.py set source/agents/cls-log-agent phase iterate
   ./venv/bin/python scripts/status_tool.py sync source/agents/cls-log-agent
   ./venv/bin/python scripts/status_tool.py summary
+  ./venv/bin/python scripts/status_tool.py next
+  ./venv/bin/python scripts/status_tool.py next --json
 """
 
 import sys
@@ -272,6 +275,177 @@ def cmd_summary(args) -> int:
     return 0
 
 
+def cmd_next(args) -> int:
+    """根据所有 Agent/Skill 的状态和规划文件，生成下一步建议。"""
+    all_entries = []
+    target_dirs = {}
+
+    # 扫描 agents + skills
+    for base_dir in [AGENTS_DIR, SKILLS_DIR]:
+        if not base_dir.is_dir():
+            continue
+        for d in sorted(base_dir.iterdir()):
+            if d.is_dir() and not d.name.startswith("."):
+                status = _read_status(d)
+                all_entries.append(status)
+                target_dirs[status.get("name", d.name)] = d
+
+    if not all_entries:
+        print("📭 无 Agent/Skill 状态记录", flush=True)
+        return 0
+
+    # ── 分类 ──
+    in_progress = []       # 有活跃 plan 且未完成
+    needs_iterate = []     # 已 test 但分数不达标
+    needs_test = []        # 有用例但从未 test
+    needs_calibrate = []   # 已 test 且首次，建议 calibrate
+    needs_enrich = []      # 有 prompt/SKILL 但缺 ideal_state 或 testcases
+    just_created = []      # 仅 created 状态
+    completed = []         # 迭代完成或高分
+
+    for s in all_entries:
+        name = s.get("name", "?")
+        phase = s.get("phase", "created")
+        score = s.get("last_test_score")
+        baseline = s.get("baseline_score")
+        iters = s.get("iterations_completed", 0)
+        stype = s.get("type", "agent")
+        d = target_dirs.get(name)
+
+        # 跳过 meta-* 的内部 skill（它们不是用户优化目标）
+        if name.startswith("meta-") and stype == "skill":
+            continue
+
+        # 检查活跃 plan
+        plan = None
+        if d:
+            plan = _find_latest_plan(d)
+
+        # 检查缺失资产
+        has_prompt = False
+        has_ideal = False
+        has_testcases = False
+        if d:
+            has_prompt = (d / "prompt.md").exists() or (d / "SKILL.md").exists()
+            has_ideal = (d / "ideal_state.md").exists()
+            has_testcases = (d / "testcases.yaml").exists()
+
+        # 分类逻辑
+        if plan and plan.get("status") not in ("completed", None):
+            in_progress.append((name, phase, plan, score))
+        elif score is not None and score >= 95:
+            completed.append((name, score, iters))
+        elif score is not None and score < 80 and iters > 0:
+            needs_iterate.append((name, score, iters))
+        elif score is not None and iters == 0:
+            needs_calibrate.append((name, score))
+        elif has_prompt and not has_ideal:
+            needs_enrich.append((name, "缺 ideal_state.md"))
+        elif has_prompt and not has_testcases:
+            needs_enrich.append((name, "缺 testcases.yaml"))
+        elif has_testcases and score is None:
+            needs_test.append((name, stype))
+        elif phase == "created":
+            just_created.append((name, stype, has_prompt))
+        elif score is not None and score < 95:
+            needs_iterate.append((name, score, iters))
+
+    # ── 输出 JSON ──
+    if args.json:
+        result = {
+            "in_progress": [{"name": n, "phase": p, "plan": pl.get("path") if pl else None, "score": sc} for n, p, pl, sc in in_progress],
+            "needs_iterate": [{"name": n, "score": sc, "iterations": it} for n, sc, it in needs_iterate],
+            "needs_test": [{"name": n, "type": t} for n, t in needs_test],
+            "needs_calibrate": [{"name": n, "score": sc} for n, sc in needs_calibrate],
+            "needs_enrich": [{"name": n, "reason": r} for n, r in needs_enrich],
+            "just_created": [{"name": n, "type": t, "has_prompt": hp} for n, t, hp in just_created],
+            "completed": [{"name": n, "score": sc, "iterations": it} for n, sc, it in completed],
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
+        return 0
+
+    # ── 输出人类可读建议 ──
+    print("=" * 60, flush=True)
+    print("📋 下一步建议（基于当前状态和规划文件）", flush=True)
+    print("=" * 60, flush=True)
+
+    idx = 0
+
+    if in_progress:
+        print(f"\n🔄 有未完成的任务（优先续跑）：", flush=True)
+        for name, phase, plan, score in in_progress:
+            idx += 1
+            plan_path = plan.get("path", "") if plan else ""
+            # 从文件名提取 command: plan_iterate_20260412.md → iterate
+            plan_cmd = "?"
+            if plan_path:
+                fname = Path(plan_path).stem  # plan_iterate_20260412_000151
+                parts = fname.split("_")
+                if len(parts) >= 2:
+                    plan_cmd = parts[1]  # iterate / test / create / calibrate
+            score_str = f"{score:.1f}分" if score is not None else "未评分"
+            print(f"   {idx}. {name} — {plan_cmd} 进行中 (phase: {phase}, {score_str})", flush=True)
+            print(f"      → 输入: {plan_cmd} {name}", flush=True)
+            print(f"      📄 {plan_path}", flush=True)
+
+    if needs_iterate:
+        print(f"\n⚡ 建议迭代优化（分数未达标）：", flush=True)
+        for name, score, iters in sorted(needs_iterate, key=lambda x: x[1]):
+            idx += 1
+            print(f"   {idx}. {name} — 当前 {score:.1f}分, 已迭代 {iters} 轮", flush=True)
+            print(f"      → 输入: iterate {name}", flush=True)
+
+    if needs_calibrate:
+        print(f"\n🔬 建议先校准评估体系（首次 test 后）：", flush=True)
+        for name, score in needs_calibrate:
+            idx += 1
+            print(f"   {idx}. {name} — 首次 test 得分 {score:.1f}", flush=True)
+            print(f"      → 输入: calibrate {name}", flush=True)
+
+    if needs_test:
+        print(f"\n🧪 有用例但未测试：", flush=True)
+        for name, stype in needs_test:
+            idx += 1
+            print(f"   {idx}. {name} ({stype}) — 有 testcases.yaml 但从未 test", flush=True)
+            print(f"      → 输入: test {name}", flush=True)
+
+    if needs_enrich:
+        print(f"\n📝 建议补全工程化资产（enrich）：", flush=True)
+        for name, reason in needs_enrich:
+            idx += 1
+            print(f"   {idx}. {name} — {reason}", flush=True)
+            print(f"      → 输入: enrich {name}", flush=True)
+
+    if just_created:
+        has_prompt_list = [(n, t) for n, t, hp in just_created if hp]
+        no_prompt_list = [(n, t) for n, t, hp in just_created if not hp]
+        if has_prompt_list:
+            print(f"\n🌱 已有提示词但未进入流程：", flush=True)
+            for name, stype in has_prompt_list:
+                idx += 1
+                print(f"   {idx}. {name} ({stype}) — 有提示词，可以开始测试或补全", flush=True)
+                print(f"      → 输入: test {name} 或 enrich {name}", flush=True)
+        if no_prompt_list:
+            print(f"\n📦 空目录（仅脚手架）：", flush=True)
+            for name, stype in no_prompt_list:
+                idx += 1
+                print(f"   {idx}. {name} ({stype})", flush=True)
+
+    if completed:
+        print(f"\n✅ 已达标：", flush=True)
+        for name, score, iters in completed:
+            print(f"   • {name} — {score:.1f}分 ({iters} 轮迭代)", flush=True)
+
+    if idx == 0:
+        print(f"\n💡 当前没有明确的下一步。你可以：", flush=True)
+        print(f"   • create agent — 创建新 Agent", flush=True)
+        print(f"   • create skill — 创建新 Skill", flush=True)
+        print(f"   • enrich /path/to/skills --all — 批量补全外部 Skills", flush=True)
+
+    print(f"\n{'=' * 60}", flush=True)
+    return 0
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 
@@ -310,6 +484,10 @@ def main():
     p_summary = subparsers.add_parser("summary", help="全局概览表")
     p_summary.add_argument("--json", action="store_true", help="输出 JSON 格式")
 
+    # ── next ──
+    p_next = subparsers.add_parser("next", help="基于当前状态给出下一步建议")
+    p_next.add_argument("--json", action="store_true", help="输出 JSON 格式（供 AI 程序化消费）")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -321,6 +499,7 @@ def main():
         "set": cmd_set,
         "sync": cmd_sync,
         "summary": cmd_summary,
+        "next": cmd_next,
     }
 
     return handlers[args.command](args)

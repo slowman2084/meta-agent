@@ -1,0 +1,8 @@
+{
+  "name": "sample_platform",
+  "description": "Platform Skill 示例 — 演示如何封装一个外部测试执行平台",
+  "trigger_keywords": ["on sample-platform"],
+  "tools": [],
+  "platform_type": "api",
+  "notes": "这是一个脱敏的 Sample，展示 Platform Skill 的基本结构和约定"
+}

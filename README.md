@@ -95,8 +95,12 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 | `create agent` | 创建 Agent | 支持从提示词草稿、理想态描述、YAML 用例、LLM 对话记录四种方式创建 |
 | `create testcases` | 生成测试用例 | 为已有 Agent 自动生成 YAML 测试用例和评分标准 |
 | `test` | 测试评估 | 逐条运行测试用例，调用 eval-judge 进行 0-100 分评分 |
+| `test --models a,b --runs N` | 多模型对比测试 | 多模型×多次运行 → 对比 HTML → 选择 ExpectedOutput → Rubrics 校准 |
 | `iterate` | 迭代优化 | 4 阶段分层策略自动迭代（热身→基线→抽样→验证），直到达标 |
+| `iterate --models a,b` | 多模型并发优化 | 为每个模型各自迭代优化 → 交叉测试 → 生成跨模型 robust 版本 |
 | `calibrate` | 校准诊断 | 诊断三元组（提示词 / 理想态 / 评分标准）的一致性问题 |
+| `enrich` | 补全工程化资产 | 为已有 Skill/Agent 逆向补全理想态 + 测试用例 + Judge，支持外部路径和批量模式 |
+| `下一步` / `next` | 状态建议 | 基于所有 Agent/Skill 的状态和规划文件，给出下一步操作建议 |
 | `create skill` | 创建 Skill | 创建可测试的 Skill，自动套壳 meta-skill-harness |
 | `create platformskill` | 创建平台 Skill | 创建新的 Platform Skill 执行环境封装 |
 
@@ -119,6 +123,37 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 ./venv/bin/python scripts/yaml_tool.py count source/agents/my-agent/testcases.yaml
 ./venv/bin/python scripts/yaml_tool.py get source/agents/my-agent/testcases.yaml 0
 ./venv/bin/python scripts/yaml_tool.py get source/agents/my-agent/testcases.yaml 0-4 --fields Input,Judge
+```
+
+### 辅助工具
+
+```bash
+# Skill 测试壳 Agent 创建
+./venv/bin/python scripts/create_harness.py [skill-name]
+
+# 产物完整性检查（检查 plan 中各步骤的产物是否存在）
+./venv/bin/python scripts/artifact_checker.py [target_dir]
+
+# 平台输出校验
+./venv/bin/python scripts/validate_platform_outputs.py [output_dir]
+
+# 临时文件清理
+./venv/bin/python scripts/cleanup_tool.py [target_dir]
+
+# 触发测试执行
+./venv/bin/python scripts/trigger_test.py [target] [--cases 0-4]
+```
+
+### 多模型对比工具
+
+```bash
+# 将 manifest.json + 各 result.md 注入到 HTML 对比页面
+./venv/bin/python scripts/multimodel_inject.py [multimodel_dir]
+# → 生成 multimodel_compare_data.html，在浏览器中打开对比选择
+
+# 将 calibration_report.json 注入到校准决策页面
+./venv/bin/python scripts/calibration_inject.py [calibration_report.json]
+# → 生成 calibration_review_data.html，在浏览器中逐条决策
 ```
 
 ### Learnings 经验管理
@@ -255,8 +290,8 @@ create agent
 
 ### 场景 2：测试一个已有 Agent
 
-```
-# 测试全部用例
+```bash
+# 单模型测试（默认）
 test cls-log-agent
 
 # 只测试前 3 条
@@ -264,32 +299,44 @@ test cls-log-agent top 3
 
 # 在 CodeBuddy CLI 平台上测试
 test cls-log-agent on codebuddycli
+
+# 多模型对比测试：2 个模型各跑 2 次，产出对比 HTML
+test cls-log-agent --models claude-sonnet-4,gpt-4o --runs 2
 ```
 
-现在这条链路会自动做两件事：
+单模型测试会自动做两件事：
 1. 开始前执行 `context_tool.py recover`，优先续跑未完成 plan，并带上最近 baseline / test / changelog / learnings
 2. `评估报告.md` 生成后执行 `status_tool.py sync`，把最新分数和计划状态写入 `status.json`
 
+多模型对比测试会额外做：
+3. 对每份输出自动评分，生成 `manifest.json`
+4. 注入数据到对比 HTML，打开浏览器供用户并排查看 Input / Output / Tools 调用过程
+5. 用户选择最佳 ExpectedOutput → 可选触发 Rubrics 校准
+
+> **推荐**：初次生成 testcases 和 rubrics 后，先跑一次 `test --models --runs`，通过对比选择来校准评估体系，再进入迭代优化。
+
 ### 场景 3：自动迭代优化直到达标
 
-```
-# 自动 4 阶段优化（热身 → 基线 → 抽样迭代 → 全量验证）
+```bash
+# 单模型迭代（默认）：4 阶段优化（热身 → 基线 → 抽样迭代 → 全量验证）
 iterate cls-log-agent
-
-# 指定目标分数
-iterate cls-log-agent  # 默认目标 98 分
 
 # 从上次中断处续跑（自动查找最新 plan 文件）
 iterate cls-log-agent
+
+# 多模型并发优化：为每个模型各自迭代 → 交叉测试 → 生成 robust 版本
+iterate cls-log-agent --models claude-sonnet-4,gpt-4o,gemini-2.5-pro
 ```
 
-现在 iterate 主流程内建了这套闭环：
+iterate 主流程内建了这套闭环：
 1. 启动先 `recover`
 2. 每轮 test / compare 后跑 `summary`
 3. 将有效方向、退化信号、反模式写入 `learnings.jsonl`
 4. 每个阶段结束后 `status_tool.py sync`
 
 所以一次 `iterate xxx` 已经不只是"跑分"，而是"恢复上下文 → 执行 → 沉淀经验 → 刷新状态"的完整工作流。
+
+多模型并发优化（`--models`）则会为每个模型独立迭代，最终通过智能采样交叉测试，产出跨模型得分最高的 `prompt_robust.md` / `SKILL_robust.md`。
 
 ### 场景 4：迭代过程中积累和使用经验
 
@@ -351,6 +398,55 @@ iterate cls-query-skill
 - `iterate cls-query-skill` 会自动把阶段状态和 learnings 写回 `source/skills/cls-query-skill/`
 - 优化目标仍然是 `SKILL.md`，但恢复 / 经验 / 状态链路与 Agent 已统一
 
+### 场景 8：为已有 Skill 补全工程化资产（enrich）
+
+```bash
+# 为单个 Skill 补全理想态 + 测试用例 + Judge
+enrich my-skill
+
+# 为外部项目中的 Skill 补全（支持任意路径）
+enrich /path/to/external-project/skills/my-skill
+
+# 批量补全一个目录下所有含 SKILL.md 的子目录
+enrich /path/to/skills-dir --all
+```
+
+`enrich` 适用于：
+- 手写的 Skill，从未经过 meta-agent 流程
+- 外部项目中的 Skills（不在 meta-agent source 目录内）
+- 批量补全整个 Skills 目录
+
+流程：
+1. **Locate** — 定位 SKILL.md，读取并理解 Skill 功能
+2. **Ideal State** — 调用 meta-ideal-state，从 SKILL.md 逆向推导理想态
+3. **Test Cases** — 调用 meta-testcase-gen，生成测试用例
+4. **Rubric** — 调用 meta-rubric-gen，为每条用例生成 Judge
+5. **Review** — 展示汇总，请用户确认质量
+6. **Write Back** — 将 `ideal_state.md` + `testcases.yaml` 写入 Skill 目录
+
+### 场景 9：Rubrics 迭代校准（推荐流程）
+
+测试用例和 Rubrics 生成后，建议通过**多模型多次测试 → 对比选择 → 迭代更新 Rubrics** 来校准评估体系：
+
+```bash
+# 1. 多模型各跑 2 次，产出对比数据
+test my-agent --models claude-sonnet-4,gpt-4o --runs 2
+
+# 2. 用对比工具审查，选择最佳 ExpectedOutput
+#    → 打开 scripts/multimodel_compare.html
+#    → 并排查看 Input / Output，包括 tools 调用过程
+#    → 为每条用例选择最佳输出 → 导出 selections.json
+
+# 3. AI 读取 selections.json
+#    → 若用户选了低分输出，触发反思流程
+#    → 自动调整 Rubrics / 理想态 / 提示词
+```
+
+**对比工具的展示要求**：
+- **Input 与 Output 分区展示**：每条用例清晰分开 Input（用户输入）和 Output（模型输出）
+- **多轮 Tools 调用对比**：若 Agent 在执行中调用了多个 tools，对比工具中应逐步骤展示每次 tool 调用的参数和返回值，方便发现不同模型在 tool 使用策略上的差异
+- **评分维度拆分**：各 Rubric 维度的得分独立展示，一眼看出哪个维度拉低了总分
+
 ---
 
 ## 11 个核心 Meta Skills
@@ -403,19 +499,21 @@ iterate cls-query-skill        # 自动优化 SKILL.md，产生优化历史
 meta-agent/
 ├── source/                       # 唯一真相来源（Source of Truth）
 │   ├── agents/                   #   业务 Agent 源文件目录
-│   │   └── [AgentName]/          #     每个 Agent 的完整源文件
-│   │       ├── prompt.md         #       提示词
-│   │       ├── ideal_state.md    #       理想态描述
-│   │       ├── testcases.yaml    #       测试用例（Input / ExpectedOutput / Judge）
-│   │       ├── agent.json        #       元数据（描述 + 工具语义 + benefits_from）
-│   │       ├── changelog.md      #       全生命周期变更记录
-│   │       ├── learnings.jsonl   #       结构化经验记录（追加写入）
-│   │       ├── status.json       #       当前状态索引
-│   │       ├── .mcp.json         #       MCP 服务配置
-│   │       ├── references/       #       领域参考资源
-│   │       ├── skills/           #       专属 Skill
-│   │       ├── bak/              #       历史备份
-│   │       └── tmp/              #       运行时产物（plan / test results / baseline）
+│   │   ├── [AgentName]/          #     每个 Agent 的完整源文件
+│   │   │   ├── prompt.md         #       提示词
+│   │   │   ├── ideal_state.md    #       理想态描述
+│   │   │   ├── testcases.yaml    #       测试用例（Input / ExpectedOutput / Judge）
+│   │   │   ├── agent.json        #       元数据（描述 + 工具语义 + benefits_from）
+│   │   │   ├── changelog.md      #       全生命周期变更记录
+│   │   │   ├── learnings.jsonl   #       结构化经验记录（追加写入）
+│   │   │   ├── status.json       #       当前状态索引
+│   │   │   ├── .mcp.json         #       MCP 服务配置
+│   │   │   ├── references/       #       领域参考资源
+│   │   │   ├── skills/           #       专属 Skill
+│   │   │   ├── bak/              #       历史备份
+│   │   │   └── tmp/              #       运行时产物（plan / test results / baseline）
+│   │   ├── meta-skill-harness/   #     通用 Skill 测试壳 Agent
+│   │   └── 歌词生成系统/          #     Sample：走完创建→测试→迭代全流程的 Demo
 │   │
 │   ├── skills/                   #   Skills 源文件目录（包括所有 meta-* Skills）
 │   │   ├── meta-plan/            #     中心编排器 Skill
@@ -432,7 +530,7 @@ meta-agent/
 │   │   │   └── ...               #       （其余同 Agent 结构）
 │   │   └── ...
 │   │
-│   └── platform-skills/          #   平台 Skill 源目录（执行环境封装）
+│   └── platform-skills/          #   平台 Skill 源目录（执行环境封装，TODO: 提供脱敏 Sample）
 │
 ├── scripts/                      # 自动化脚本
 │   ├── install.py                #   Agent + Skill + Platform Skills 安装
@@ -442,11 +540,22 @@ meta-agent/
 │   ├── context_tool.py           #   上下文恢复（recover / summary）
 │   ├── status_tool.py            #   状态索引（get / set / sync / summary）
 │   ├── setup_mcp.py              #   MCP 快速配置
-│   └── verify_setup.py           #   初始化验证
+│   ├── verify_setup.py           #   初始化验证
+│   ├── create_harness.py         #   Skill 测试壳 Agent 创建
+│   ├── artifact_checker.py       #   产物完整性检查
+│   ├── trigger_test.py           #   触发测试执行
+│   ├── cleanup_tool.py           #   临时文件清理
+│   ├── validate_platform_outputs.py # 平台输出校验
+│   ├── multimodel_compare.html   #   多模型输出对比选择工具
+│   ├── multimodel_inject.py      #   manifest + results → HTML 数据注入
+│   ├── calibration_review.html   #   校准诊断可视化决策工具
+│   └── calibration_inject.py     #   calibration JSON → HTML 数据注入
 │
 ├── tools/                        # 人工辅助工具（浏览器中使用）
 │   ├── testcase_viewer.html      #   测试用例可视化审阅 + 批注导出
 │   └── calibration_viewer.html   #   校准诊断报告可视化 + 决策选择
+│
+├── tests/                        # 单元测试
 │
 ├── .cursor/                      # ┐
 ├── .codebuddy/                   # ├─ 由 install.py 自动生成，勿手动修改
@@ -477,6 +586,110 @@ meta-agent/
 | CodeBuddy | `.codebuddy/agents/` | `mcpTools: 服务名` |
 | Claude Code | `.claude/agents/` | `mcpServers: [服务名]` |
 | Codex | `AGENTS.md` 章节 | 不涉及 |
+
+### 安装范围
+
+```bash
+# 项目级安装（默认）——安装到当前项目的 .cursor/ .codebuddy/ .claude/ 目录
+./venv/bin/python scripts/install.py <target>
+
+# 用户级安装——自动探测已安装的 IDE，安装到 ~/.cursor/ ~/.codebuddy/ ~/.claude/
+./venv/bin/python scripts/install.py <target> --scope user
+
+# 用户级 + 指定模型版本
+./venv/bin/python scripts/install.py <target> --scope user --model gpt-4o
+```
+
+---
+
+## 多模型兼容工作流
+
+Meta-Agent 支持在测试、迭代优化的全流程中兼容不同模型，最终产出跨模型鲁棒的提示词。
+
+**`test` vs `iterate` 的分工**：
+
+| 命令 | 用途 | 触发条件 |
+|------|------|---------|
+| `test xxx` | 单模型单次测试 | 默认（无 `--models`/`--runs`） |
+| `test xxx --models a,b --runs 2` | **多模型对比测试** → 对比 HTML → 选择 ExpectedOutput → Rubrics 校准 | 有 `--models` 或 `--runs > 1` |
+| `iterate xxx` | 单模型迭代优化 | 默认 |
+| `iterate xxx --models a,b` | **多模型并发优化** → 各自迭代 → 交叉测试 → robust 版本 | 有 `--models` |
+
+### 模型版本管理
+
+**命名规范**：
+- Agent：`prompt_<model>.md`（如 `prompt_claude-sonnet-4.md`、`prompt_gpt-4o.md`）
+- Skill：`SKILL_<model>.md`（如 `SKILL_claude-sonnet-4.md`、`SKILL_gpt-4o.md`）
+- 鲁棒版本：`prompt_robust.md` / `SKILL_robust.md`（跨模型得分最高的版本）
+
+**安装时版本选择优先级**：
+| 情况 | 选择的文件 |
+|------|-----------|
+| `--model gpt-4o` 且变体存在 | `prompt_gpt-4o.md` / `SKILL_gpt-4o.md` |
+| `--model robust` | `prompt_robust.md` / `SKILL_robust.md` |
+| 不指定且 `_robust` 版本存在 | **自动使用 robust 版本** |
+| 不指定且无 robust | `prompt.md` / `SKILL.md`（默认）|
+
+**Agent vs Skill 安装差异**：
+- Agent：sub agent header 中可以指定 `model` 字段 → 运行时由 IDE 选择模型执行
+- Skill：安装时将选中的 `SKILL_<model>.md` 内容安装为 `SKILL.md` → 运行时用已安装的版本
+
+### 多模型测试执行
+
+```bash
+# 单模型跑 3 次（得到 3 份输出供对比选择）
+test <target> --runs 3
+
+# 3 个模型各跑 1 次
+test <target> --models claude-sonnet-4,gpt-4o,gemini-2.5-pro
+
+# 2 个模型各跑 2 次
+test <target> --models claude-sonnet-4,gpt-4o --runs 2
+```
+
+每次执行产出标准化文件：
+```
+<target>/tmp/multimodel_<timestamp>/
+├── <model>_run<N>_case<M>_sharegpt.json   # ShareGPT 格式对话记录
+├── <model>_run<N>_case<M>_result.md       # Markdown 格式最终输出
+└── manifest.json                           # 元信息索引 + 自动评分
+```
+
+### 人工选择 + 自动评估闭环
+
+1. **对比工具**：`scripts/multimodel_compare.html` 并排展示不同模型/不同次运行的输出，带自动评分
+   - **Input / Output 分区展示**：每条用例清晰分开展示用户输入和模型输出
+   - **Tools 调用过程对比**：若 Agent 执行中调用了多个 tools，逐步骤展示每次 tool 调用的参数和返回值（从 ShareGPT JSON 中解析），方便发现不同模型在 tool 使用策略上的差异
+   - **评分维度拆分**：各 Rubric 维度独立展示，一眼看出哪个维度拉低了总分
+2. **选择 ExpectedOutput**：用户在 HTML 中为每个测试用例选择最佳输出 → 导出 `selections.json`
+3. **低分选择触发反思**：AI 读取 `selections.json` 后，如果用户选了低分输出，提供两个选项：
+   - **A. 反思模式**：调用 meta-debug 分析 rubrics/理想态/提示词哪里有问题 → `calibration_review.html` 让用户逐条决策
+   - **B. 标准适配模式**：让 rubrics 遵循用户选择，自动优化评分标准
+
+### 多模型并发优化
+
+> **推荐流程**：在正式进入多模型并发优化前，先走一轮"测试用例+Rubrics 生成 → 多模型多次测试对比 → 人工选择 → 迭代更新 Rubrics"的校准循环。这可以确保评估体系本身是准确的，避免在错误的标准上优化。详见上方"场景 9：Rubrics 迭代校准"。
+
+```bash
+iterate <target> --models claude-sonnet-4,gpt-4o,gemini-2.5-pro
+```
+
+1. 为每个模型各自迭代优化，产出 `prompt_<model>.md` / `SKILL_<model>.md`
+2. **智能采样交叉测试**：选 top-2 版本做定向交叉验证（非全量 N×N）
+3. 跨模型均分最高的版本 → 微调生成 `prompt_robust.md` / `SKILL_robust.md`
+
+```
+📊 多模型优化报告
+──────────────────────────────────────────────────────
+| 版本                      | claude | gpt-4o | 跨模型均分 |
+|--------------------------|--------|--------|-----------|
+| prompt_claude-sonnet-4.md | 92     | 71     | 81.5      |
+| prompt_gpt-4o.md          | 75     | 88     | 81.5      |
+| prompt_robust.md           | 84     | 85     | 84.5 ★   |
+──────────────────────────────────────────────────────
+```
+
+详细设计方案参见 [docs/multimodel-design.md](docs/multimodel-design.md)。
 
 ---
 
@@ -525,11 +738,15 @@ python3 -m venv venv
 
 在 IDE 对话中直接输入触发词即可：
 
-```
-create agent                     # 开始创建流程，AI 会引导你选择方式
-test my-agent                    # 测试指定 Agent
-iterate my-agent                 # 循环优化直到达标
-calibrate my-agent               # 校准评估体系
+```bash
+create agent                                          # 开始创建流程
+test my-agent                                         # 单模型测试
+test my-agent --models claude-sonnet-4,gpt-4o --runs 2  # 多模型对比测试 + Rubrics 校准
+iterate my-agent                                      # 单模型迭代优化
+iterate my-agent --models claude-sonnet-4,gpt-4o        # 多模型并发优化 → robust 版本
+calibrate my-agent                                    # 校准评估体系
+enrich /path/to/skills --all                          # 批量补全理想态+测试用例
+下一步                                                # 基于当前状态给出下一步建议
 ```
 
 ---

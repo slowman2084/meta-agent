@@ -1,9 +1,0 @@
-{
-  "description": "腾讯云 CLS 日志检索分析专家，支持日志查询、错误分析及 APM 协同排障。",
-  "tools": [
-    "read",
-    "write",
-    "search",
-    "bash"
-  ]
-}

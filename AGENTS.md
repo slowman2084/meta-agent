@@ -218,3 +218,43 @@ scripts/artifact_checker.py        — Skill 产物验证检查
 > 请参见 `source/agents/塑普歌词生成器/prompt.md`
 
 ---
+
+## Agent: meta-skill-harness-minimax-m2.7-ioa
+
+**描述**：通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。（模型：minimax-m2.7-ioa）
+
+**提示词**：
+
+> 请参见 `source/agents/meta-skill-harness-minimax-m2.7-ioa/prompt.md`
+
+---
+
+## Agent: meta-skill-harness-kimi-k2.5-ioa
+
+**描述**：通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。（模型：kimi-k2.5-ioa）
+
+**提示词**：
+
+> 请参见 `source/agents/meta-skill-harness-kimi-k2.5-ioa/prompt.md`
+
+---
+
+## Agent: meta-skill-harness-GLM-5.1
+
+**描述**：通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。（模型：GLM-5.1）
+
+**提示词**：
+
+> 请参见 `source/agents/meta-skill-harness-GLM-5.1/prompt.md`
+
+---
+
+## Agent: meta-skill-harness-Claude-Sonnet-4.6
+
+**描述**：通用 Skill 测试执行器壳 Agent，运行时由规则层动态注入目标 Skill 名称。不直接使用，通过 test/iterate 命令自动套壳调用。（模型：Claude-Sonnet-4.6）
+
+**提示词**：
+
+> 请参见 `source/agents/meta-skill-harness-Claude-Sonnet-4.6/prompt.md`
+
+---

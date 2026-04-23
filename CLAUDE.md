@@ -6,7 +6,7 @@
 
 本项目是一个 **Agent 工厂**，用于创建、测试、迭代优化 Sub Agent。核心流程由编排 Skill（meta-iterate / meta-plan 等）驱动。
 
-触发词速查：`create agent` / `create testcases` / `test` / `iterate` / `calibrate` / `create skill` / `create platformskill`
+触发词速查：`create agent` / `create testcases` / `test` / `iterate` / `calibrate` / `create skill` / `create platformskill` / `enrich`（为已有 Skill 补全理想态+测试用例） / `下一步`（基于状态给出建议）
 
 ## 目录结构
 
@@ -47,6 +47,10 @@ AGENTS.md                        # Codex Agent 配置文件
 | `scripts/learnings_tool.py` | 结构化经验 JSONL（log/search/count） |
 | `scripts/context_tool.py` | 自动上下文恢复（recover/summary） |
 | `scripts/status_tool.py` | Agent/Skill 状态索引（get/set/sync/summary） |
+| `scripts/create_harness.py` | Skill 测试壳 Agent 创建 |
+| `scripts/artifact_checker.py` | 产物完整性检查 |
+| `scripts/multimodel_inject.py` | 多模型对比数据注入 HTML |
+| `scripts/calibration_inject.py` | 校准诊断数据注入 HTML |
 
 ## 完整流程参考
 

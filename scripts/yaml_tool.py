@@ -138,6 +138,45 @@ def _dump_yaml_to_str(data) -> str:
 
 
 # ============================================================
+# 格式兼容层
+# ============================================================
+
+def _get_cases(data) -> list:
+    """兼容两种根键格式：
+    - meta-agent 标准格式：{cases: [...]}
+    - pptdog 外部格式：{testcases: [...]}
+    返回用例列表，未找到时返回空列表。
+    """
+    if not isinstance(data, dict):
+        return []
+    if 'cases' in data:
+        return data.get('cases', [])
+    if 'testcases' in data:
+        # pptdog 格式：字段名映射到标准字段名
+        raw = data.get('testcases', [])
+        converted = []
+        for tc in raw:
+            if not isinstance(tc, dict):
+                converted.append(tc)
+                continue
+            c = dict(tc)
+            # input -> Input, expected_output -> ExpectedOutput, judge -> Judge
+            if 'input' in c and 'Input' not in c:
+                c['Input'] = c.pop('input')
+            if 'expected_output' in c and 'ExpectedOutput' not in c:
+                c['ExpectedOutput'] = c.pop('expected_output')
+            if 'judge' in c and 'Judge' not in c:
+                judge_val = c.pop('judge')
+                if isinstance(judge_val, list):
+                    c['Judge'] = '\n'.join(judge_val)
+                else:
+                    c['Judge'] = judge_val
+            converted.append(c)
+        return converted
+    return []
+
+
+# ============================================================
 # 索引解析
 # ============================================================
 
@@ -189,7 +228,7 @@ def cmd_count(args):
         return 1
 
     data = _load_yaml(path)
-    cases = data.get('cases', []) if data else []
+    cases = _get_cases(data)
     count = len(cases)
 
     if args.json:
@@ -207,7 +246,7 @@ def cmd_get(args):
         return 1
 
     data = _load_yaml(path)
-    cases = data.get('cases', []) if data else []
+    cases = _get_cases(data)
     total = len(cases)
 
     if total == 0:
@@ -295,7 +334,7 @@ def cmd_set(args):
 
     # 加载 YAML（用于写回，保留格式）
     data = _load_yaml_for_write(path)
-    cases = data.get('cases', []) if data else []
+    cases = _get_cases(data)
     total = len(cases)
 
     idx = int(args.index)
@@ -349,12 +388,13 @@ def cmd_validate(args):
     if not isinstance(data, dict):
         errors.append(f"顶层应为字典，实际为 {type(data).__name__}")
     else:
-        if 'cases' not in data:
-            errors.append("缺少 'cases' 键")
-        elif not isinstance(data['cases'], list):
-            errors.append(f"'cases' 应为列表，实际为 {type(data['cases']).__name__}")
+        if 'cases' not in data and 'testcases' not in data:
+            errors.append("缺少 'cases' 或 'testcases' 键")
         else:
-            cases = data['cases']
+            cases = _get_cases(data)
+            if not isinstance(cases, list):
+                errors.append(f"用例列表应为列表，实际为 {type(cases).__name__}")
+                cases = []
             total = len(cases)
 
             if 'meta' in data and isinstance(data['meta'], dict):
@@ -392,7 +432,7 @@ def cmd_validate(args):
 
     # 输出
     file_size_kb = os.path.getsize(path) / 1024
-    total_cases = len(data.get('cases', [])) if isinstance(data, dict) else 0
+    total_cases = len(_get_cases(data)) if isinstance(data, dict) else 0
 
     if args.json:
         result = {
@@ -437,11 +477,11 @@ def cmd_export_inputs(args):
         return 1
 
     data = _load_yaml(path)
-    if not isinstance(data, dict) or 'cases' not in data:
-        print("❌ YAML 格式错误: 缺少 'cases' 字段", flush=True)
+    if not isinstance(data, dict) or ('cases' not in data and 'testcases' not in data):
+        print("❌ YAML 格式错误: 缺少 'cases' 或 'testcases' 字段", flush=True)
         return 1
 
-    cases = data['cases']
+    cases = _get_cases(data)
     total = len(cases)
 
     # 解析索引范围

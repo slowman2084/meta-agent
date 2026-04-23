@@ -1,6 +1,6 @@
 ---
 name: meta-plan
-description: "Agent & Skill Factory 总控入口。根据用户意图（plan / create / test / iterate / calibrate）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：/meta-plan、/meta-plan agent、/meta-plan skill、test、create、iterate、calibrate。"
+description: "Agent & Skill Factory 总控入口。根据用户意图（plan / create / test / iterate / calibrate / enrich）生成规划文件，按规划驱动原子 meta-* Skills 执行。支持断点续跑。触发词：/meta-plan、/meta-plan agent、/meta-plan skill、test、create、iterate、calibrate、enrich（为已有 Skill 逆向补全理想态+测试用例）。"
 ---
 
 # meta-plan — Agent & Skill Factory 总控规划器
@@ -8,7 +8,7 @@ description: "Agent & Skill Factory 总控入口。根据用户意图（plan / c
 ## 角色
 
 你是 Agent & Skill Factory 的总控规划器（双轨入口）。你的职责是：
-1. 解析用户意图（plan / create / test / iterate / calibrate）
+1. 解析用户意图（plan / create / test / iterate / calibrate / enrich）
 2. 生成结构化的规划文件（plan file）
 3. 按规划文件逐步执行，调用对应的原子 meta-* Skills
 4. 通过磁盘上的产物文件判断当前进度，支持断点续跑
@@ -46,22 +46,50 @@ description: "Agent & Skill Factory 总控入口。根据用户意图（plan / c
 | `create testcases [target]` / `生成用例 [target]` | 生成用例 | 生成 testcases plan → 执行 |
 | `iterate [target]` / `迭代优化 [target]` | 迭代 | 委托给 meta-iterate |
 | `calibrate [target]` / `校准 [target]` / `debug [target]` | 校准 | 生成 calibrate plan → 执行 |
+| `enrich [target]` / `补全 [target]` / `补充 [target]` | 补全工程化资产 | 为已有 Skill/Agent 补充理想态 + 测试用例 + Judge |
+| `enrich [path] --all` / `批量补全 [path]` | 批量补全 | 遍历目录下所有含 SKILL.md 的子目录，逐一补全 |
+| `下一步` / `next` / `下一步能做什么` / `还能做什么` | 状态建议 | 运行 `status_tool.py next`，基于所有 Agent/Skill 的状态和规划文件给出建议 |
 
 > **重要**：所有命令均可附加 `on [platform]` 指定平台模式，如 `test xxx on codebuddycli`。
 
+### "下一步"处理流程
+
+当识别到"下一步"意图时，**不生成规划文件**，直接执行：
+
+```bash
+./venv/bin/python scripts/status_tool.py next
+```
+
+将输出直接展示给用户。若用户需要程序化数据（如在编排流程中），使用 `--json` 格式：
+
+```bash
+./venv/bin/python scripts/status_tool.py next --json
+```
+
+建议的优先级排序：
+1. **未完成的任务**（有活跃 plan 且未完成）→ 最高优先，应续跑
+2. **需要迭代优化**（已 test 但分数不达标）→ 核心提升方向
+3. **需要校准**（首次 test 后）→ 确保评估体系准确
+4. **有用例但未测试** → 快速获得基线分数
+5. **需要补全资产**（enrich）→ 为后续测试做准备
+6. **刚创建的空目录** → 需要用户决定下一步
+
 ### 解析规则
 
-1. 提取 **命令**（plan/create/test/iterate/calibrate）和 **目标名称**
+1. 提取 **命令**（plan/create/test/iterate/calibrate/enrich）和 **目标名称**
 2. 若触发词为 `/meta-plan agent` 或 `/meta-plan skill`，直接确定类型，无需再识别
 3. 若有 `on [platform]` 后缀，提取 **平台模式**（subagent/codebuddycli/claude/tcop）
 4. 若有 `top N` / `case 0,3,7` / `range 5-10`，提取 **用例范围**
-5. 若有 `model: xxx`，提取 **模型指定**
+5. 若有 `model: xxx`，提取 **模型指定**（单模型）
+6. 若有 `--models a,b,c`，提取 **多模型列表**（触发多模型对比/并发优化模式）
+7. 若有 `--runs N`，提取 **每模型运行次数**（默认 1）
 
 ### 目标类型识别
 
 1. 先查 `source/agents/[target]/` — 存在则为 **Agent**
 2. 再查 `source/skills/[target]/` — 存在则为 **Skill**
-3. 都不存在 → 若命令是 `create`，将创建新目标；否则报错
+3. 若 target 是**文件系统路径**（含 `/` 或以 `./` 开头），直接当作外部 Skill 路径处理（`enrich` 命令专用）
+4. 都不存在 → 若命令是 `create`，将创建新目标；`enrich` 命令则报错提示用户提供正确路径；否则报错
 
 > **注意**：meta-\* 系列已全部迁移到 `source/skills/`，目标类型识别时不在 agents/ 下查找。
 
@@ -150,7 +178,20 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 
 > **类型已确定**：target_type 在规划文件头部已明确（Agent 或 Skill），后续执行时直接按类型执行，无需再区分"是 Agent 还是 Skill"。
 
-### 步骤概览
+### 模式判断
+
+根据参数决定走哪个分支：
+
+| 条件 | 模式 | 说明 |
+|------|------|------|
+| 无 `--models` 且无 `--runs`（或 `--runs 1`） | **单模型测试** | 现有行为，逐条跑+评分+报告 |
+| 有 `--models` 或 `--runs > 1` | **多模型对比测试** | 多模型×多次执行 → 对比 HTML → 选择 ExpectedOutput → 可选 Rubrics 校准 |
+
+---
+
+### 单模型测试（默认）
+
+#### 步骤概览
 
 ```
 1. Install        → 确保目标已安装到 IDE
@@ -160,7 +201,7 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 5. Report         → 汇总评估报告
 ```
 
-### 步骤 1: Install
+#### 步骤 1: Install
 
 ```bash
 ./venv/bin/python scripts/install.py [target_name]
@@ -171,7 +212,7 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 ./venv/bin/python scripts/install.py --platform-skills
 ```
 
-### 步骤 2: Export Inputs
+#### 步骤 2: Export Inputs
 
 ```bash
 ./venv/bin/python scripts/yaml_tool.py export-inputs [target_dir]/testcases.yaml \
@@ -180,32 +221,7 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 
 若指定了用例范围（top N / case X,Y / range X-Y），加 `--cases` 参数。
 
-### 步骤 3: Execute Cases
-
-**subagent 模式**（目标为 Agent）：
-- 逐条调用 IDE Sub Agent（Agent tool），传入 Input
-- 每条完成后立即写入 `case_N_actual_result.txt` 和 `case_N_sharegpt.json`
-- 支持 3-4 条并发
-
-**Skill 模式**：
-- 通过 `use_skill(command="[skill_name]")` 加载 Skill
-- 按 Skill 说明执行每条 Input
-- 输出写入 `case_N_actual_result.txt`
-
-**平台模式时**（on codebuddycli 等）：
-- 通过 `use_skill(command="[platform]")` 加载 Platform Skill
-- 按 Platform Skill 的批量执行说明运行
-
-### 步骤 2: Export Inputs
-
-```bash
-./venv/bin/python scripts/yaml_tool.py export-inputs [target_dir]/testcases.yaml \
-  --output [output_dir]/inputs.json
-```
-
-若指定了用例范围（top N / case X,Y / range X-Y），加 `--cases` 参数。
-
-### 步骤 3: Execute Cases
+#### 步骤 3: Execute Cases
 
 **目标为 Agent 时**（subagent 模式）：
 - 逐条调用 IDE Sub Agent（Agent tool），传入 Input
@@ -221,7 +237,7 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 - 通过 `use_skill(command="[platform]")` 加载 Platform Skill
 - 按 Platform Skill 的批量执行说明运行
 
-### 步骤 4: Evaluate Cases
+#### 步骤 4: Evaluate Cases
 
 对每条有 `case_N_actual_result.txt` 但无 `case_N_eval_result.md` 的用例：
 
@@ -234,7 +250,7 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 
 **并发策略**：3-4 个 eval-judge subagent 同时运行。
 
-### 步骤 5: Report
+#### 步骤 5: Report
 
 汇总所有 `case_N_eval_result.md`，生成 `评估报告.md`：
 - 汇总表格（序号 / Input 摘要 / 得分 / 主要不足）
@@ -248,7 +264,145 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 ./venv/bin/python scripts/status_tool.py sync [target_dir]
 ```
 
-这样 `status.json` 会自动更新当前 phase、active_plan、last_test_score、baseline_score、iterations_completed、total_learnings。
+---
+
+### 多模型对比测试（`--models` 或 `--runs > 1`）
+
+当用户输入 `test xxx --models a,b --runs 2` 时进入此模式。
+
+**核心用途**：通过多模型多次运行对比，帮助用户选择最佳 ExpectedOutput 并校准 Rubrics。这是 Rubrics 迭代校准的入口。
+
+#### 步骤概览
+
+```
+1. Install         → 确保目标已安装到 IDE
+2. Export Inputs   → 导出 testcases.yaml 为 inputs.json
+3. Multi-Execute   → 对每个 model × run 组合执行全部用例
+4. Auto-Evaluate   → 对每份输出调用 meta-eval-judge 评分
+5. Compare View    → 注入数据到对比 HTML，打开浏览器
+6. User Selection  → 等待用户在 HTML 中选择 → 导出 selections.json
+7. Rubrics Update  → 根据用户选择更新 ExpectedOutput 和/或 Rubrics
+```
+
+#### 步骤 1-2: Install + Export Inputs
+
+同单模型测试。
+
+#### 步骤 3: Multi-Execute
+
+对每个 model × run 组合执行全部测试用例。总执行次数 = len(models) × runs。
+
+产出统一存储到 `[target_dir]/tmp/multimodel_<timestamp>/`：
+
+```
+<target_dir>/tmp/multimodel_<timestamp>/
+├── <model>_run<N>_case<M>_sharegpt.json   # ShareGPT 格式完整对话记录
+├── <model>_run<N>_case<M>_result.md       # Markdown 格式最终输出
+├── ...
+├── inputs.json                             # 用例输入（复制）
+└── manifest.json                           # 元信息索引
+```
+
+**Skill 测试的模型版本选择**：
+- 如果存在 `SKILL_<model>.md`，该模型测试时使用对应版本
+- 如果不存在，使用默认 `SKILL.md`
+- 记录到 manifest.json 的 `skill_versions` 字段
+
+**Agent 测试的模型选择**：
+- Sub Agent 模式：在 Agent tool 调用中通过 `model` 参数指定运行模型
+- 始终使用同一个 prompt.md（模型差异来自运行时，不是提示词版本）
+
+#### 步骤 4: Auto-Evaluate
+
+如果 testcases.yaml 中有 judge（rubrics）：
+- 对每份 `*_result.md` 调用 meta-eval-judge 评分
+- 将分数写入 `manifest.json` 的 `auto_score` 和 `rubric_scores` 字段
+
+如果没有 rubrics → `auto_score` 为 null，HTML 中显示"未评分"。
+
+**manifest.json 结构**：
+
+```json
+{
+  "target": "<target_name>",
+  "target_type": "agent|skill",
+  "timestamp": "<ISO>",
+  "test_cases": ["case_0", "case_1"],
+  "models": ["claude-sonnet-4", "gpt-4o"],
+  "runs_per_model": 2,
+  "skill_versions": {
+    "claude-sonnet-4": "SKILL.md",
+    "gpt-4o": "SKILL_gpt-4o.md"
+  },
+  "results": [
+    {
+      "case_id": "case_0",
+      "model": "claude-sonnet-4",
+      "run": 1,
+      "sharegpt_file": "claude-sonnet-4_run1_case0_sharegpt.json",
+      "result_file": "claude-sonnet-4_run1_case0_result.md",
+      "auto_score": 78.5,
+      "rubric_scores": {"D1": 8, "D2": 7, "D3": 9}
+    }
+  ]
+}
+```
+
+#### 步骤 5: Compare View
+
+运行注入脚本生成带数据的 HTML：
+
+```bash
+./venv/bin/python scripts/multimodel_inject.py [manifest.json路径]
+```
+
+脚本会：
+1. 读取所有 `*_result.md` 内容（Output 对比）
+2. 读取所有 `*_sharegpt.json` 内容（Tools 调用对比）
+3. 读取 `inputs.json`（Input 展示）
+4. 注入到 `multimodel_compare.html` 模板
+5. 生成 `multimodel_compare_view.html` 并用浏览器打开
+
+**对比 HTML 功能**：
+- **Input / Output 分区展示**：每条用例清晰分开 Input 和 Output
+- **Tools 调用时间线**：切换到 🔧 视图，逐步骤展示每次 tool call 的参数和返回值
+- **评分维度拆分**：各 Rubric 维度的得分用颜色标签独立展示
+- **选择按钮**：为每条用例选择最佳输出作为 ExpectedOutput
+
+#### 步骤 6: User Selection
+
+提示用户在浏览器中完成选择后，导出 `selections.json`。然后读取该文件。
+
+#### 步骤 7: Rubrics Update
+
+逐个 case 检查用户选择：
+
+**选中输出 auto_score ≥ 70**：
+- 直接采用，更新 testcases.yaml 的 ExpectedOutput
+
+**选中输出 auto_score < 70**（用户选了低分输出）：
+- 向用户呈现两个选项：
+
+```
+⚠️ case_0：你选的输出（claude-sonnet-4 run2）自动评分 62 分，
+而未选的 gpt-4o run1 评分 85 分。
+
+接下来怎么处理？
+
+A. 反思模式 — 调用 meta-debug 分析 rubrics/理想态/提示词哪里有问题
+   → 生成 calibration_report.json → 打开 calibration_review.html
+   → 你逐条决策修正方向 → 导出 decisions.json → AI 执行修改
+
+B. 标准适配模式 — 让 rubrics 遵循你的选择
+   → 自动优化 judge 使其与你选的 ExpectedOutput 对齐
+   → 你的选择就是新标准
+```
+
+完成后同步状态：
+
+```bash
+./venv/bin/python scripts/status_tool.py sync [target_dir]
+```
 
 ---
 
@@ -301,6 +455,108 @@ output_dir: [target_dir]/tmp/[command]_[timestamp]_[platform]/
 3. 调用 meta-rubric-gen 生成 Judge
 4. 基线运行填充 ExpectedOutput
 5. 合并写入 testcases.yaml
+
+---
+
+## 命令流程：enrich
+
+**场景**：为"已有 SKILL.md 但缺失工程化配套资产"的现有 Skill 进行逆向补全。典型用例：
+
+- 直接手写的 Skill，从未经过 meta-agent 流程
+- 外部项目（如 pptdog）中的 Skills，位于 meta-agent source 目录之外
+- 批量补全整个 Skills 目录
+
+### 单 Skill 补全流程
+
+```
+1. Locate       → 定位 SKILL.md，读取并理解 Skill 功能
+2. Ideal State  → 调用 meta-ideal-state，从 SKILL.md 逆向推导理想态
+3. Test Cases   → 调用 meta-testcase-gen，生成测试用例（推荐 10-15 条）
+4. Rubric       → 调用 meta-rubric-gen，为每条用例生成 Judge
+5. Review       → 展示汇总，请用户确认质量再写入
+6. Write Back   → 将 ideal_state.md + testcases.yaml 写入 Skill 目录
+```
+
+### 步骤 1: Locate
+
+**内部 Skill**（`source/skills/[name]/`）：直接读取 `SKILL.md`。
+
+**外部路径**（用户提供 `/path/to/skill-dir/` 或包含多个 Skills 的父目录）：
+- 若路径下直接有 `SKILL.md`，读取该文件
+- 若路径下有多个子目录（批量模式），扫描所有含 `SKILL.md` 的子目录，列出清单请用户确认处理范围
+
+读取后向用户输出 Skill 的功能摘要，确认理解无误再继续。
+
+### 步骤 2: Ideal State
+
+调用 `meta-ideal-state`，传入：
+- Skill 名称
+- SKILL.md 全文
+
+重点：`meta-ideal-state` 的输入通常是业务需求描述，此处改为从已有 SKILL.md 提炼。引导它关注：
+- Skill 的**输出物**是什么（文字/文件/代码/对话引导）
+- **成功标准**（用户想要什么样的结果）
+- **失败模式**（常见坑、应该避免什么）
+
+输出写入 `[skill_dir]/ideal_state.md`。
+
+### 步骤 3: Test Cases
+
+调用 `meta-testcase-gen`，传入：
+- SKILL.md + ideal_state.md
+- Skill 类型提示（见下方）
+
+**Skill 类型识别（影响测试用例设计策略）**：
+
+| 类型 | 特征 | 测试用例策略 |
+|------|------|------------|
+| 对话引导型 | Skill 的输出是"问用户问题"而非直接给结果 | Input = 用户初始触发，ExpectedOutput = 第一轮理想回复结构（含哪些问题、问题顺序） |
+| 内容生成型 | Skill 直接输出文档/PPT/代码等 | Input = 任务描述，ExpectedOutput = 高质量输出样本 |
+| 编排调度型 | Skill 负责调用其他 Skills/Tools | Input = 用户意图，ExpectedOutput = 正确的调度决策和执行序列 |
+| 分析评审型 | Skill 对已有内容进行评审/分析 | Input = 被评审内容，ExpectedOutput = 结构化评审结论 |
+
+识别到类型后在用例中添加 `skill_type: [type]` 标注，帮助 Judge 使用正确的评分标准。
+
+### 步骤 4: Rubric
+
+同 `create testcases` 流程，调用 `meta-rubric-gen`。
+
+### 步骤 5: Review
+
+向用户展示：
+- 生成的 ideal_state.md 摘要（前 20 行）
+- 测试用例数量和类型分布
+- 3 条示例用例的 Input + Judge 预览
+
+询问用户：
+- 理想态描述准确吗？需要修改吗？
+- 测试用例覆盖面合理吗？需要增减某类场景？
+
+根据反馈修改后再写入。
+
+### 步骤 6: Write Back
+
+将产物写入 Skill 目录：
+- `[skill_dir]/ideal_state.md`
+- `[skill_dir]/testcases.yaml`（首次创建，不覆盖已有内容，如有则 append）
+
+如果是内部 Skill（`source/skills/`），写入后运行：
+```bash
+./venv/bin/python scripts/install.py [skill_name]
+```
+
+### 批量补全模式（`--all`）
+
+当用户提供的是包含多个 Skill 子目录的父目录时：
+
+1. 扫描所有含 `SKILL.md` 的子目录
+2. 按"缺失资产最多"优先排序：先处理同时缺 `ideal_state.md` + `testcases.yaml` 的，再处理只缺一项的
+3. 展示处理队列，请用户确认
+4. **逐一**处理（不并发，保持用户可审查），每个 Skill 完成后报告进度
+
+```
+进度：[3/14] plan-mindmap ✅ → [4/14] review-content 处理中...
+```
 
 ---
 

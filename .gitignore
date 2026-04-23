@@ -70,6 +70,15 @@ Desktop.ini
 # 各 Agent 的临时运行目录（测试日志、中间产物）
 **/tmp/
 
+# 根目录临时脚本和配置（可能含 API Key、本地路径等敏感信息）
+tmp_*.py
+tmp_*.yaml
+tmp_*.json
+EXPLORATION_REPORT_*.md
+
+# source/skills/ 下的符号链接（指向外部项目）
+source/skills/ppt-hours
+
 # 废弃/临时脚本目录（含个人路径等敏感信息）
 scripts/deprecated/
 
@@ -93,13 +102,32 @@ scripts/run_*.py
 # source/ 目录管理策略
 # 默认排除所有，只纳入版本控制的子目录：
 #   source/agents/meta-* — 工厂基础设施 Agent
-#   source/skills/       — Skill 源文件（含测试产物）
+#   source/agents/歌词生成系统/ — 创建→测试→迭代全流程 Sample
+#   source/skills/meta-* — Meta Skills（工厂核心）
+#   source/platform-skills/ — 平台 Skill（执行环境封装）
 #   source/hooks/        — 钩子脚本
 source/*
 !source/agents/
 !source/agents/meta-*/
+!source/agents/歌词生成系统/
 !source/skills/
+!source/skills/meta-*/
+!source/platform-skills/
 !source/hooks/
+
+# source/skills/ 下的业务 Skill（非 meta-*）不纳入版本控制
+# 包含企业隐私或内部业务数据
+source/skills/cls-query/
+source/skills/cls-query-skill/
+source/skills/plan-mindmap/
+source/skills/platform_react_runner/
+source/skills/review-delivery/
+source/skills/review-sync/
+
+# source/agents/ 下的业务 Agent（非 meta-* 且非 Sample）不纳入版本控制
+source/agents/cls-log-agent/
+source/agents/塑普歌词生成器/
+source/agents/说唱生成系统/
 
 # 工作日志（本地迭代记录，不纳入版本控制）
 工作日志/

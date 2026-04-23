@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Model Compare — 多模型输出对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e0e0e0; padding-bottom: 60px; }
+
+  /* Header */
+  .header { padding: 16px 24px; background: #1a1d27; border-bottom: 1px solid #2a2d37; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .meta { font-size: 13px; color: #888; }
+
+  /* Case Tabs */
+  .tabs { display: flex; gap: 4px; padding: 12px 24px; background: #14161e; border-bottom: 1px solid #2a2d37; overflow-x: auto; }
+  .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; background: #1a1d27; border: 1px solid #2a2d37; white-space: nowrap; transition: all .15s; }
+  .tab:hover { background: #252830; }
+  .tab.active { background: #2563eb; border-color: #2563eb; color: white; }
+  .tab.selected { background: #166534; border-color: #22c55e; color: #22c55e; }
+
+  /* View Toggle */
+  .view-toggle { display: flex; gap: 8px; padding: 12px 24px; background: #14161e; border-bottom: 1px solid #2a2d37; }
+  .view-btn { padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; background: #1a1d27; border: 1px solid #2a2d37; color: #aaa; transition: all .15s; }
+  .view-btn:hover { background: #252830; color: #e0e0e0; }
+  .view-btn.active { background: #374151; border-color: #6b7280; color: #e0e0e0; }
+
+  /* Input Section */
+  .input-section { margin: 16px 24px; background: #1a1d27; border: 1px solid #2a2d37; border-radius: 10px; }
+  .input-header { padding: 10px 16px; border-bottom: 1px solid #2a2d37; font-size: 13px; font-weight: 600; color: #3b82f6; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .input-header:hover { background: #1e2130; }
+  .input-body { padding: 16px; font-size: 13px; line-height: 1.7; max-height: 300px; overflow-y: auto; }
+  .input-body.collapsed { display: none; }
+
+  /* Compare Grid */
+  .compare-grid { display: flex; gap: 16px; padding: 16px 24px; overflow-x: auto; }
+
+  /* Card */
+  .card { flex: 0 0 480px; background: #1a1d27; border-radius: 10px; border: 2px solid #2a2d37; display: flex; flex-direction: column; transition: border-color .2s; max-height: calc(100vh - 280px); }
+  .card.chosen { border-color: #22c55e; box-shadow: 0 0 20px rgba(34, 197, 94, 0.15); }
+
+  .card-header { padding: 12px 16px; border-bottom: 1px solid #2a2d37; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .card-header .model-name { font-weight: 600; font-size: 14px; }
+  .card-header .run-info { font-size: 12px; color: #888; }
+
+  .score-badge { padding: 4px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
+  .score-high { background: #166534; color: #4ade80; }
+  .score-mid { background: #854d0e; color: #fbbf24; }
+  .score-low { background: #991b1b; color: #fca5a5; }
+  .score-none { background: #374151; color: #9ca3af; }
+
+  /* Rubric Scores Row */
+  .rubric-scores { padding: 8px 16px; display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid #2a2d37; flex-shrink: 0; }
+  .rubric-chip { padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  .rubric-chip-high { background: #166534; color: #4ade80; }
+  .rubric-chip-mid { background: #854d0e; color: #fbbf24; }
+  .rubric-chip-low { background: #991b1b; color: #fca5a5; }
+  .rubric-chip-default { background: #252830; color: #d1d5db; }
+
+  /* Card Body */
+  .card-body { flex: 1; overflow-y: auto; min-height: 200px; }
+
+  /* --- Output View (default) --- */
+  .output-view { padding: 16px; font-size: 13px; line-height: 1.7; }
+  .output-view pre { background: #0f1117; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 8px 0; white-space: pre-wrap; word-break: break-word; }
+  .output-view code { background: #252830; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  .output-view h1, .output-view h2, .output-view h3 { margin: 12px 0 6px; color: #f0f0f0; }
+  .output-view p { margin: 6px 0; }
+  .output-view ul, .output-view ol { margin: 6px 0; padding-left: 20px; }
+  .output-view table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  .output-view th, .output-view td { border: 1px solid #2a2d37; padding: 6px 10px; font-size: 12px; text-align: left; }
+  .output-view th { background: #252830; }
+
+  /* --- Tools Timeline View --- */
+  .tools-timeline { padding: 12px 16px; }
+  .tl-step { margin-bottom: 12px; border-left: 2px solid #2a2d37; padding-left: 12px; position: relative; }
+  .tl-step::before { content: ''; position: absolute; left: -5px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: #374151; }
+  .tl-step.tl-tool-call::before { background: #3b82f6; }
+  .tl-step.tl-tool-response::before { background: #22c55e; }
+  .tl-step.tl-gpt::before { background: #a78bfa; }
+  .tl-step.tl-human::before { background: #f59e0b; }
+
+  .tl-label { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+  .tl-label-tool-call { color: #60a5fa; }
+  .tl-label-tool-response { color: #4ade80; }
+  .tl-label-gpt { color: #c4b5fd; }
+  .tl-label-human { color: #fbbf24; }
+
+  .tl-content { font-size: 12px; line-height: 1.6; background: #14161e; padding: 8px 10px; border-radius: 6px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .tl-content.collapsed { max-height: 60px; overflow: hidden; cursor: pointer; position: relative; }
+  .tl-content.collapsed::after { content: '... 点击展开'; display: block; position: absolute; bottom: 0; left: 0; right: 0; padding: 2px 10px; background: linear-gradient(transparent, #14161e); font-size: 11px; color: #888; text-align: right; }
+
+  .tl-tool-name { color: #60a5fa; font-weight: 600; }
+  .tl-tool-args { color: #9ca3af; }
+
+  .no-tools-msg { padding: 24px; text-align: center; color: #666; font-size: 13px; }
+
+  /* Card Footer */
+  .card-footer { padding: 10px 16px; border-top: 1px solid #2a2d37; flex-shrink: 0; }
+  .btn-select { width: 100%; padding: 10px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .15s; background: #252830; color: #e0e0e0; }
+  .btn-select:hover { background: #2563eb; color: white; }
+  .btn-select.chosen { background: #166534; color: #4ade80; }
+
+  /* Bottom Bar */
+  .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 24px; background: #1a1d27; border-top: 1px solid #2a2d37; display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+  .bottom-bar .progress { font-size: 14px; }
+  .btn-export { padding: 10px 24px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; background: #2563eb; color: white; }
+  .btn-export:hover { background: #1d4ed8; }
+  .btn-export:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+
+  .empty-state { display: flex; justify-content: center; align-items: center; height: 60vh; font-size: 16px; color: #666; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1 id="title">Multi-Model Compare</h1>
+  <div class="meta" id="headerMeta"></div>
+</div>
+
+<div class="tabs" id="caseTabs"></div>
+<div class="view-toggle" id="viewToggle">
+  <div class="view-btn active" data-view="output" onclick="switchView('output')">📄 Output 对比</div>
+  <div class="view-btn" data-view="tools" onclick="switchView('tools')">🔧 Tools 调用对比</div>
+</div>
+<div class="input-section" id="inputSection" style="display:none;">
+  <div class="input-header" onclick="toggleInput()">
+    <span>📥 Input（用户输入）</span>
+    <span id="inputToggleIcon">▼</span>
+  </div>
+  <div class="input-body" id="inputBody"></div>
+</div>
+<div class="compare-grid" id="compareGrid"></div>
+
+<div class="bottom-bar">
+  <div class="progress" id="progressText">已选 0 / 0 个用例</div>
+  <button class="btn-export" id="btnExport" disabled onclick="exportJSON()">导出 selections.json</button>
+</div>
+
+<script>
+window.__MULTIMODEL_DATA__ = null;
+
+const selections = {};
+let currentCase = null;
+let currentView = 'output';
+let inputCollapsed = false;
+
+function init() {
+  const data = window.__MULTIMODEL_DATA__;
+  if (!data) {
+    document.getElementById('compareGrid').innerHTML = '<div class="empty-state">未加载数据。请通过 multimodel_inject.py 生成带数据的 HTML 文件。</div>';
+    return;
+  }
+
+  document.getElementById('title').textContent = `多模型对比 — ${data.target}`;
+  document.getElementById('headerMeta').textContent =
+    `${data.models.join(' / ')} × ${data.runs_per_model} runs | ${data.test_cases.length} cases | ${data.timestamp}`;
+
+  renderTabs(data);
+  if (data.test_cases.length > 0) {
+    selectCase(data.test_cases[0]);
+  }
+}
+
+function renderTabs(data) {
+  const container = document.getElementById('caseTabs');
+  container.innerHTML = '';
+  data.test_cases.forEach(caseId => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (selections[caseId] ? ' selected' : '');
+    tab.textContent = caseId;
+    tab.dataset.case = caseId;
+    tab.onclick = () => selectCase(caseId);
+    container.appendChild(tab);
+  });
+}
+
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  if (currentCase) selectCase(currentCase);
+}
+
+function toggleInput() {
+  inputCollapsed = !inputCollapsed;
+  document.getElementById('inputBody').classList.toggle('collapsed', inputCollapsed);
+  document.getElementById('inputToggleIcon').textContent = inputCollapsed ? '▶' : '▼';
+}
+
+function selectCase(caseId) {
+  currentCase = caseId;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.case === caseId));
+
+  const data = window.__MULTIMODEL_DATA__;
+  const results = data.results.filter(r => r.case_id === caseId);
+
+  // --- Input Section ---
+  const inputSection = document.getElementById('inputSection');
+  const inputBody = document.getElementById('inputBody');
+  const caseInput = data.case_inputs ? data.case_inputs[caseId] : null;
+  if (caseInput) {
+    inputSection.style.display = '';
+    inputBody.innerHTML = simpleMarkdown(caseInput);
+    inputBody.classList.toggle('collapsed', inputCollapsed);
+  } else {
+    inputSection.style.display = 'none';
+  }
+
+  // --- Cards ---
+  const grid = document.getElementById('compareGrid');
+  grid.innerHTML = '';
+
+  results.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'card' + (isChosen(caseId, entry) ? ' chosen' : '');
+
+    // Header
+    const score = entry.auto_score;
+    const scoreClass = score == null ? 'score-none' : score >= 80 ? 'score-high' : score >= 60 ? 'score-mid' : 'score-low';
+    const scoreText = score == null ? '未评分' : score.toFixed(1);
+
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'card-header';
+    headerDiv.innerHTML = `
+      <div>
+        <span class="model-name">${entry.model}</span>
+        <span class="run-info">run ${entry.run}</span>
+      </div>
+      <span class="score-badge ${scoreClass}">${scoreText}</span>
+    `;
+    card.appendChild(headerDiv);
+
+    // Rubric scores
+    if (entry.rubric_scores && Object.keys(entry.rubric_scores).length > 0) {
+      const rubricDiv = document.createElement('div');
+      rubricDiv.className = 'rubric-scores';
+      Object.entries(entry.rubric_scores).forEach(([dim, s]) => {
+        const chip = document.createElement('span');
+        const cls = s >= 8 ? 'rubric-chip-high' : s >= 6 ? 'rubric-chip-mid' : s < 6 ? 'rubric-chip-low' : 'rubric-chip-default';
+        chip.className = `rubric-chip ${cls}`;
+        chip.textContent = `${dim}: ${s}`;
+        rubricDiv.appendChild(chip);
+      });
+      card.appendChild(rubricDiv);
+    }
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    if (currentView === 'output') {
+      const outputDiv = document.createElement('div');
+      outputDiv.className = 'output-view';
+      outputDiv.innerHTML = simpleMarkdown(entry.result_content || '（无内容）');
+      body.appendChild(outputDiv);
+    } else {
+      body.appendChild(renderToolsTimeline(entry));
+    }
+    card.appendChild(body);
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.className = 'card-footer';
+    const btn = document.createElement('button');
+    btn.className = 'btn-select' + (isChosen(caseId, entry) ? ' chosen' : '');
+    btn.textContent = isChosen(caseId, entry) ? '✅ 已选为 ExpectedOutput' : '选为 ExpectedOutput';
+    btn.onclick = () => {
+      selections[caseId] = {
+        model: entry.model,
+        run: entry.run,
+        result_file: entry.result_file,
+        expected_output: entry.result_content || '',
+        auto_score: entry.auto_score,
+        rubric_scores: entry.rubric_scores || {}
+      };
+      selectCase(caseId);
+      updateProgress();
+    };
+    footer.appendChild(btn);
+    card.appendChild(footer);
+
+    grid.appendChild(card);
+  });
+}
+
+/* =========================================================
+   Tools Timeline Renderer
+   ========================================================= */
+function renderToolsTimeline(entry) {
+  const container = document.createElement('div');
+  container.className = 'tools-timeline';
+
+  // Try to parse ShareGPT conversations
+  const convs = entry.sharegpt_conversations || [];
+
+  if (!convs.length) {
+    container.innerHTML = '<div class="no-tools-msg">无 ShareGPT 对话数据。<br>需要在 inject 时加载 *_sharegpt.json 文件。</div>';
+    return container;
+  }
+
+  // Filter: skip system prompt, render human/gpt/tool_call/tool_response
+  let stepIdx = 0;
+  convs.forEach(turn => {
+    const from = turn.from;
+    if (from === 'system') return;
+
+    stepIdx++;
+    const step = document.createElement('div');
+    step.className = `tl-step tl-${from.replace('_', '-')}`;
+
+    // Label
+    const label = document.createElement('div');
+    label.className = `tl-label tl-label-${from.replace('_', '-')}`;
+    const labelMap = {
+      'human': '👤 User Input',
+      'gpt': '🤖 AI Response',
+      'tool_call': '🔧 Tool Call',
+      'tool_response': '📋 Tool Response'
+    };
+    label.textContent = `#${stepIdx} ${labelMap[from] || from}`;
+    step.appendChild(label);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'tl-content';
+
+    if (from === 'tool_call') {
+      content.innerHTML = formatToolCall(turn.value);
+    } else if (from === 'tool_response') {
+      const text = turn.value || '';
+      // Collapse long responses
+      if (text.length > 300) {
+        content.classList.add('collapsed');
+        content.onclick = function() { this.classList.toggle('collapsed'); };
+      }
+      content.textContent = text;
+    } else if (from === 'gpt') {
+      const text = turn.value || '';
+      if (turn.role === 'summary') {
+        label.textContent = `#${stepIdx} 📊 Summary`;
+      }
+      if (text.length > 500) {
+        content.classList.add('collapsed');
+        content.onclick = function() { this.classList.toggle('collapsed'); };
+      }
+      content.innerHTML = simpleMarkdown(text);
+    } else {
+      content.textContent = turn.value || '';
+    }
+
+    step.appendChild(content);
+    container.appendChild(step);
+  });
+
+  if (stepIdx === 0) {
+    container.innerHTML = '<div class="no-tools-msg">该输出无 tools 调用记录。</div>';
+  }
+
+  return container;
+}
+
+function formatToolCall(rawValue) {
+  try {
+    const obj = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+    const name = obj.name || '(unknown)';
+    const args = obj.arguments || {};
+    const argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
+    return `<span class="tl-tool-name">${escapeHtml(name)}</span>(<span class="tl-tool-args">${escapeHtml(argsStr)}</span>)`;
+  } catch(e) {
+    return escapeHtml(String(rawValue));
+  }
+}
+
+/* =========================================================
+   Utilities
+   ========================================================= */
+function isChosen(caseId, entry) {
+  const sel = selections[caseId];
+  return sel && sel.model === entry.model && sel.run === entry.run;
+}
+
+function updateProgress() {
+  const data = window.__MULTIMODEL_DATA__;
+  const total = data.test_cases.length;
+  const done = Object.keys(selections).length;
+  document.getElementById('progressText').textContent = `已选 ${done} / ${total} 个用例`;
+  document.getElementById('btnExport').disabled = done < total;
+  document.querySelectorAll('.tab').forEach(t => {
+    if (selections[t.dataset.case]) t.classList.add('selected');
+    else t.classList.remove('selected');
+  });
+}
+
+function exportJSON() {
+  const data = window.__MULTIMODEL_DATA__;
+  const output = {
+    target: data.target,
+    source_manifest: `multimodel_${(data.timestamp || '').replace(/[^0-9]/g, '_')}/manifest.json`,
+    exported_at: new Date().toISOString(),
+    selections: data.test_cases.map(caseId => {
+      const sel = selections[caseId];
+      const allResults = data.results.filter(r => r.case_id === caseId);
+      const alternatives = allResults
+        .filter(r => !(r.model === sel.model && r.run === sel.run))
+        .map(r => ({
+          model: r.model,
+          run: r.run,
+          auto_score: r.auto_score,
+          rubric_scores: r.rubric_scores || {}
+        }));
+      return { case_id: caseId, selected: sel, alternatives };
+    })
+  };
+
+  const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selections.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function simpleMarkdown(text) {
+  if (!text) return '';
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+    .replace(/^\|(.+)\|$/gm, (match) => {
+      const cells = match.split('|').filter(c => c.trim());
+      if (cells.every(c => /^[\s-:]+$/.test(c))) return '';
+      return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+    })
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  html = html.replace(/(<li>.*?<\/li>(?:<br>)?)+/g, '<ul>$&</ul>');
+  html = html.replace(/(<tr>.*?<\/tr>(?:<br>)?)+/g, '<table>$&</table>');
+  return '<p>' + html + '</p>';
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

@@ -6,6 +6,9 @@ Agent & Platform Skills 安装脚本 — 将 source/ 中的资源同步到所有
     ./venv/bin/python scripts/install.py                              # 安装所有（Agent + Skill + Platform Skills）
     ./venv/bin/python scripts/install.py my-agent                     # 安装指定 Agent
     ./venv/bin/python scripts/install.py my-agent --model gpt-4       # 指定模型（使用 prompt_gpt-4.md）
+    ./venv/bin/python scripts/install.py my-skill --model robust      # 安装 Skill 的鲁棒版本（SKILL_robust.md）
+    ./venv/bin/python scripts/install.py meta-skill-harness --model GLM-5.1 --alias meta-skill-harness-GLM-5.1  # 安装多模型 harness 变体
+    ./venv/bin/python scripts/install.py my-agent --scope user        # 安装到用户级 IDE 目录（~/.cursor/ 等）
     ./venv/bin/python scripts/install.py --platform-skills            # 安装所有 Platform Skills
     ./venv/bin/python scripts/install.py --platform-skill codebuddycli  # 安装指定 Platform Skill
 """
@@ -485,7 +488,13 @@ def sync_project_memory():
 # ── Install one agent ────────────────────────────────────────────────
 
 def resolve_prompt(agent_dir, model=None):
-    """Determine which prompt file to use. Copy from prompt.md if model variant doesn't exist."""
+    """Determine which prompt file to use for an Agent.
+    
+    Priority:
+    1. --model <name> → prompt_<name>.md (copy from prompt.md if missing)
+    2. --model robust or no --model, prompt_robust.md exists → prompt_robust.md
+    3. fallback → prompt.md
+    """
     if model:
         variant = os.path.join(agent_dir, f"prompt_{model}.md")
         base = os.path.join(agent_dir, "prompt.md")
@@ -496,8 +505,42 @@ def resolve_prompt(agent_dir, model=None):
             print(f"  📋 已从 prompt.md 复制 → prompt_{model}.md")
         return variant, read_text(variant)
     else:
+        # robust 优先：无 --model 时，若 prompt_robust.md 存在则使用
+        robust = os.path.join(agent_dir, "prompt_robust.md")
+        if os.path.exists(robust):
+            print(f"  🛡️  检测到 prompt_robust.md，使用鲁棒版本")
+            return robust, read_text(robust)
         path = os.path.join(agent_dir, "prompt.md")
         return path, read_text(path)
+
+
+def resolve_skill_md(skill_dir, model=None):
+    """Determine which SKILL.md file to use for a Skill.
+    
+    Priority:
+    1. --model <name> → SKILL_<name>.md (copy from SKILL.md if missing)
+    2. --model robust or no --model, SKILL_robust.md exists → SKILL_robust.md
+    3. fallback → SKILL.md
+    
+    Returns: (source_path, model_label) where model_label is used for logging.
+    """
+    if model:
+        variant = os.path.join(skill_dir, f"SKILL_{model}.md")
+        base = os.path.join(skill_dir, "SKILL.md")
+        if not os.path.exists(variant):
+            if not os.path.exists(base):
+                return None, None
+            shutil.copy2(base, variant)
+            print(f"  📋 已从 SKILL.md 复制 → SKILL_{model}.md")
+        return variant, model
+    else:
+        # robust 优先
+        robust = os.path.join(skill_dir, "SKILL_robust.md")
+        if os.path.exists(robust):
+            print(f"  🛡️  检测到 SKILL_robust.md，使用鲁棒版本")
+            return robust, "robust"
+        path = os.path.join(skill_dir, "SKILL.md")
+        return path, None
 
 
 def _resolve_agent_dir(agent_name):
@@ -511,7 +554,7 @@ def _resolve_agent_dir(agent_name):
     return None
 
 
-def install_agent(agent_name, model=None):
+def install_agent(agent_name, model=None, alias=None):
     agent_dir = _resolve_agent_dir(agent_name)
     if agent_dir is None:
         print(f"  ⚠️  跳过：找不到 {agent_name}（source/agents/ 或 source/ 下均不存在）")
@@ -530,7 +573,17 @@ def install_agent(agent_name, model=None):
     if model:
         print(f"  🎯 模型：{model} → 使用 {os.path.basename(prompt_path)}")
 
+    # alias: 安装时使用不同的名称（如 meta-skill-harness-GLM-5.1）
+    install_name = alias if alias else agent_name
+    if alias:
+        print(f"  🏷️  别名：{alias}")
+        # 替换 prompt 中的 {{MODEL}} 占位符
+        if model:
+            prompt = prompt.replace("{{MODEL}}", model)
+
     desc = meta["description"]
+    if alias and model:
+        desc = f"{desc}（模型：{model}）"
     tools = meta.get("tools", ["read"])
 
     mcp_data = read_json(os.path.join(agent_dir, ".mcp.json")) or {}
@@ -538,8 +591,8 @@ def install_agent(agent_name, model=None):
     mcp_names = list(mcp_servers_cfg.keys())
 
     for ide_dir, platform in IDE_TARGETS:
-        header = HEADER_GENERATORS[platform](agent_name, desc, tools, mcp_names, model=model)
-        target = os.path.join(PROJECT_ROOT, ide_dir, f"{agent_name}.md")
+        header = HEADER_GENERATORS[platform](install_name, desc, tools, mcp_names, model=model)
+        target = os.path.join(PROJECT_ROOT, ide_dir, f"{install_name}.md")
         os.makedirs(os.path.join(PROJECT_ROOT, ide_dir), exist_ok=True)
         
         expected_content = header + "\n" + prompt
@@ -551,14 +604,14 @@ def install_agent(agent_name, model=None):
                 bak_path = f"{target}.bak"
                 shutil.copy2(target, bak_path)
                 write_text(target, expected_content)
-                print(f"  ⚠️  检测到修改: 已更新 {ide_dir}/{agent_name}.md (旧版已备份至 .bak)")
+                print(f"  ⚠️  检测到修改: 已更新 {ide_dir}/{install_name}.md (旧版已备份至 .bak)")
             else:
                 write_text(target, expected_content)
-                print(f"  ✅ {ide_dir}/{agent_name}.md (新建)")
+                print(f"  ✅ {ide_dir}/{install_name}.md (新建)")
         else:
             print(f"  → {ide_dir}/{agent_name}.md (无变更)")
 
-    update_agents_md(agent_name, desc)
+    update_agents_md(install_name, desc)
     print(f"  ✅ AGENTS.md（{agent_name} 章节）")
 
     if mcp_servers_cfg:
@@ -579,11 +632,15 @@ def install_agent(agent_name, model=None):
 _SKIP_INSTALL = {"bak", "tmp", "testcases.yaml", "ideal_state.md", "changelog.md", "learnings.jsonl", "status.json", ".DS_Store"}
 
 
-def install_skill(skill_name):
-    """将 source/skills/[name]/ 分发到所有 IDE 的 skills/ 目录。
+def install_skill(skill_name, model=None, scope="project"):
+    """将 source/skills/[name]/ 分发到 IDE 的 skills/ 目录。
     
     若 skill.json 中 install_to_ide 为 false，则跳过安装到 IDE 目录。
     这些 Skill 仅作为内部专用（由其他 Skill spawn subagent 时读取）。
+    
+    Args:
+        model: 指定模型版本（使用 SKILL_<model>.md 替换 SKILL.md 安装）
+        scope: "project"（项目级，默认）或 "user"（用户级 ~/.xxx/skills/）
     """
     skill_dir = os.path.join(SKILLS_DIR, skill_name)
     if not os.path.isdir(skill_dir):
@@ -596,19 +653,131 @@ def install_skill(skill_name):
         print(f"  ⏭️  {skill_name}：install_to_ide=false，跳过 IDE 安装（内部专用）")
         return True  # 不算失败，只是跳过
 
-    for ide_skills in [".cursor/skills", ".codebuddy/skills", ".claude/skills"]:
-        target_root = os.path.join(PROJECT_ROOT, ide_skills)
+    # 解析模型版本
+    skill_md_path, model_label = resolve_skill_md(skill_dir, model)
+    use_variant = model_label is not None  # 需要用变体替换 SKILL.md
+
+    if model_label:
+        print(f"  🎯 模型版本：{model_label} → 使用 {os.path.basename(skill_md_path)}")
+
+    # 确定目标路径列表
+    if scope == "user":
+        ide_skills_list = _get_user_ide_skills_paths()
+        if not ide_skills_list:
+            print(f"  ⚠️  未检测到任何已安装的 IDE，跳过用户级安装")
+            return False
+    else:
+        ide_skills_list = [
+            os.path.join(PROJECT_ROOT, p) for p in
+            [".cursor/skills", ".codebuddy/skills", ".claude/skills"]
+        ]
+
+    for target_root in ide_skills_list:
         target = os.path.join(target_root, skill_name)
         if os.path.exists(target):
             shutil.rmtree(target)
-            
-        # 这里为了防止误删用户在IDE目录里新增的文件，理论上最好做 file-level 比较，但 skill 目录涉及代码，直接 rmtree + copytree 最简单，
-        # 我们用 warnings 提示用户
-        print(f"  → 重新安装 {ide_skills}/{skill_name}/")
+
+        rel_path = target.replace(os.path.expanduser("~"), "~") if scope == "user" else os.path.relpath(target, PROJECT_ROOT)
+        print(f"  → 安装 {rel_path}/")
         
-        # 复制时跳过测试产物
-        shutil.copytree(skill_dir, target, ignore=shutil.ignore_patterns(*_SKIP_INSTALL))
-        print(f"  ✅ {ide_skills}/{skill_name}/ (已更新)")
+        # 复制时跳过测试产物和模型变体文件
+        skip = set(_SKIP_INSTALL)
+        # 跳过所有 SKILL_*.md 变体（只安装选中的版本）
+        for f in os.listdir(skill_dir):
+            if f.startswith("SKILL_") and f.endswith(".md"):
+                skip.add(f)
+        shutil.copytree(skill_dir, target, ignore=shutil.ignore_patterns(*skip))
+
+        # 如果使用了模型变体，将其内容覆盖到目标的 SKILL.md
+        if use_variant and skill_md_path:
+            target_skill_md = os.path.join(target, "SKILL.md")
+            shutil.copy2(skill_md_path, target_skill_md)
+
+        print(f"  ✅ {rel_path}/ (已更新)")
+
+    return True
+
+
+# ── User-level install helpers ───────────────────────────────────────
+
+USER_IDE_PATHS = {
+    "Cursor":    {"skills": "~/.cursor/skills",    "agents": "~/.cursor/agents"},
+    "CodeBuddy": {"skills": "~/.codebuddy/skills", "agents": "~/.codebuddy/agents"},
+    "Claude":    {"skills": "~/.claude/skills",     "agents": "~/.claude/agents"},
+}
+
+
+def _get_user_ide_skills_paths():
+    """探测用户主目录下已安装的 IDE，返回 skills 目录列表。"""
+    paths = []
+    for ide_name, dirs in USER_IDE_PATHS.items():
+        expanded = os.path.expanduser(dirs["skills"])
+        parent = os.path.dirname(expanded)  # e.g. ~/.cursor/
+        if os.path.isdir(parent):
+            os.makedirs(expanded, exist_ok=True)
+            paths.append(expanded)
+            print(f"  ✅ {ide_name}: {dirs['skills']}")
+        else:
+            print(f"  ⏭️  {ide_name}: {parent} 不存在，跳过")
+    return paths
+
+
+def _get_user_ide_agents_paths():
+    """探测用户主目录下已安装的 IDE，返回 agents 目录列表。"""
+    paths = []
+    for ide_name, dirs in USER_IDE_PATHS.items():
+        expanded = os.path.expanduser(dirs["agents"])
+        parent = os.path.dirname(expanded)
+        if os.path.isdir(parent):
+            os.makedirs(expanded, exist_ok=True)
+            paths.append((expanded, ide_name))
+        # 不重复打印，skills 探测时已打印
+    return paths
+
+
+def install_agent_user(agent_name, model=None):
+    """将 Agent 安装到用户级 IDE 目录。"""
+    agent_dir = _resolve_agent_dir(agent_name)
+    if agent_dir is None:
+        print(f"  ⚠️  跳过：找不到 {agent_name}")
+        return False
+
+    meta = read_json(os.path.join(agent_dir, "agent.json"))
+    if meta is None:
+        print(f"  ⚠️  跳过：缺少 agent.json")
+        return False
+
+    prompt_path, prompt = resolve_prompt(agent_dir, model)
+    if prompt is None:
+        print(f"  ⚠️  跳过：缺少 prompt.md")
+        return False
+
+    if model:
+        print(f"  🎯 模型：{model} → 使用 {os.path.basename(prompt_path)}")
+
+    desc = meta["description"]
+    tools = meta.get("tools", ["read"])
+    mcp_data = read_json(os.path.join(agent_dir, ".mcp.json")) or {}
+    mcp_names = list(mcp_data.get("mcpServers", {}).keys())
+
+    ide_agent_paths = _get_user_ide_agents_paths()
+    if not ide_agent_paths:
+        print(f"  ⚠️  未检测到任何已安装的 IDE，跳过用户级安装")
+        return False
+
+    # 映射 IDE name → platform key
+    ide_to_platform = {"Cursor": "cursor", "CodeBuddy": "codebuddy", "Claude": "claude"}
+
+    for agents_dir_path, ide_name in ide_agent_paths:
+        platform = ide_to_platform.get(ide_name)
+        if not platform:
+            continue
+        header = HEADER_GENERATORS[platform](agent_name, desc, tools, mcp_names, model=model)
+        target = os.path.join(agents_dir_path, f"{agent_name}.md")
+        content = header + "\n" + prompt
+        write_text(target, content)
+        rel = target.replace(os.path.expanduser("~"), "~")
+        print(f"  ✅ {rel} (已安装)")
 
     return True
 
@@ -618,9 +787,13 @@ def install_skill(skill_name):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Agent & Platform Skills 安装脚本")
-    parser.add_argument("agents", nargs="*", help="Agent 名称（不指定则安装全部 Agent + Skill + Platform Skills）")
+    parser.add_argument("agents", nargs="*", help="Agent/Skill 名称（不指定则安装全部）")
     parser.add_argument("--model", "-m", default=None,
-                        help="指定模型（使用 prompt_[model].md，不存在时自动从 prompt.md 复制）")
+                        help="指定模型版本（Agent: prompt_[model].md, Skill: SKILL_[model].md）")
+    parser.add_argument("--alias", "-a", default=None,
+                        help="安装时使用的别名（如 meta-skill-harness-GLM-5.1），{{MODEL}} 占位符会被替换为 --model 值")
+    parser.add_argument("--scope", "-s", choices=["project", "user"], default="project",
+                        help="安装范围：project（项目级，默认）或 user（用户级 ~/.xxx/）")
     parser.add_argument("--platform-skills", action="store_true",
                         help="安装所有 Platform Skills 到各 IDE skills 目录")
     parser.add_argument("--platform-skill", default=None, metavar="NAME",
@@ -632,8 +805,8 @@ def main():
         install_platform_skills(specific_skill=args.platform_skill)
         return 0
 
-    # ── CLAUDE.md ↔ CODEBUDDY.md 同步 ──
-    if not args.agents:
+    # ── CLAUDE.md ↔ CODEBUDDY.md 同步（仅项目级全量安装时）──
+    if not args.agents and args.scope == "project":
         print("📄 同步项目全局配置\n")
         sync_project_memory()
         print()
@@ -668,11 +841,18 @@ def main():
                 and not d.startswith(".")
             )
 
-    # ── Agent 安装 ──
+    scope = args.scope
+    scope_label = "用户级 IDE 目录" if scope == "user" else "项目 IDE 目录"
     model_info = f"（model: {args.model}）" if args.model else ""
+
+    # ── 用户级安装时先探测 IDE ──
+    if scope == "user" and (agent_names or skill_names):
+        print(f"🔍 探测已安装的 IDE...\n")
+
+    # ── Agent 安装 ──
     ok, fail = 0, 0
     if agent_names:
-        print(f"🔧 安装 Agent → 所有 IDE 目录{model_info}\n")
+        print(f"🔧 安装 Agent → {scope_label}{model_info}\n")
         for name in agent_names:
             agent_dir = _resolve_agent_dir(name)
             if agent_dir is None:
@@ -681,7 +861,11 @@ def main():
                 continue
 
             print(f"📦 {name}")
-            if install_agent(name, model=args.model):
+            if scope == "user":
+                success = install_agent_user(name, model=args.model)
+            else:
+                success = install_agent(name, model=args.model, alias=args.alias)
+            if success:
                 ok += 1
             else:
                 fail += 1
@@ -693,10 +877,10 @@ def main():
     # ── Skill 安装 ──
     sok, sfail = 0, 0
     if skill_names:
-        print(f"\n🔧 安装 Skill → 所有 IDE skills 目录\n")
+        print(f"\n🔧 安装 Skill → {scope_label}{model_info}\n")
         for name in skill_names:
             print(f"📦 {name}")
-            if install_skill(name):
+            if install_skill(name, model=args.model, scope=scope):
                 sok += 1
             else:
                 sfail += 1
@@ -704,8 +888,8 @@ def main():
         print(f"{'='*40}")
         print(f"✅ Skill 安装完成：{sok} 成功, {sfail} 失败")
 
-    # ── 全量安装时同时安装 Platform Skills ──
-    if not args.agents:
+    # ── 全量安装时同时安装 Platform Skills（仅项目级）──
+    if not args.agents and scope == "project":
         print()
         install_platform_skills()
 

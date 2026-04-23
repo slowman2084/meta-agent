@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calibration Review — 评估体系校准</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e0e0e0; }
+  
+  .header { padding: 16px 24px; background: #1a1d27; border-bottom: 1px solid #2a2d37; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .meta { font-size: 13px; color: #888; margin-top: 4px; }
+  
+  .summary { padding: 16px 24px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .stat-card { background: #1a1d27; border: 1px solid #2a2d37; border-radius: 8px; padding: 12px 16px; min-width: 140px; }
+  .stat-card .label { font-size: 12px; color: #888; }
+  .stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  
+  .diagnostics { padding: 16px 24px; }
+  .diag-card { background: #1a1d27; border: 1px solid #2a2d37; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  .diag-header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .diag-header:hover { background: #1e2130; }
+  .diag-id { font-weight: 600; font-size: 14px; }
+  .diag-badges { display: flex; gap: 6px; }
+  .badge { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-high { background: #991b1b; color: #fca5a5; }
+  .badge-medium { background: #854d0e; color: #fbbf24; }
+  .badge-low { background: #1e3a5f; color: #93c5fd; }
+  .badge-cat { background: #252830; color: #d1d5db; }
+  
+  .diag-body { padding: 0 16px 16px; display: none; }
+  .diag-body.open { display: block; }
+  .diag-field { margin: 8px 0; }
+  .diag-field .label { font-size: 12px; color: #888; margin-bottom: 2px; }
+  .diag-field .content { font-size: 13px; line-height: 1.6; }
+  
+  .affected-cases { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .case-chip { padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #252830; }
+  
+  .decision-group { margin-top: 12px; padding-top: 12px; border-top: 1px solid #2a2d37; }
+  .decision-group .label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .decision-btn { display: block; width: 100%; text-align: left; padding: 10px 14px; margin: 4px 0; border-radius: 6px; border: 1px solid #2a2d37; background: #14161e; cursor: pointer; font-size: 13px; color: #e0e0e0; transition: all .15s; }
+  .decision-btn:hover { background: #1e2130; border-color: #3b82f6; }
+  .decision-btn.chosen { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+  
+  .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 24px; background: #1a1d27; border-top: 1px solid #2a2d37; display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+  .btn-export { padding: 10px 24px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; background: #2563eb; color: white; }
+  .btn-export:hover { background: #1d4ed8; }
+  .btn-export:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+  
+  .empty-state { display: flex; justify-content: center; align-items: center; height: 60vh; font-size: 16px; color: #666; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1 id="title">Calibration Review</h1>
+  <div class="meta" id="headerMeta"></div>
+</div>
+
+<div class="summary" id="summaryCards"></div>
+<div class="diagnostics" id="diagList"></div>
+
+<div class="bottom-bar">
+  <div id="progressText" style="font-size:14px;">已决策 0 / 0 条诊断</div>
+  <button class="btn-export" id="btnExport" disabled onclick="exportDecisions()">导出 decisions.json</button>
+</div>
+
+<script>
+window.__CALIBRATION_DATA__ = null;
+
+const decisions = {};  // { diagId: "accept" | "ignore" | "custom:..." }
+
+function init() {
+  const data = window.__CALIBRATION_DATA__;
+  if (!data) {
+    document.getElementById('diagList').innerHTML = '<div class="empty-state">未加载数据。请通过 calibration_inject.py 生成。</div>';
+    return;
+  }
+
+  document.getElementById('title').textContent = `评估体系校准 — ${data.agent_name || data.target || ''}`;
+  const es = data.evaluation_summary || {};
+  document.getElementById('headerMeta').textContent = 
+    `${data.session_id || ''} | 均分 ${es.avg_score || '—'} | ${es.total_cases || 0} cases`;
+
+  // Summary cards
+  const dist = es.score_distribution || {};
+  const summaryHTML = [
+    { label: '均分', value: (es.avg_score || 0).toFixed(1), color: '#3b82f6' },
+    { label: '< 60 分', value: dist.below_60 || 0, color: '#ef4444' },
+    { label: '60-79', value: (dist['60_69'] || 0) + (dist['70_79'] || 0), color: '#f59e0b' },
+    { label: '80+', value: (dist['80_89'] || 0) + (dist['90_100'] || 0), color: '#22c55e' },
+    { label: '诊断数', value: (data.diagnostics || []).length, color: '#8b5cf6' },
+  ].map(s => `<div class="stat-card"><div class="label">${s.label}</div><div class="value" style="color:${s.color}">${s.value}</div></div>`).join('');
+  document.getElementById('summaryCards').innerHTML = summaryHTML;
+
+  // Diagnostics
+  const diags = data.diagnostics || [];
+  const container = document.getElementById('diagList');
+  container.innerHTML = '';
+
+  diags.forEach(d => {
+    const card = document.createElement('div');
+    card.className = 'diag-card';
+    card.innerHTML = `
+      <div class="diag-header" onclick="toggleDiag('${d.id}')">
+        <span class="diag-id">${d.id}: ${d.title || d.description || ''}</span>
+        <div class="diag-badges">
+          <span class="badge badge-cat">${d.category || ''}</span>
+          <span class="badge badge-${d.severity || 'low'}">${d.severity || ''}</span>
+        </div>
+      </div>
+      <div class="diag-body" id="diag-${d.id}">
+        ${d.description ? `<div class="diag-field"><div class="label">描述</div><div class="content">${d.description}</div></div>` : ''}
+        ${d.evidence ? `<div class="diag-field"><div class="label">证据</div><div class="content">${d.evidence}</div></div>` : ''}
+        ${d.suggestion ? `<div class="diag-field"><div class="label">修改建议</div><div class="content">${d.suggestion}</div></div>` : ''}
+        ${d.affected_cases ? `<div class="diag-field"><div class="label">受影响用例</div><div class="affected-cases">${d.affected_cases.map(c => `<span class="case-chip">case_${c}</span>`).join('')}</div></div>` : ''}
+        <div class="decision-group">
+          <div class="label">你的决策：</div>
+          <button class="decision-btn" onclick="decide('${d.id}','accept',this)">✅ 接受修改建议</button>
+          <button class="decision-btn" onclick="decide('${d.id}','ignore',this)">⏭️ 忽略（保持原样）</button>
+          <button class="decision-btn" onclick="decideCustom('${d.id}',this)">✏️ 自定义修正方向</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function toggleDiag(id) {
+  document.getElementById(`diag-${id}`).classList.toggle('open');
+}
+
+function decide(id, action, btn) {
+  decisions[id] = action;
+  btn.closest('.decision-group').querySelectorAll('.decision-btn').forEach(b => b.classList.remove('chosen'));
+  btn.classList.add('chosen');
+  updateProgress();
+}
+
+function decideCustom(id, btn) {
+  const text = prompt('请输入你的修正方向：');
+  if (text) {
+    decisions[id] = 'custom:' + text;
+    btn.closest('.decision-group').querySelectorAll('.decision-btn').forEach(b => b.classList.remove('chosen'));
+    btn.classList.add('chosen');
+    btn.textContent = '✏️ ' + text.substring(0, 40) + (text.length > 40 ? '...' : '');
+    updateProgress();
+  }
+}
+
+function updateProgress() {
+  const data = window.__CALIBRATION_DATA__;
+  const total = (data.diagnostics || []).length;
+  const done = Object.keys(decisions).length;
+  document.getElementById('progressText').textContent = `已决策 ${done} / ${total} 条诊断`;
+  document.getElementById('btnExport').disabled = done < total;
+}
+
+function exportDecisions() {
+  const data = window.__CALIBRATION_DATA__;
+  const output = {
+    agent_name: data.agent_name || data.target,
+    session_id: data.session_id,
+    exported_at: new Date().toISOString(),
+    decisions: Object.entries(decisions).map(([id, action]) => {
+      const diag = (data.diagnostics || []).find(d => d.id === id);
+      return {
+        diagnostic_id: id,
+        category: diag ? diag.category : '',
+        severity: diag ? diag.severity : '',
+        action: action.startsWith('custom:') ? 'custom' : action,
+        custom_direction: action.startsWith('custom:') ? action.substring(7) : null
+      };
+    })
+  };
+
+  const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'decisions.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
